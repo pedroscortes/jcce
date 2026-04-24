@@ -9,7 +9,6 @@ from typing import Literal
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 
 
 @dataclass
@@ -24,7 +23,10 @@ class DAGConfig:
 
 
 def generate_erdos_renyi_dag(
-    num_nodes: int, expected_degree: float, weight_range: tuple[float, float], key: jax.random.PRNGKey
+    num_nodes: int,
+    expected_degree: float,
+    weight_range: tuple[float, float],
+    key: jax.random.PRNGKey,
 ) -> jnp.ndarray:
     """
     Generate a random DAG using Erdős-Rényi model.
@@ -88,7 +90,9 @@ def generate_chain_dag(
     A = jnp.zeros((num_nodes, num_nodes))
 
     # Generate weights for chain edges
-    weights = jax.random.uniform(key, (num_nodes - 1,), minval=weight_range[0], maxval=weight_range[1])
+    weights = jax.random.uniform(
+        key, (num_nodes - 1,), minval=weight_range[0], maxval=weight_range[1]
+    )
 
     # Create chain: node i+1 has parent i
     # A[i+1, i] = weight means i → i+1
@@ -118,7 +122,9 @@ def generate_scale_free_dag(
     # For Phase 1, we'll use a simplified version
     # Start with ER and modify degree distribution
     # TODO: Implement proper Barabási-Albert model if needed
-    return generate_erdos_renyi_dag(num_nodes, expected_degree=3.0, weight_range=weight_range, key=key)
+    return generate_erdos_renyi_dag(
+        num_nodes, expected_degree=3.0, weight_range=weight_range, key=key
+    )
 
 
 def generate_dag(config: DAGConfig) -> jnp.ndarray:

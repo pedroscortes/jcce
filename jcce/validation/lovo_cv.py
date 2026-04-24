@@ -13,11 +13,12 @@ Usage:
     from jcce.validation.lovo_cv import lovo_cv, LovoResult
 """
 
-import numpy as np
 import time
 import warnings
-from typing import Dict, List, Optional, Callable, Any, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
+
+import numpy as np
 
 
 @dataclass
@@ -25,16 +26,16 @@ class LovoResult:
     """Result of LOVO cross-validation."""
 
     # Core results
-    stability_score: float          # Fraction of variables where sub-DAG is recovered
-    n_variables: int                # Total number of variables tested
-    n_recovered: int                # Number of variables where sub-DAG matches
+    stability_score: float  # Fraction of variables where sub-DAG is recovered
+    n_variables: int  # Total number of variables tested
+    n_recovered: int  # Number of variables where sub-DAG matches
 
     # Per-variable details
-    per_variable: List[Dict]        # Per-variable recovery metrics
+    per_variable: List[Dict]  # Per-variable recovery metrics
 
     # Aggregate structural metrics
-    mean_sub_f1: float              # Mean F1 across leave-out experiments
-    mean_sub_shd: float             # Mean SHD across leave-out experiments
+    mean_sub_f1: float  # Mean F1 across leave-out experiments
+    mean_sub_shd: float  # Mean SHD across leave-out experiments
 
     # Timing
     total_time: float
@@ -54,7 +55,7 @@ class LovoResult:
         ]
 
         # Worst variables
-        worst = sorted(self.per_variable, key=lambda x: x['f1'])[:3]
+        worst = sorted(self.per_variable, key=lambda x: x["f1"])[:3]
         if worst:
             lines.append("\nLeast stable variables (lowest sub-DAG F1):")
             for v in worst:
@@ -65,13 +66,13 @@ class LovoResult:
 
     def to_dict(self) -> Dict:
         return {
-            'stability_score': self.stability_score,
-            'n_variables': self.n_variables,
-            'n_recovered': self.n_recovered,
-            'mean_sub_f1': self.mean_sub_f1,
-            'mean_sub_shd': self.mean_sub_shd,
-            'per_variable': self.per_variable,
-            'total_time': self.total_time,
+            "stability_score": self.stability_score,
+            "n_variables": self.n_variables,
+            "n_recovered": self.n_recovered,
+            "mean_sub_f1": self.mean_sub_f1,
+            "mean_sub_shd": self.mean_sub_shd,
+            "per_variable": self.per_variable,
+            "total_time": self.total_time,
         }
 
 
@@ -79,14 +80,13 @@ class LovoResult:
 # Core Functions
 # ============================================================================
 
+
 def remove_variable(data: np.ndarray, var_idx: int) -> np.ndarray:
     """Remove variable (column) var_idx from data matrix."""
     return np.delete(data, var_idx, axis=1)
 
 
-def remove_variable_from_dag(
-    A: np.ndarray, var_idx: int
-) -> np.ndarray:
+def remove_variable_from_dag(A: np.ndarray, var_idx: int) -> np.ndarray:
     """
     Extract sub-DAG by removing variable var_idx.
 
@@ -146,17 +146,18 @@ def compare_dags(
     recovered = f1 >= 0.7
 
     return {
-        'f1': float(f1),
-        'shd': shd,
-        'precision': float(precision),
-        'recall': float(recall),
-        'recovered': recovered,
+        "f1": float(f1),
+        "shd": shd,
+        "precision": float(precision),
+        "recall": float(recall),
+        "recovered": recovered,
     }
 
 
 # ============================================================================
 # LOVO CV
 # ============================================================================
+
 
 def lovo_cv(
     data: np.ndarray,
@@ -218,36 +219,44 @@ def lovo_cv(
             A_learned_k = np.array(A_learned_k)
         except Exception as e:
             warnings.warn(f"LOVO var {k} failed: {e}")
-            per_variable.append({
-                'var_idx': k,
-                'f1': 0.0, 'shd': d * d, 'precision': 0.0, 'recall': 0.0,
-                'recovered': False, 'time': time.time() - t0,
-                'error': str(e),
-            })
+            per_variable.append(
+                {
+                    "var_idx": k,
+                    "f1": 0.0,
+                    "shd": d * d,
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "recovered": False,
+                    "time": time.time() - t0,
+                    "error": str(e),
+                }
+            )
             continue
 
         # 3. Compare to sub-DAG
         metrics = compare_dags(A_learned_k, A_sub_k, threshold=threshold)
-        metrics['var_idx'] = k
-        metrics['time'] = time.time() - t0
-        metrics['recovered'] = metrics['f1'] >= recovery_threshold
+        metrics["var_idx"] = k
+        metrics["time"] = time.time() - t0
+        metrics["recovered"] = metrics["f1"] >= recovery_threshold
 
-        if metrics['recovered']:
+        if metrics["recovered"]:
             n_recovered += 1
 
         per_variable.append(metrics)
 
         if verbose:
-            print(f"  LOVO var {k}: F1={metrics['f1']:.3f} SHD={metrics['shd']} "
-                  f"{'RECOVERED' if metrics['recovered'] else 'CHANGED'} "
-                  f"({metrics['time']:.1f}s)")
+            print(
+                f"  LOVO var {k}: F1={metrics['f1']:.3f} SHD={metrics['shd']} "
+                f"{'RECOVERED' if metrics['recovered'] else 'CHANGED'} "
+                f"({metrics['time']:.1f}s)"
+            )
 
     total_time = time.time() - total_start
     n_tested = len(per_variable)
 
     # Aggregates
-    f1s = [v['f1'] for v in per_variable if 'error' not in v]
-    shds = [v['shd'] for v in per_variable if 'error' not in v]
+    f1s = [v["f1"] for v in per_variable if "error" not in v]
+    shds = [v["shd"] for v in per_variable if "error" not in v]
 
     result = LovoResult(
         stability_score=n_recovered / max(n_tested, 1),

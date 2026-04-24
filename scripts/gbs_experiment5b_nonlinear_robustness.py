@@ -22,18 +22,15 @@ Reference: Extension of Roadmap Step 3.5
 """
 
 import sys
-import time
 
 import numpy as np
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from jcce.gbs.classical_mb_baselines import (
-    fast_iamb,
     generate_linear_sem_data,
     hiton_mb,
     iamb,
-    inter_iamb,
     mb_metrics,
     true_markov_blanket,
 )
@@ -43,10 +40,10 @@ from jcce.gbs.gbs_utils import (
     encode_moralized_to_gbs,
 )
 
-
 # =============================================================================
 # Additional nonlinear SEM generators
 # =============================================================================
+
 
 def generate_polynomial_sem_data(
     A: np.ndarray,
@@ -71,10 +68,12 @@ def generate_polynomial_sem_data(
             for p in parents:
                 parent_sum += A[p, j] * X[:, p]
             parent_sum = np.clip(parent_sum, -3.0, 3.0)
-            X[:, j] = (0.5 * parent_sum +
-                       0.3 * parent_sum**2 +
-                       0.1 * parent_sum**3 +
-                       0.5 * rng.standard_normal(n_samples))
+            X[:, j] = (
+                0.5 * parent_sum
+                + 0.3 * parent_sum**2
+                + 0.1 * parent_sum**3
+                + 0.5 * rng.standard_normal(n_samples)
+            )
     return X
 
 
@@ -101,8 +100,9 @@ def generate_exponential_sem_data(
             for p in parents:
                 parent_sum += A[p, j] * X[:, p]
             parent_sum = np.clip(parent_sum, -5.0, 5.0)
-            X[:, j] = (np.sign(parent_sum) * np.log1p(np.abs(parent_sum)) +
-                       0.5 * rng.standard_normal(n_samples))
+            X[:, j] = np.sign(parent_sum) * np.log1p(
+                np.abs(parent_sum)
+            ) + 0.5 * rng.standard_normal(n_samples)
     return X
 
 
@@ -129,8 +129,7 @@ def generate_threshold_sem_data(
             for p in parents:
                 parent_sum += A[p, j] * X[:, p]
             parent_sum = np.clip(parent_sum, -5.0, 5.0)
-            X[:, j] = (np.maximum(parent_sum, 0) +
-                       0.5 * rng.standard_normal(n_samples))
+            X[:, j] = np.maximum(parent_sum, 0) + 0.5 * rng.standard_normal(n_samples)
     return X
 
 
@@ -153,15 +152,16 @@ def generate_nonlinear_sem_data(
             for p in parents:
                 parent_sum += A[p, j] * X[:, p]
             parent_sum = np.clip(parent_sum, -5.0, 5.0)
-            X[:, j] = (np.tanh(parent_sum) +
-                       0.3 * parent_sum**2 +
-                       0.5 * rng.standard_normal(n_samples))
+            X[:, j] = (
+                np.tanh(parent_sum) + 0.3 * parent_sum**2 + 0.5 * rng.standard_normal(n_samples)
+            )
     return X
 
 
 # =============================================================================
 # GBS MB prediction (from Exp 5)
 # =============================================================================
+
 
 def gbs_mb_predict(C: np.ndarray, target: int, true_mb_size: int) -> set:
     d = C.shape[0]
@@ -188,6 +188,7 @@ def gbs_moralized_mb(A: np.ndarray, target: int, true_mb_size: int) -> set:
 # =============================================================================
 # DAG generators
 # =============================================================================
+
 
 def make_chain(d: int, rng=None) -> np.ndarray:
     if rng is None:
@@ -225,6 +226,7 @@ def make_random_sparse(d: int, rng=None) -> np.ndarray:
 # Main experiment
 # =============================================================================
 
+
 def run_comparison_for_dgp(
     A: np.ndarray,
     dgp_name: str,
@@ -250,12 +252,12 @@ def run_comparison_for_dgp(
         return None
 
     classical_methods = {
-        'IAMB': lambda X, t, _: iamb(X, t, alpha=0.05),
-        'HITON-MB': lambda X, t, _: hiton_mb(X, t, alpha=0.05),
+        "IAMB": lambda X, t, _: iamb(X, t, alpha=0.05),
+        "HITON-MB": lambda X, t, _: hiton_mb(X, t, alpha=0.05),
     }
     gbs_methods = {
-        'GBS-raw': lambda X, t, sz: gbs_raw_mb(A, t, sz),
-        'GBS-moral': lambda X, t, sz: gbs_moralized_mb(A, t, sz),
+        "GBS-raw": lambda X, t, sz: gbs_raw_mb(A, t, sz),
+        "GBS-moral": lambda X, t, sz: gbs_moralized_mb(A, t, sz),
     }
     all_methods = {**classical_methods, **gbs_methods}
 
@@ -266,7 +268,7 @@ def run_comparison_for_dgp(
         for mname, mfn in all_methods.items():
             pred = mfn(X, target, len(true_mb))
             m = mb_metrics(pred, true_mb)
-            results[mname].append(m['f1'])
+            results[mname].append(m["f1"])
 
     return {m: np.mean(vals) for m, vals in results.items()}
 
@@ -279,20 +281,20 @@ def main():
     print("while GBS remains invariant (uses graph structure only)")
 
     dgp_generators = {
-        'Linear': generate_linear_sem_data,
-        'Tanh': generate_nonlinear_sem_data,
-        'Polynomial': generate_polynomial_sem_data,
-        'Log-transform': generate_exponential_sem_data,
-        'Threshold': generate_threshold_sem_data,
+        "Linear": generate_linear_sem_data,
+        "Tanh": generate_nonlinear_sem_data,
+        "Polynomial": generate_polynomial_sem_data,
+        "Log-transform": generate_exponential_sem_data,
+        "Threshold": generate_threshold_sem_data,
     }
 
     structures = {
-        'Chain': make_chain,
-        'Fork': make_fork,
-        'Random': make_random_sparse,
+        "Chain": make_chain,
+        "Fork": make_fork,
+        "Random": make_random_sparse,
     }
     dimensions = [8, 11, 15, 20]
-    methods = ['IAMB', 'HITON-MB', 'GBS-raw', 'GBS-moral']
+    methods = ["IAMB", "HITON-MB", "GBS-raw", "GBS-moral"]
 
     # Aggregate: method × DGP → list of F1 scores
     dgp_agg = {dgp: {m: [] for m in methods} for dgp in dgp_generators}
@@ -311,7 +313,9 @@ def main():
                 result = run_comparison_for_dgp(A, dgp_name, data_fn, n_samples=2000)
 
                 if result is None:
-                    print(f"  [{config_num}/{total_configs}] {struct_name}-{d}/{dgp_name}: SKIPPED (NaN)")
+                    print(
+                        f"  [{config_num}/{total_configs}] {struct_name}-{d}/{dgp_name}: SKIPPED (NaN)"
+                    )
                     continue
 
                 for m in methods:
@@ -325,16 +329,16 @@ def main():
     # ==========================================================================
     # Table 1: F1 by Method × DGP Type
     # ==========================================================================
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("  TABLE 1: Average F1 by Method × DGP Type")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
 
     dgp_names = list(dgp_generators.keys())
-    print(f"\n  {'Method':<12}", end='')
+    print(f"\n  {'Method':<12}", end="")
     for dgp in dgp_names:
-        print(f" | {dgp:>12}", end='')
+        print(f" | {dgp:>12}", end="")
     print(f" | {'Max Delta':>10}")
-    print(f"  {'-'*(12 + len(dgp_names)*16 + 14)}")
+    print(f"  {'-' * (12 + len(dgp_names) * 16 + 14)}")
 
     for m in methods:
         row = f"  {m:<12}"
@@ -356,19 +360,19 @@ def main():
     # ==========================================================================
     # Table 2: Degradation from Linear
     # ==========================================================================
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("  TABLE 2: F1 Degradation from Linear Baseline")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
 
-    print(f"\n  {'Method':<12}", end='')
+    print(f"\n  {'Method':<12}", end="")
     for dgp in dgp_names[1:]:  # skip Linear
-        print(f" | {dgp:>12}", end='')
+        print(f" | {dgp:>12}", end="")
     print()
-    print(f"  {'-'*(12 + (len(dgp_names)-1)*16)}")
+    print(f"  {'-' * (12 + (len(dgp_names) - 1) * 16)}")
 
     for m in methods:
         row = f"  {m:<12}"
-        linear_f1 = np.mean(global_agg[m]['Linear']) if global_agg[m]['Linear'] else 0
+        linear_f1 = np.mean(global_agg[m]["Linear"]) if global_agg[m]["Linear"] else 0
         for dgp in dgp_names[1:]:
             dgp_f1 = np.mean(global_agg[m][dgp]) if global_agg[m][dgp] else 0
             delta = dgp_f1 - linear_f1
@@ -378,38 +382,42 @@ def main():
     # ==========================================================================
     # Summary
     # ==========================================================================
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print("  SUMMARY")
-    print(f"{'='*80}")
+    print(f"{'=' * 80}")
 
     # Classical average degradation across all nonlinear DGPs
     for m in methods:
-        linear_f1 = np.mean(global_agg[m]['Linear']) if global_agg[m]['Linear'] else 0
-        nonlin_f1s = [np.mean(global_agg[m][dgp]) for dgp in dgp_names[1:]
-                      if global_agg[m][dgp]]
+        linear_f1 = np.mean(global_agg[m]["Linear"]) if global_agg[m]["Linear"] else 0
+        nonlin_f1s = [np.mean(global_agg[m][dgp]) for dgp in dgp_names[1:] if global_agg[m][dgp]]
         avg_nonlin = np.mean(nonlin_f1s) if nonlin_f1s else 0
         delta = avg_nonlin - linear_f1
 
-        is_gbs = m.startswith('GBS')
+        is_gbs = m.startswith("GBS")
         marker = "(graph-based, invariant)" if is_gbs else "(data-based)"
-        print(f"  {m:<12}: Linear F1={linear_f1:.3f}, "
-              f"Avg nonlinear F1={avg_nonlin:.3f}, "
-              f"delta={delta:+.3f} {marker}")
+        print(
+            f"  {m:<12}: Linear F1={linear_f1:.3f}, "
+            f"Avg nonlinear F1={avg_nonlin:.3f}, "
+            f"delta={delta:+.3f} {marker}"
+        )
 
     # Worst-case DGP for classical
-    worst_dgp_iamb = min(dgp_names[1:],
-                         key=lambda dgp: np.mean(global_agg['IAMB'][dgp])
-                         if global_agg['IAMB'][dgp] else 1.0)
-    worst_f1 = np.mean(global_agg['IAMB'][worst_dgp_iamb])
-    linear_f1 = np.mean(global_agg['IAMB']['Linear'])
-    print(f"\n  Worst DGP for IAMB: {worst_dgp_iamb} (F1={worst_f1:.3f}, "
-          f"delta={worst_f1-linear_f1:+.3f})")
+    worst_dgp_iamb = min(
+        dgp_names[1:],
+        key=lambda dgp: np.mean(global_agg["IAMB"][dgp]) if global_agg["IAMB"][dgp] else 1.0,
+    )
+    worst_f1 = np.mean(global_agg["IAMB"][worst_dgp_iamb])
+    linear_f1 = np.mean(global_agg["IAMB"]["Linear"])
+    print(
+        f"\n  Worst DGP for IAMB: {worst_dgp_iamb} (F1={worst_f1:.3f}, "
+        f"delta={worst_f1 - linear_f1:+.3f})"
+    )
 
-    print(f"\n  Key finding: Classical methods assume linear-Gaussian relationships")
-    print(f"  (Fisher's z-test). Their performance degrades across ALL nonlinear")
-    print(f"  DGPs. GBS-raw and GBS-moral are completely invariant because they")
-    print(f"  operate on graph structure, not data.")
+    print("\n  Key finding: Classical methods assume linear-Gaussian relationships")
+    print("  (Fisher's z-test). Their performance degrades across ALL nonlinear")
+    print("  DGPs. GBS-raw and GBS-moral are completely invariant because they")
+    print("  operate on graph structure, not data.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

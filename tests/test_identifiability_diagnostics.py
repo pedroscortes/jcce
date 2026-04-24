@@ -15,14 +15,14 @@ import numpy as np
 import pytest
 
 from jcce.validation.identifiability_diagnostics import (
-    compute_mb_condition_number,
-    compute_svd_diagnostics,
-    compute_simple_bic,
-    compute_neural_bic,
-    compute_bic_for_dag,
-    compute_full_identifiability_report,
     IdentifiabilityReport,
     IdentifiabilitySummary,
+    compute_bic_for_dag,
+    compute_full_identifiability_report,
+    compute_mb_condition_number,
+    compute_neural_bic,
+    compute_simple_bic,
+    compute_svd_diagnostics,
 )
 
 # JAX-dependent tests are conditional
@@ -30,10 +30,12 @@ try:
     import jax
     import jax.numpy as jnp
     from jax import random as jax_random
+
     from jcce.validation.identifiability_diagnostics import (
-        hutchinson_edf,
         d_optimality_penalty,
+        hutchinson_edf,
     )
+
     HAS_JAX = True
 except ImportError:
     HAS_JAX = False
@@ -42,6 +44,7 @@ except ImportError:
 # =============================================================================
 # 1. Condition Number Tests
 # =============================================================================
+
 
 class TestConditionNumber:
     """Test compute_mb_condition_number."""
@@ -88,6 +91,7 @@ class TestConditionNumber:
 # 2. SVD Diagnostics Tests
 # =============================================================================
 
+
 class TestSVDDiagnostics:
     """Test compute_svd_diagnostics."""
 
@@ -100,17 +104,14 @@ class TestSVDDiagnostics:
         x3 = np.random.randn(n)
         X = np.column_stack([x1, x2, x3])
 
-        result = compute_svd_diagnostics(
-            X, [0, 1, 2],
-            feature_names=["feat_A", "feat_B", "feat_C"]
-        )
+        result = compute_svd_diagnostics(X, [0, 1, 2], feature_names=["feat_A", "feat_B", "feat_C"])
 
-        assert len(result['near_collinear_pairs']) >= 1, \
-            "Should detect at least one collinear pair"
+        assert len(result["near_collinear_pairs"]) >= 1, "Should detect at least one collinear pair"
         # Check that feat_A and feat_B are identified
-        pair_names = [(p[0], p[1]) for p in result['near_collinear_pairs']]
-        assert ("feat_A", "feat_B") in pair_names, \
+        pair_names = [(p[0], p[1]) for p in result["near_collinear_pairs"]]
+        assert ("feat_A", "feat_B") in pair_names, (
             f"Expected (feat_A, feat_B) in collinear pairs, got {pair_names}"
+        )
 
     def test_svd_diagnostics_effective_rank(self):
         """Effective rank should equal number of independent columns."""
@@ -125,19 +126,20 @@ class TestSVDDiagnostics:
 
         result = compute_svd_diagnostics(X, [0, 1, 2, 3])
         # Effective rank should be close to 3 (not 4)
-        assert result['effective_rank'] <= 4
+        assert result["effective_rank"] <= 4
 
     def test_svd_diagnostics_empty_mb(self):
         """Empty MB should return empty diagnostics."""
         X = np.random.randn(100, 5)
         result = compute_svd_diagnostics(X, [])
-        assert result['effective_rank'] == 0
-        assert result['condition_number'] == 1.0
+        assert result["effective_rank"] == 0
+        assert result["condition_number"] == 1.0
 
 
 # =============================================================================
 # 3. Hutchinson EDF Tests
 # =============================================================================
+
 
 @pytest.mark.skipif(not HAS_JAX, reason="JAX not available")
 class TestHutchinsonEDF:
@@ -193,6 +195,7 @@ class TestHutchinsonEDF:
 # 4. BIC Tests
 # =============================================================================
 
+
 class TestBIC:
     """Test BIC computation functions."""
 
@@ -206,7 +209,7 @@ class TestBIC:
         bic = compute_simple_bic(residuals, n_params, n)
 
         # Manual: n * log(RSS/n) + k * log(n)
-        rss = np.sum(residuals ** 2)
+        rss = np.sum(residuals**2)
         expected = n * np.log(rss / n) + n_params * np.log(n)
         assert abs(bic - expected) < 1e-6, f"BIC mismatch: {bic} vs {expected}"
 
@@ -221,8 +224,9 @@ class TestBIC:
         bic_50_params = compute_neural_bic(residuals, edf=50.0, n_samples=n)
 
         # Higher EDF = higher BIC (more complex model penalized more)
-        assert bic_50_params > bic_5_params, \
+        assert bic_50_params > bic_5_params, (
             f"Higher EDF should give higher BIC: {bic_50_params} vs {bic_5_params}"
+        )
 
     def test_bic_for_dag_linear(self):
         """BIC for a simple linear DAG."""
@@ -235,13 +239,14 @@ class TestBIC:
         A[0, 1] = 0.5
         A[1, 2] = 0.3
 
-        bic = compute_bic_for_dag(X, A, processor_type='linear')
+        bic = compute_bic_for_dag(X, A, processor_type="linear")
         assert np.isfinite(bic), f"BIC should be finite, got {bic}"
 
 
 # =============================================================================
 # 5. D-Optimality Tests
 # =============================================================================
+
 
 @pytest.mark.skipif(not HAS_JAX, reason="JAX not available")
 class TestDOptimality:
@@ -273,10 +278,15 @@ class TestDOptimality:
 
         # Collinear design (standardized columns, but near-duplicate)
         x1 = np.random.randn(n)
-        X_col_np = np.column_stack([
-            x1, x1 + 0.01 * np.random.randn(n),
-            np.random.randn(n), np.random.randn(n), np.random.randn(n)
-        ])
+        X_col_np = np.column_stack(
+            [
+                x1,
+                x1 + 0.01 * np.random.randn(n),
+                np.random.randn(n),
+                np.random.randn(n),
+                np.random.randn(n),
+            ]
+        )
         # Standardize each column to zero mean, unit variance
         X_col_np = (X_col_np - X_col_np.mean(axis=0)) / (X_col_np.std(axis=0) + 1e-8)
         X_collinear = jnp.array(X_col_np)
@@ -285,13 +295,15 @@ class TestDOptimality:
         penalty_collinear = float(d_optimality_penalty(X_collinear))
 
         # Orthogonal should have lower (better) penalty since det(G) is maximized
-        assert penalty_ortho < penalty_collinear, \
+        assert penalty_ortho < penalty_collinear, (
             f"Orthogonal penalty ({penalty_ortho:.4f}) should be < collinear ({penalty_collinear:.4f})"
+        )
 
 
 # =============================================================================
 # 6. NSGA-II Constraint Test
 # =============================================================================
+
 
 class TestNSGA2Constraint:
     """Test that NSGA-II condition number constraint works."""
@@ -309,11 +321,15 @@ class TestNSGA2Constraint:
 
         # Ill-conditioned MB
         x1 = np.random.randn(n)
-        X_bad = np.column_stack([
-            x1, x1 + 0.0001 * np.random.randn(n),
-            x1 + 0.0002 * np.random.randn(n),
-            np.random.randn(n), np.random.randn(n)
-        ])
+        X_bad = np.column_stack(
+            [
+                x1,
+                x1 + 0.0001 * np.random.randn(n),
+                x1 + 0.0002 * np.random.randn(n),
+                np.random.randn(n),
+                np.random.randn(n),
+            ]
+        )
         kappa_bad = compute_mb_condition_number(X_bad, [0, 1, 2, 3, 4])
 
         threshold = 100.0
@@ -329,6 +345,7 @@ class TestNSGA2Constraint:
 # =============================================================================
 # 7. IdentifiabilityReport Tests
 # =============================================================================
+
 
 class TestIdentifiabilityReport:
     """Test IdentifiabilityReport grading and summary."""
@@ -377,11 +394,11 @@ class TestIdentifiabilityReport:
             edf=5.0,
         )
         d = report.to_dict()
-        assert 'condition_number' in d
-        assert 'bic' in d
-        assert 'edf' in d
-        assert d['edf'] == 5.0
-        assert d['identifiability_grade'] == 'good'
+        assert "condition_number" in d
+        assert "bic" in d
+        assert "edf" in d
+        assert d["edf"] == 5.0
+        assert d["identifiability_grade"] == "good"
 
     def test_identifiability_summary(self):
         """IdentifiabilitySummary should aggregate reports."""
@@ -409,8 +426,8 @@ class TestIdentifiabilityReport:
         assert "moderate" in summary.grades
 
         d = summary.to_dict()
-        assert d['bic_best'] == -100.0
-        assert d['n_dags'] == 2
+        assert d["bic_best"] == -100.0
+        assert d["n_dags"] == 2
 
     def test_full_identifiability_report(self):
         """compute_full_identifiability_report should produce valid report."""
@@ -422,7 +439,9 @@ class TestIdentifiabilityReport:
         A[2, 3] = 0.3
 
         report = compute_full_identifiability_report(
-            X=X, A=A, mb_indices=[0, 1, 2],
+            X=X,
+            A=A,
+            mb_indices=[0, 1, 2],
             feature_names=["a", "b", "c", "d", "e"],
         )
 

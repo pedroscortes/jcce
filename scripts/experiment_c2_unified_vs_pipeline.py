@@ -18,38 +18,37 @@ Usage:
 
 import argparse
 import json
-import time
-import sys
 import os
+import sys
+import time
 
-import numpy as np
-import jax
 import jax.numpy as jnp
-from jax import random
-
+import numpy as np
 import optuna
+from jax import random
 from optuna.samplers import TPESampler
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jcce.data.dag_generator import DAGConfig, generate_dag
-from jcce.data.scm import SCMConfig, LinearSCM
-from jcce.utils.metrics import compute_structure_metrics
-from jcce.evaluation.effect_metrics import compute_pehe, compute_ate_error
-from jcce.structure_learning.pc import learn_with_pc
+from jcce.data.scm import LinearSCM, SCMConfig
+from jcce.evaluation.effect_metrics import compute_pehe
 from jcce.structure_learning.optuna_search import (
+    constraints_func,
     create_optuna_objective,
     extract_pareto_solutions,
-    constraints_func,
 )
-
+from jcce.structure_learning.pc import learn_with_pc
+from jcce.utils.metrics import compute_structure_metrics
 
 # ============================================================================
 # Data Generation
 # ============================================================================
 
-def generate_classification_data(n_vars, n_samples, expected_degree, noise_scale, seed,
-                                  min_y_parents=1, max_attempts=100):
+
+def generate_classification_data(
+    n_vars, n_samples, expected_degree, noise_scale, seed, min_y_parents=1, max_attempts=100
+):
     """Generate synthetic data with ground truth DAG and effects.
 
     Rejects DAGs where Y (last node) has fewer than min_y_parents parents,
@@ -61,7 +60,7 @@ def generate_classification_data(n_vars, n_samples, expected_degree, noise_scale
         current_seed = seed + attempt
         dag_config = DAGConfig(
             num_nodes=n_vars + 1,
-            graph_type='erdos_renyi',
+            graph_type="erdos_renyi",
             expected_degree=expected_degree,
             seed=current_seed,
         )
@@ -73,8 +72,10 @@ def generate_classification_data(n_vars, n_samples, expected_degree, noise_scale
 
         if n_parents_y >= min_y_parents:
             if attempt > 0:
-                print(f"  [DGP] Rejected {attempt} seed(s); "
-                      f"seed={current_seed} gives Y {n_parents_y} parent(s)")
+                print(
+                    f"  [DGP] Rejected {attempt} seed(s); "
+                    f"seed={current_seed} gives Y {n_parents_y} parent(s)"
+                )
             break
     else:
         raise RuntimeError(
@@ -159,23 +160,26 @@ def mb_f1(pred_mb, true_mb, n_vars):
 # Pipeline A: PC → Feature Selection → Classifier → ATE
 # ============================================================================
 
+
 def ols_ate(X, Y, treatment_idx, confounders):
     """Estimate ATE of X[:, treatment_idx] on Y using OLS adjustment.
 
     Fits Y = β_t * T + β_c * X_conf + intercept via least squares.
     Returns β_t as the ATE estimate.
     """
-    T = X[:, treatment_idx:treatment_idx+1]  # (n, 1)
+    T = X[:, treatment_idx : treatment_idx + 1]  # (n, 1)
 
     if confounders:
         conf_indices = [c for c in confounders if c != treatment_idx]
         if conf_indices:
             X_conf = X[:, np.array(conf_indices)]
-            design = np.hstack([
-                np.ones((len(X), 1)),
-                np.array(T),
-                np.array(X_conf),
-            ])
+            design = np.hstack(
+                [
+                    np.ones((len(X), 1)),
+                    np.array(T),
+                    np.array(X_conf),
+                ]
+            )
         else:
             design = np.hstack([np.ones((len(X), 1)), np.array(T)])
     else:
@@ -227,7 +231,7 @@ def logistic_regression_bacc(X_train, Y_train, X_test, Y_test):
 
 def run_pipeline_a(X, Y, n_vars, A_true_full, true_ates, true_mb, seed):
     """Pipeline A: PC → MB selection → logistic regression → OLS ATE."""
-    print(f"\n  [Pipeline A] PC → Select → Classify → ATE")
+    print("\n  [Pipeline A] PC → Select → Classify → ATE")
     t0 = time.time()
 
     # Step 1: PC algorithm on full data (X + Y column)
@@ -244,9 +248,7 @@ def run_pipeline_a(X, Y, n_vars, A_true_full, true_ates, true_mb, seed):
     # Structure metrics (PC on X-only subgraph)
     A_pc_X = A_pc_np[:n_vars, :n_vars]
     A_true_X = np.array(A_true_full)[:n_vars, :n_vars]
-    struct_metrics = compute_structure_metrics(
-        jnp.array(A_pc_X), jnp.array(A_true_X)
-    )
+    struct_metrics = compute_structure_metrics(jnp.array(A_pc_X), jnp.array(A_true_X))
 
     # Step 3: Train-test split (80/20)
     n = len(X)
@@ -264,9 +266,7 @@ def run_pipeline_a(X, Y, n_vars, A_true_full, true_ates, true_mb, seed):
         X_mb_test = np.array(X[test_idx])
         mb_pc = list(range(n_vars))
 
-    bacc = logistic_regression_bacc(
-        X_mb_train, Y[train_idx], X_mb_test, Y[test_idx]
-    )
+    bacc = logistic_regression_bacc(X_mb_train, Y[train_idx], X_mb_test, Y[test_idx])
 
     # Step 4: Estimate ATEs via OLS
     pred_ates = {}
@@ -281,11 +281,10 @@ def run_pipeline_a(X, Y, n_vars, A_true_full, true_ates, true_mb, seed):
         tau_pred = jnp.array([pred_ates[v] for v in sorted(common_vars)])
         tau_true = jnp.array([true_ates[v] for v in sorted(common_vars)])
         pehe = compute_pehe(tau_pred, tau_true)
-        mean_ate_err = float(np.mean([abs(pred_ates[v] - true_ates[v])
-                                       for v in common_vars]))
+        mean_ate_err = float(np.mean([abs(pred_ates[v] - true_ates[v]) for v in common_vars]))
     else:
-        pehe = float('inf')
-        mean_ate_err = float('inf')
+        pehe = float("inf")
+        mean_ate_err = float("inf")
 
     # MB F1
     mb_f1_val, mb_prec, mb_rec = mb_f1(mb_pc, true_mb, n_vars)
@@ -293,19 +292,21 @@ def run_pipeline_a(X, Y, n_vars, A_true_full, true_ates, true_mb, seed):
     elapsed = time.time() - t0
 
     result = {
-        'method': 'Pipeline A (PC)',
-        'shd': struct_metrics['shd'],
-        'struct_f1': struct_metrics['f1'],
-        'bacc': bacc,
-        'mb_size': len(mb_pc),
-        'mb_f1': mb_f1_val,
-        'pehe': pehe,
-        'mean_ate_error': mean_ate_err,
-        'n_ate_matched': len(common_vars),
-        'time': elapsed,
+        "method": "Pipeline A (PC)",
+        "shd": struct_metrics["shd"],
+        "struct_f1": struct_metrics["f1"],
+        "bacc": bacc,
+        "mb_size": len(mb_pc),
+        "mb_f1": mb_f1_val,
+        "pehe": pehe,
+        "mean_ate_error": mean_ate_err,
+        "n_ate_matched": len(common_vars),
+        "time": elapsed,
     }
-    print(f"    SHD={result['shd']} BAcc={bacc:.3f} MB_F1={mb_f1_val:.3f} "
-          f"PEHE={pehe:.4f} ({elapsed:.1f}s)")
+    print(
+        f"    SHD={result['shd']} BAcc={bacc:.3f} MB_F1={mb_f1_val:.3f} "
+        f"PEHE={pehe:.4f} ({elapsed:.1f}s)"
+    )
     return result
 
 
@@ -313,30 +314,40 @@ def run_pipeline_a(X, Y, n_vars, A_true_full, true_ates, true_mb, seed):
 # Pipeline B: GOLEM structure-only → MB → Classify → ATE
 # ============================================================================
 
+
 def run_pipeline_b(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, max_iter, seed):
     """Pipeline B: GOLEM (no classification) → MB → classifier → OLS ATE."""
-    print(f"\n  [Pipeline B] GOLEM(λ_class=0) → Select → Classify → ATE")
+    print("\n  [Pipeline B] GOLEM(λ_class=0) → Select → Classify → ATE")
     t0 = time.time()
 
     # Step 1: Run GOLEM with lambda_class=0 via suggest_fn override
     def suggest_fn_no_class(trial, use_v7=True):
         from jcce.structure_learning.optuna_search import suggest_hyperparams
+
         config = suggest_hyperparams(trial, use_v7=use_v7)
-        config['lambda_class'] = 0.0  # Structure-only
+        config["lambda_class"] = 0.0  # Structure-only
         return config
 
     sampler = TPESampler(
-        multivariate=True, group=True, seed=seed,
+        multivariate=True,
+        group=True,
+        seed=seed,
         n_startup_trials=min(5, n_trials),
-        constraints_func=constraints_func, constant_liar=True,
+        constraints_func=constraints_func,
+        constant_liar=True,
     )
     study = optuna.create_study(
-        directions=['maximize', 'maximize'], sampler=sampler,
+        directions=["maximize", "maximize"],
+        sampler=sampler,
     )
     objective = create_optuna_objective(
-        X=X, Y=Y, n_vars=n_vars,
-        max_iter=max_iter, use_v7=True,
-        jax_key_seed=seed, verbose=False,
+        X=X,
+        Y=Y,
+        n_vars=n_vars,
+        max_iter=max_iter,
+        use_v7=True,
+        jax_key_seed=seed,
+        verbose=False,
         suggest_fn=suggest_fn_no_class,
     )
     study.optimize(objective, n_trials=n_trials)
@@ -345,16 +356,16 @@ def run_pipeline_b(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, max_
 
     # Pick best feasible solution by structure quality
     best_sol = None
-    best_shd = float('inf')
+    best_shd = float("inf")
     for sol in enhanced_solutions:
-        A_est = sol['metrics'].get('structure_A_est')
+        A_est = sol["metrics"].get("structure_A_est")
         if A_est is not None:
             sm = compute_structure_metrics(
                 jnp.array(np.array(A_est)[:n_vars, :n_vars]),
                 jnp.array(np.array(A_true_full)[:n_vars, :n_vars]),
             )
-            if sm['shd'] < best_shd:
-                best_shd = sm['shd']
+            if sm["shd"] < best_shd:
+                best_shd = sm["shd"]
                 best_sol = sol
 
     if best_sol is None and enhanced_solutions:
@@ -363,25 +374,27 @@ def run_pipeline_b(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, max_
     if best_sol is None:
         elapsed = time.time() - t0
         result = {
-            'method': 'Pipeline B (GOLEM→Classify)',
-            'shd': -1, 'struct_f1': 0.0, 'bacc': 0.5,
-            'mb_size': 0, 'mb_f1': 0.0,
-            'pehe': float('inf'), 'mean_ate_error': float('inf'),
-            'n_ate_matched': 0, 'time': elapsed,
+            "method": "Pipeline B (GOLEM→Classify)",
+            "shd": -1,
+            "struct_f1": 0.0,
+            "bacc": 0.5,
+            "mb_size": 0,
+            "mb_f1": 0.0,
+            "pehe": float("inf"),
+            "mean_ate_error": float("inf"),
+            "n_ate_matched": 0,
+            "time": elapsed,
         }
         print(f"    No feasible solutions ({elapsed:.1f}s)")
         return result
 
     # Step 2: Extract MB from learned structure
-    A_est = np.array(best_sol['metrics'].get('structure_A_est',
-                                              np.zeros((n_vars + 1, n_vars + 1))))
+    A_est = np.array(best_sol["metrics"].get("structure_A_est", np.zeros((n_vars + 1, n_vars + 1))))
     mb_b = extract_mb_from_adjacency(A_est, n_vars, n_vars, threshold=0.3)
 
     A_est_X = A_est[:n_vars, :n_vars]
     A_true_X = np.array(A_true_full)[:n_vars, :n_vars]
-    struct_metrics = compute_structure_metrics(
-        jnp.array(A_est_X), jnp.array(A_true_X)
-    )
+    struct_metrics = compute_structure_metrics(jnp.array(A_est_X), jnp.array(A_true_X))
 
     # Step 3: Train classifier on MB features
     n = len(X)
@@ -399,9 +412,7 @@ def run_pipeline_b(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, max_
         X_mb_test = np.array(X[test_idx])
         mb_b = list(range(n_vars))
 
-    bacc = logistic_regression_bacc(
-        X_mb_train, Y[train_idx], X_mb_test, Y[test_idx]
-    )
+    bacc = logistic_regression_bacc(X_mb_train, Y[train_idx], X_mb_test, Y[test_idx])
 
     # Step 4: Estimate ATEs via OLS
     pred_ates = {}
@@ -416,29 +427,30 @@ def run_pipeline_b(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, max_
         tau_pred = jnp.array([pred_ates[v] for v in sorted(common_vars)])
         tau_true = jnp.array([true_ates[v] for v in sorted(common_vars)])
         pehe = compute_pehe(tau_pred, tau_true)
-        mean_ate_err = float(np.mean([abs(pred_ates[v] - true_ates[v])
-                                       for v in common_vars]))
+        mean_ate_err = float(np.mean([abs(pred_ates[v] - true_ates[v]) for v in common_vars]))
     else:
-        pehe = float('inf')
-        mean_ate_err = float('inf')
+        pehe = float("inf")
+        mean_ate_err = float("inf")
 
     mb_f1_val, _, _ = mb_f1(mb_b, true_mb, n_vars)
 
     elapsed = time.time() - t0
     result = {
-        'method': 'Pipeline B (GOLEM→Classify)',
-        'shd': struct_metrics['shd'],
-        'struct_f1': struct_metrics['f1'],
-        'bacc': bacc,
-        'mb_size': len(mb_b),
-        'mb_f1': mb_f1_val,
-        'pehe': pehe,
-        'mean_ate_error': mean_ate_err,
-        'n_ate_matched': len(common_vars),
-        'time': elapsed,
+        "method": "Pipeline B (GOLEM→Classify)",
+        "shd": struct_metrics["shd"],
+        "struct_f1": struct_metrics["f1"],
+        "bacc": bacc,
+        "mb_size": len(mb_b),
+        "mb_f1": mb_f1_val,
+        "pehe": pehe,
+        "mean_ate_error": mean_ate_err,
+        "n_ate_matched": len(common_vars),
+        "time": elapsed,
     }
-    print(f"    SHD={result['shd']} BAcc={bacc:.3f} MB_F1={mb_f1_val:.3f} "
-          f"PEHE={pehe:.4f} ({elapsed:.1f}s)")
+    print(
+        f"    SHD={result['shd']} BAcc={bacc:.3f} MB_F1={mb_f1_val:.3f} "
+        f"PEHE={pehe:.4f} ({elapsed:.1f}s)"
+    )
     return result
 
 
@@ -446,23 +458,32 @@ def run_pipeline_b(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, max_
 # JCCE Unified
 # ============================================================================
 
+
 def run_jcce_unified(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, max_iter, seed):
     """JCCE Unified: GOLEM v7 (structure + classification + effects in one pass)."""
-    print(f"\n  [JCCE Unified] GOLEM v7 (all-in-one)")
+    print("\n  [JCCE Unified] GOLEM v7 (all-in-one)")
     t0 = time.time()
 
     sampler = TPESampler(
-        multivariate=True, group=True, seed=seed,
+        multivariate=True,
+        group=True,
+        seed=seed,
         n_startup_trials=min(5, n_trials),
-        constraints_func=constraints_func, constant_liar=True,
+        constraints_func=constraints_func,
+        constant_liar=True,
     )
     study = optuna.create_study(
-        directions=['maximize', 'maximize'], sampler=sampler,
+        directions=["maximize", "maximize"],
+        sampler=sampler,
     )
     objective = create_optuna_objective(
-        X=X, Y=Y, n_vars=n_vars,
-        max_iter=max_iter, use_v7=True,
-        jax_key_seed=seed, verbose=False,
+        X=X,
+        Y=Y,
+        n_vars=n_vars,
+        max_iter=max_iter,
+        use_v7=True,
+        jax_key_seed=seed,
+        verbose=False,
     )
     study.optimize(objective, n_trials=n_trials)
 
@@ -472,44 +493,46 @@ def run_jcce_unified(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, ma
     best_sol = None
     best_bacc = 0.0
     for sol in enhanced_solutions:
-        if sol['objectives'][0] > best_bacc:
-            best_bacc = sol['objectives'][0]
+        if sol["objectives"][0] > best_bacc:
+            best_bacc = sol["objectives"][0]
             best_sol = sol
 
     if best_sol is None:
         elapsed = time.time() - t0
         result = {
-            'method': 'JCCE Unified',
-            'shd': -1, 'struct_f1': 0.0, 'bacc': 0.5,
-            'mb_size': 0, 'mb_f1': 0.0,
-            'pehe': float('inf'), 'mean_ate_error': float('inf'),
-            'n_ate_matched': 0, 'time': elapsed,
+            "method": "JCCE Unified",
+            "shd": -1,
+            "struct_f1": 0.0,
+            "bacc": 0.5,
+            "mb_size": 0,
+            "mb_f1": 0.0,
+            "pehe": float("inf"),
+            "mean_ate_error": float("inf"),
+            "n_ate_matched": 0,
+            "time": elapsed,
         }
         print(f"    No feasible solutions ({elapsed:.1f}s)")
         return result
 
     # Structure metrics
-    A_est = np.array(best_sol['metrics'].get('structure_A_est',
-                                              np.zeros((n_vars + 1, n_vars + 1))))
+    A_est = np.array(best_sol["metrics"].get("structure_A_est", np.zeros((n_vars + 1, n_vars + 1))))
     A_est_X = A_est[:n_vars, :n_vars]
     A_true_X = np.array(A_true_full)[:n_vars, :n_vars]
-    struct_metrics = compute_structure_metrics(
-        jnp.array(A_est_X), jnp.array(A_true_X)
-    )
+    struct_metrics = compute_structure_metrics(jnp.array(A_est_X), jnp.array(A_true_X))
 
-    bacc = best_sol['objectives'][0]
+    bacc = best_sol["objectives"][0]
 
     # MB recovery
     mb_jcce = extract_mb_from_adjacency(A_est, n_vars, n_vars, threshold=0.3)
     mb_f1_val, _, _ = mb_f1(mb_jcce, true_mb, n_vars)
 
     # ATE quality from v7 causal_effects
-    effects = best_sol['metrics'].get('causal_effects', {})
+    effects = best_sol["metrics"].get("causal_effects", {})
     pred_ates = {}
     for key, val in effects.items():
-        if '->Y' in key or '→Y' in key:
-            var_str = key.split('->')[0] if '->' in key else key.split('→')[0]
-            var_idx = int(var_str.replace('X', ''))
+        if "->Y" in key or "→Y" in key:
+            var_str = key.split("->")[0] if "->" in key else key.split("→")[0]
+            var_idx = int(var_str.replace("X", ""))
             pred_ates[var_idx] = float(val)
 
     common_vars = set(pred_ates.keys()) & set(true_ates.keys())
@@ -517,27 +540,28 @@ def run_jcce_unified(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, ma
         tau_pred = jnp.array([pred_ates[v] for v in sorted(common_vars)])
         tau_true = jnp.array([true_ates[v] for v in sorted(common_vars)])
         pehe = compute_pehe(tau_pred, tau_true)
-        mean_ate_err = float(np.mean([abs(pred_ates[v] - true_ates[v])
-                                       for v in common_vars]))
+        mean_ate_err = float(np.mean([abs(pred_ates[v] - true_ates[v]) for v in common_vars]))
     else:
-        pehe = float('inf')
-        mean_ate_err = float('inf')
+        pehe = float("inf")
+        mean_ate_err = float("inf")
 
     elapsed = time.time() - t0
     result = {
-        'method': 'JCCE Unified',
-        'shd': struct_metrics['shd'],
-        'struct_f1': struct_metrics['f1'],
-        'bacc': bacc,
-        'mb_size': len(mb_jcce),
-        'mb_f1': mb_f1_val,
-        'pehe': pehe,
-        'mean_ate_error': mean_ate_err,
-        'n_ate_matched': len(common_vars),
-        'time': elapsed,
+        "method": "JCCE Unified",
+        "shd": struct_metrics["shd"],
+        "struct_f1": struct_metrics["f1"],
+        "bacc": bacc,
+        "mb_size": len(mb_jcce),
+        "mb_f1": mb_f1_val,
+        "pehe": pehe,
+        "mean_ate_error": mean_ate_err,
+        "n_ate_matched": len(common_vars),
+        "time": elapsed,
     }
-    print(f"    SHD={result['shd']} BAcc={bacc:.3f} MB_F1={mb_f1_val:.3f} "
-          f"PEHE={pehe:.4f} ({elapsed:.1f}s)")
+    print(
+        f"    SHD={result['shd']} BAcc={bacc:.3f} MB_F1={mb_f1_val:.3f} "
+        f"PEHE={pehe:.4f} ({elapsed:.1f}s)"
+    )
     return result
 
 
@@ -545,20 +569,23 @@ def run_jcce_unified(X, Y, n_vars, A_true_full, true_ates, true_mb, n_trials, ma
 # Main
 # ============================================================================
 
+
 def main():
-    parser = argparse.ArgumentParser(description='C.2: Unified vs Pipeline')
-    parser.add_argument('--n-trials', type=int, default=15)
-    parser.add_argument('--n-vars', type=int, default=10)
-    parser.add_argument('--n-samples', type=int, default=500)
-    parser.add_argument('--max-iter', type=int, default=100)
-    parser.add_argument('--expected-degree', type=float, default=2.0)
-    parser.add_argument('--noise-scale', type=float, default=0.5)
-    parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--quick', action='store_true',
-                        help='Quick mode: 5 trials, 20 iters, 5 vars')
-    parser.add_argument('--dataset', type=str, default=None,
-                        help='Real dataset name (lucas, sachs, etc.)')
-    parser.add_argument('--output', type=str, default=None)
+    parser = argparse.ArgumentParser(description="C.2: Unified vs Pipeline")
+    parser.add_argument("--n-trials", type=int, default=15)
+    parser.add_argument("--n-vars", type=int, default=10)
+    parser.add_argument("--n-samples", type=int, default=500)
+    parser.add_argument("--max-iter", type=int, default=100)
+    parser.add_argument("--expected-degree", type=float, default=2.0)
+    parser.add_argument("--noise-scale", type=float, default=0.5)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--quick", action="store_true", help="Quick mode: 5 trials, 20 iters, 5 vars"
+    )
+    parser.add_argument(
+        "--dataset", type=str, default=None, help="Real dataset name (lucas, sachs, etc.)"
+    )
+    parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
 
     if args.quick:
@@ -566,32 +593,38 @@ def main():
         args.max_iter = 20
         args.n_vars = 5
 
-    print(f"UNIFIED VS PIPELINE COMPARISON (C.2)")
-    print(f"=" * 70)
+    print("UNIFIED VS PIPELINE COMPARISON (C.2)")
+    print("=" * 70)
 
     if args.dataset:
         from jcce.data.benchmark_loader import load_dataset as load_benchmark
+
         X_np, Y_np, config = load_benchmark(args.dataset)
         X = jnp.array(X_np, dtype=jnp.float32)
         Y = jnp.array(Y_np, dtype=jnp.float32)
         args.n_vars = X.shape[1]
-        A_full = config.get('true_dag')
-        has_ground_truth = config.get('has_true_dag', False) and A_full is not None
+        A_full = config.get("true_dag")
+        has_ground_truth = config.get("has_true_dag", False) and A_full is not None
         print(f"Dataset: {args.dataset} ({X.shape[0]} samples, {args.n_vars} vars)")
     else:
         has_ground_truth = True
         X, Y, A_true, A_full = generate_classification_data(
-            args.n_vars, args.n_samples, args.expected_degree,
-            args.noise_scale, args.seed,
+            args.n_vars,
+            args.n_samples,
+            args.expected_degree,
+            args.noise_scale,
+            args.seed,
         )
-        print(f"Data: {args.n_samples} samples, {args.n_vars} vars, "
-              f"ER-{args.expected_degree}, noise={args.noise_scale}")
+        print(
+            f"Data: {args.n_samples} samples, {args.n_vars} vars, "
+            f"ER-{args.expected_degree}, noise={args.noise_scale}"
+        )
 
     print(f"Budget: {args.n_trials} trials x {args.max_iter} iters")
 
     if has_ground_truth:
         if args.dataset:
-            A_true = np.array(A_full)[:args.n_vars, :args.n_vars]
+            A_true = np.array(A_full)[: args.n_vars, : args.n_vars]
         n_edges = int(np.sum(np.abs(A_true) > 1e-6))
         Y_idx = args.n_vars
         true_ates = compute_ground_truth_ates(A_full, Y_idx, args.n_vars)
@@ -610,57 +643,64 @@ def main():
     r_a = run_pipeline_a(X, Y, args.n_vars, A_full, true_ates, true_mb, args.seed)
     all_results.append(r_a)
 
-    r_b = run_pipeline_b(X, Y, args.n_vars, A_full, true_ates, true_mb,
-                         args.n_trials, args.max_iter, args.seed)
+    r_b = run_pipeline_b(
+        X, Y, args.n_vars, A_full, true_ates, true_mb, args.n_trials, args.max_iter, args.seed
+    )
     all_results.append(r_b)
 
-    r_u = run_jcce_unified(X, Y, args.n_vars, A_full, true_ates, true_mb,
-                           args.n_trials, args.max_iter, args.seed)
+    r_u = run_jcce_unified(
+        X, Y, args.n_vars, A_full, true_ates, true_mb, args.n_trials, args.max_iter, args.seed
+    )
     all_results.append(r_u)
 
     # Summary table
     print(f"\n{'=' * 70}")
-    print(f"COMPARISON SUMMARY\n")
-    print(f"{'Method':<30} {'SHD':>5} {'F1':>6} {'BAcc':>6} "
-          f"{'MB_F1':>6} {'PEHE':>8} {'ATEErr':>8} {'Time':>7}")
-    print(f"{'-' * 30} {'-' * 5} {'-' * 6} {'-' * 6} "
-          f"{'-' * 6} {'-' * 8} {'-' * 8} {'-' * 7}")
+    print("COMPARISON SUMMARY\n")
+    print(
+        f"{'Method':<30} {'SHD':>5} {'F1':>6} {'BAcc':>6} "
+        f"{'MB_F1':>6} {'PEHE':>8} {'ATEErr':>8} {'Time':>7}"
+    )
+    print(f"{'-' * 30} {'-' * 5} {'-' * 6} {'-' * 6} {'-' * 6} {'-' * 8} {'-' * 8} {'-' * 7}")
 
     for r in all_results:
-        pehe_str = f"{r['pehe']:>8.4f}" if r['pehe'] < float('inf') else "     inf"
-        ate_str = f"{r['mean_ate_error']:>8.4f}" if r['mean_ate_error'] < float('inf') else "     inf"
-        print(f"{r['method']:<30} {r['shd']:>5} {r['struct_f1']:>6.3f} "
-              f"{r['bacc']:>6.3f} {r['mb_f1']:>6.3f} "
-              f"{pehe_str} {ate_str} {r['time']:>7.1f}")
+        pehe_str = f"{r['pehe']:>8.4f}" if r["pehe"] < float("inf") else "     inf"
+        ate_str = (
+            f"{r['mean_ate_error']:>8.4f}" if r["mean_ate_error"] < float("inf") else "     inf"
+        )
+        print(
+            f"{r['method']:<30} {r['shd']:>5} {r['struct_f1']:>6.3f} "
+            f"{r['bacc']:>6.3f} {r['mb_f1']:>6.3f} "
+            f"{pehe_str} {ate_str} {r['time']:>7.1f}"
+        )
 
     # Analysis
-    print(f"\nAnalysis:")
-    unified = next((r for r in all_results if 'Unified' in r['method']), None)
+    print("\nAnalysis:")
+    unified = next((r for r in all_results if "Unified" in r["method"]), None)
     if unified:
         for r in all_results:
-            if 'Unified' not in r['method']:
-                delta_bacc = unified['bacc'] - r['bacc']
-                delta_f1 = unified['struct_f1'] - r['struct_f1']
-                print(f"  Unified vs {r['method']}: "
-                      f"ΔBAcc={delta_bacc:+.3f} ΔF1={delta_f1:+.3f}")
-                if r['pehe'] < float('inf') and unified['pehe'] < float('inf'):
-                    delta_pehe = unified['pehe'] - r['pehe']
-                    print(f"    ΔPEHE={delta_pehe:+.4f} "
-                          f"({'better' if delta_pehe < 0 else 'worse'})")
+            if "Unified" not in r["method"]:
+                delta_bacc = unified["bacc"] - r["bacc"]
+                delta_f1 = unified["struct_f1"] - r["struct_f1"]
+                print(f"  Unified vs {r['method']}: ΔBAcc={delta_bacc:+.3f} ΔF1={delta_f1:+.3f}")
+                if r["pehe"] < float("inf") and unified["pehe"] < float("inf"):
+                    delta_pehe = unified["pehe"] - r["pehe"]
+                    print(
+                        f"    ΔPEHE={delta_pehe:+.4f} ({'better' if delta_pehe < 0 else 'worse'})"
+                    )
 
     # Save results
     if args.output:
         output = {
-            'args': vars(args),
-            'n_edges': n_edges,
-            'true_mb': true_mb,
-            'true_ates': {str(k): v for k, v in true_ates.items()},
-            'results': all_results,
+            "args": vars(args),
+            "n_edges": n_edges,
+            "true_mb": true_mb,
+            "true_ates": {str(k): v for k, v in true_ates.items()},
+            "results": all_results,
         }
-        with open(args.output, 'w') as f:
+        with open(args.output, "w") as f:
             json.dump(output, f, indent=2, default=str)
         print(f"\nResults saved to {args.output}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

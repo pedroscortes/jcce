@@ -17,14 +17,16 @@ Key references:
 - Schwarz (1978) "Estimating the Dimension of a Model" (BIC)
 """
 
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 import numpy as np
-from typing import List, Tuple, Optional, Callable, Dict, Any
-from dataclasses import dataclass, field
 
 try:
     import jax
     import jax.numpy as jnp
     from jax import random as jax_random
+
     HAS_JAX = True
 except ImportError:
     HAS_JAX = False
@@ -33,6 +35,7 @@ except ImportError:
 # =============================================================================
 # 1. Condition Number of MB Design Matrix
 # =============================================================================
+
 
 def compute_mb_condition_number(X: np.ndarray, mb_indices: List[int]) -> float:
     """
@@ -66,6 +69,7 @@ def compute_mb_condition_number(X: np.ndarray, mb_indices: List[int]) -> float:
 # 2. SVD Diagnostics
 # =============================================================================
 
+
 def compute_svd_diagnostics(
     X: np.ndarray,
     mb_indices: List[int],
@@ -89,11 +93,11 @@ def compute_svd_diagnostics(
     """
     if len(mb_indices) == 0:
         return {
-            'singular_values': np.array([]),
-            'condition_number': 1.0,
-            'near_collinear_pairs': [],
-            'variance_explained_ratio': np.array([]),
-            'effective_rank': 0,
+            "singular_values": np.array([]),
+            "condition_number": 1.0,
+            "near_collinear_pairs": [],
+            "variance_explained_ratio": np.array([]),
+            "effective_rank": 0,
         }
 
     X_mb = np.asarray(X)[:, mb_indices]
@@ -110,8 +114,8 @@ def compute_svd_diagnostics(
     condition_number = float(singular_values[0] / (singular_values[-1] + 1e-10))
 
     # Variance explained
-    total_var = np.sum(singular_values ** 2)
-    variance_explained_ratio = (singular_values ** 2) / (total_var + 1e-10)
+    total_var = np.sum(singular_values**2)
+    variance_explained_ratio = (singular_values**2) / (total_var + 1e-10)
 
     # Effective rank: count singular values > 1% of max
     threshold = 0.01 * singular_values[0]
@@ -129,24 +133,27 @@ def compute_svd_diagnostics(
             for j in range(i + 1, n_mb):
                 corr = abs(corr_matrix[i, j])
                 if corr > 0.9:  # High correlation threshold
-                    near_collinear_pairs.append((
-                        feature_names[i] if i < len(feature_names) else f"X{mb_indices[i]}",
-                        feature_names[j] if j < len(feature_names) else f"X{mb_indices[j]}",
-                        float(corr),
-                    ))
+                    near_collinear_pairs.append(
+                        (
+                            feature_names[i] if i < len(feature_names) else f"X{mb_indices[i]}",
+                            feature_names[j] if j < len(feature_names) else f"X{mb_indices[j]}",
+                            float(corr),
+                        )
+                    )
 
     return {
-        'singular_values': singular_values,
-        'condition_number': condition_number,
-        'near_collinear_pairs': near_collinear_pairs,
-        'variance_explained_ratio': variance_explained_ratio,
-        'effective_rank': effective_rank,
+        "singular_values": singular_values,
+        "condition_number": condition_number,
+        "near_collinear_pairs": near_collinear_pairs,
+        "variance_explained_ratio": variance_explained_ratio,
+        "effective_rank": effective_rank,
     }
 
 
 # =============================================================================
 # 3. Hutchinson Trace Estimator for EDF
 # =============================================================================
+
 
 def hutchinson_edf(
     predict_fn: Callable,
@@ -207,6 +214,7 @@ def hutchinson_edf(
 # 4. BIC Variants
 # =============================================================================
 
+
 def compute_simple_bic(
     residuals: np.ndarray,
     n_params: int,
@@ -229,7 +237,7 @@ def compute_simple_bic(
     n_samples = max(n_samples, 1)
     n_params = max(n_params, 1)
 
-    rss = np.sum(residuals ** 2)
+    rss = np.sum(residuals**2)
     # Avoid log(0)
     rss_per_n = max(rss / n_samples, 1e-20)
 
@@ -262,7 +270,7 @@ def compute_neural_bic(
     n_samples = max(n_samples, 1)
     edf = max(edf, 1.0)
 
-    rss = np.sum(residuals ** 2)
+    rss = np.sum(residuals**2)
     rss_per_n = max(rss / n_samples, 1e-20)
 
     return float(n_samples * np.log(rss_per_n) + edf * np.log(n_samples))
@@ -272,7 +280,7 @@ def compute_bic_for_dag(
     X: np.ndarray,
     A: np.ndarray,
     processors: Any = None,
-    processor_type: str = 'linear',
+    processor_type: str = "linear",
     predict_fn: Optional[Callable] = None,
     key: Any = None,
 ) -> float:
@@ -309,7 +317,7 @@ def compute_bic_for_dag(
     # Count edges as base parameter count
     n_edges = int(np.sum(np.abs(A) > 1e-6))
 
-    if processor_type == 'linear' or predict_fn is None:
+    if processor_type == "linear" or predict_fn is None:
         return compute_simple_bic(residuals, n_edges, n_samples)
     else:
         # Neural processor: use Hutchinson EDF
@@ -328,6 +336,7 @@ def compute_bic_for_dag(
 # =============================================================================
 # 5. D-Optimality Penalty (JAX-differentiable)
 # =============================================================================
+
 
 def d_optimality_penalty(X_mb_jax: Any) -> Any:
     """
@@ -368,6 +377,7 @@ def d_optimality_penalty(X_mb_jax: Any) -> Any:
 # 6. Identifiability Report
 # =============================================================================
 
+
 @dataclass
 class IdentifiabilityReport:
     """Structured identifiability diagnostics for a single DAG."""
@@ -396,13 +406,15 @@ class IdentifiabilityReport:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            'condition_number': self.condition_number,
-            'singular_values': self.singular_values.tolist() if isinstance(self.singular_values, np.ndarray) else list(self.singular_values),
-            'effective_rank': self.effective_rank,
-            'near_collinear_pairs': self.near_collinear_pairs,
-            'bic': self.bic,
-            'edf': self.edf,
-            'identifiability_grade': self.identifiability_grade,
+            "condition_number": self.condition_number,
+            "singular_values": self.singular_values.tolist()
+            if isinstance(self.singular_values, np.ndarray)
+            else list(self.singular_values),
+            "effective_rank": self.effective_rank,
+            "near_collinear_pairs": self.near_collinear_pairs,
+            "bic": self.bic,
+            "edf": self.edf,
+            "identifiability_grade": self.identifiability_grade,
         }
 
     def summary(self) -> str:
@@ -427,7 +439,7 @@ def compute_full_identifiability_report(
     mb_indices: List[int],
     feature_names: Optional[List[str]] = None,
     processors: Any = None,
-    processor_type: str = 'linear',
+    processor_type: str = "linear",
     predict_fn: Optional[Callable] = None,
     key: Any = None,
 ) -> IdentifiabilityReport:
@@ -459,7 +471,8 @@ def compute_full_identifiability_report(
 
     # BIC
     bic = compute_bic_for_dag(
-        X, A,
+        X,
+        A,
         processors=processors,
         processor_type=processor_type,
         predict_fn=predict_fn,
@@ -468,7 +481,7 @@ def compute_full_identifiability_report(
 
     # EDF for neural processors
     edf = None
-    if processor_type != 'linear' and predict_fn is not None and HAS_JAX:
+    if processor_type != "linear" and predict_fn is not None and HAS_JAX:
         try:
             X_jax = jnp.asarray(X)
             edf = hutchinson_edf(predict_fn, X_jax, n_probes=5, key=key)
@@ -476,10 +489,10 @@ def compute_full_identifiability_report(
             pass
 
     return IdentifiabilityReport(
-        condition_number=svd_diag['condition_number'],
-        singular_values=svd_diag['singular_values'],
-        effective_rank=svd_diag['effective_rank'],
-        near_collinear_pairs=svd_diag['near_collinear_pairs'],
+        condition_number=svd_diag["condition_number"],
+        singular_values=svd_diag["singular_values"],
+        effective_rank=svd_diag["effective_rank"],
+        near_collinear_pairs=svd_diag["near_collinear_pairs"],
         bic=bic,
         edf=edf,
     )
@@ -488,6 +501,7 @@ def compute_full_identifiability_report(
 # =============================================================================
 # 7. Identifiability Summary (Cross-DAG)
 # =============================================================================
+
 
 @dataclass
 class IdentifiabilitySummary:
@@ -521,15 +535,15 @@ class IdentifiabilitySummary:
         bics = self.bic_values
         kappas = self.condition_numbers
         return {
-            'n_dags': self.n_dags,
-            'bic_best': float(np.min(bics)) if len(bics) > 0 else float('nan'),
-            'bic_median': float(np.median(bics)) if len(bics) > 0 else float('nan'),
-            'bic_worst': float(np.max(bics)) if len(bics) > 0 else float('nan'),
-            'condition_number_mean': float(np.mean(kappas)) if len(kappas) > 0 else float('nan'),
-            'condition_number_max': float(np.max(kappas)) if len(kappas) > 0 else float('nan'),
-            'grades': self.grades,
-            'best_bic_dag_idx': self.best_bic_idx,
-            'per_dag': [r.to_dict() for r in self.reports],
+            "n_dags": self.n_dags,
+            "bic_best": float(np.min(bics)) if len(bics) > 0 else float("nan"),
+            "bic_median": float(np.median(bics)) if len(bics) > 0 else float("nan"),
+            "bic_worst": float(np.max(bics)) if len(bics) > 0 else float("nan"),
+            "condition_number_mean": float(np.mean(kappas)) if len(kappas) > 0 else float("nan"),
+            "condition_number_max": float(np.max(kappas)) if len(kappas) > 0 else float("nan"),
+            "grades": self.grades,
+            "best_bic_dag_idx": self.best_bic_idx,
+            "per_dag": [r.to_dict() for r in self.reports],
         }
 
     def summary(self) -> str:
@@ -549,7 +563,7 @@ class IdentifiabilitySummary:
             f"   BIC landscape: best={np.min(bics):.1f}, median={np.median(bics):.1f}, worst={np.max(bics):.1f}",
             f"   Best BIC DAG: #{self.best_bic_idx}",
             f"   Condition numbers: mean={np.mean(kappas):.1f}, max={np.max(kappas):.1f}",
-            f"   Grades: " + ", ".join(f"{g}={c}" for g, c in sorted(grade_counts.items())),
+            "   Grades: " + ", ".join(f"{g}={c}" for g, c in sorted(grade_counts.items())),
         ]
 
         # Collinear features across DAGs

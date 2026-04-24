@@ -11,27 +11,45 @@ NO VAE components - direct classification on Markov Blanket features.
 Total genome components: ~33 (original 30 + 3 L genes)
 """
 
-import jax
+from dataclasses import dataclass
+from typing import Any, Dict, Optional, Tuple
+
 import jax.numpy as jnp
 from jax import random
-from typing import Tuple, Dict, Any, List, Optional
-from dataclasses import dataclass
 
-from .memetic_utils import is_dag, make_dag, crossover, mutate
+from .memetic_utils import crossover, mutate
 
 # Import processor options from MA-Full
 from .memetic_utils_full import (
+    ELM_ACTIVATIONS,
+    ELM_HIDDEN_DIMS,
+    ELM_N_HIDDEN_NODES,
+    GNN_AGGREGATIONS,
+    GNN_HIDDEN_DIMS,
+    GNN_N_LAYERS,
+    GNN_TYPES,
+    GRU_BIDIRECTIONALS,
+    GRU_DROPOUTS,
+    GRU_HIDDEN_SIZES,
+    GRU_N_LAYERS,
+    LSTM_BIDIRECTIONALS,
+    LSTM_DROPOUTS,
+    LSTM_HIDDEN_SIZES,
+    LSTM_N_LAYERS,
+    MAMBA_D_CONVS,
+    MAMBA_D_MODELS,
+    MAMBA_D_STATES,
+    MAMBA_EXPANDS,
+    PROCESSOR_BATCH_SIZES,
+    PROCESSOR_EPOCHS,
+    PROCESSOR_LRS,
     PROCESSOR_TYPES,
     STRUCTURE_ALGORITHMS,
-    MAMBA_D_MODELS, MAMBA_D_STATES, MAMBA_D_CONVS, MAMBA_EXPANDS,
-    TRANSFORMER_D_MODELS, TRANSFORMER_N_HEADS, TRANSFORMER_N_LAYERS, TRANSFORMER_D_FFS,
-    LSTM_HIDDEN_SIZES, LSTM_N_LAYERS, LSTM_BIDIRECTIONALS, LSTM_DROPOUTS,
-    GRU_HIDDEN_SIZES, GRU_N_LAYERS, GRU_BIDIRECTIONALS, GRU_DROPOUTS,
-    GNN_HIDDEN_DIMS, GNN_N_LAYERS, GNN_TYPES, GNN_AGGREGATIONS,
-    ELM_HIDDEN_DIMS, ELM_N_HIDDEN_NODES, ELM_ACTIVATIONS,
-    PROCESSOR_LRS, PROCESSOR_EPOCHS, PROCESSOR_BATCH_SIZES,
+    TRANSFORMER_D_FFS,
+    TRANSFORMER_D_MODELS,
+    TRANSFORMER_N_HEADS,
+    TRANSFORMER_N_LAYERS,
 )
-
 
 # ============================================================================
 # Latent Confounder (L) Hyperparameter Options
@@ -47,6 +65,7 @@ WARM_START_L_ITERS = [10, 15, 20, 30]  # Iterations before activating L
 # ============================================================================
 # C-Lite Genome
 # ============================================================================
+
 
 @dataclass
 class MACliteGenome:
@@ -67,10 +86,10 @@ class MACliteGenome:
     A_topology: jnp.ndarray  # Binary adjacency matrix (n_vars, n_vars)
 
     # ========== Components 2-5: Structure Learning Hyperparameters ==========
-    sl_algorithm_idx: int    # Index into STRUCTURE_ALGORITHMS (0=NOTEARS, 1=GOLEM, 2=DAGMA)
-    sl_lambda_1_idx: int     # Index into lambda_1 range [0.01, 0.5]
-    sl_lambda_2_idx: int     # Index into lambda_2 range [0.0001, 0.01]
-    sl_lr_idx: int           # Index into learning rate range [0.001, 0.01]
+    sl_algorithm_idx: int  # Index into STRUCTURE_ALGORITHMS (0=NOTEARS, 1=GOLEM, 2=DAGMA)
+    sl_lambda_1_idx: int  # Index into lambda_1 range [0.01, 0.5]
+    sl_lambda_2_idx: int  # Index into lambda_2 range [0.0001, 0.01]
+    sl_lr_idx: int  # Index into learning rate range [0.001, 0.01]
 
     # ========== Component 6: Processor Type Selector ==========
     processor_type_idx: int  # Index into PROCESSOR_TYPES
@@ -117,31 +136,32 @@ class MACliteGenome:
     processor_batch_size_idx: int
 
     # ========== Components 31-34: v6.0 Latent Confounder (L) Hyperparameters ==========
-    latent_rank_k_idx: int = 2       # Index into LATENT_RANK_K (default: k=5)
-    lambda_L_idx: int = 2            # Index into LAMBDA_L (default: 0.05)
-    lambda_bow_idx: int = 2          # Index into LAMBDA_BOW (default: 0.1)
+    latent_rank_k_idx: int = 2  # Index into LATENT_RANK_K (default: k=5)
+    lambda_L_idx: int = 2  # Index into LAMBDA_L (default: 0.05)
+    lambda_bow_idx: int = 2  # Index into LAMBDA_BOW (default: 0.1)
     warm_start_L_iters_idx: int = 1  # Index into WARM_START_L_ITERS (default: 15)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert genome to dictionary for logging."""
         return {
-            'topology_edges': int(jnp.sum(self.A_topology)),
-            'sl_algorithm': STRUCTURE_ALGORITHMS[int(self.sl_algorithm_idx)],
-            'sl_lambda_1_idx': int(self.sl_lambda_1_idx),
-            'sl_lambda_2_idx': int(self.sl_lambda_2_idx),
-            'sl_lr_idx': int(self.sl_lr_idx),
-            'processor_type': PROCESSOR_TYPES[int(self.processor_type_idx)],
+            "topology_edges": int(jnp.sum(self.A_topology)),
+            "sl_algorithm": STRUCTURE_ALGORITHMS[int(self.sl_algorithm_idx)],
+            "sl_lambda_1_idx": int(self.sl_lambda_1_idx),
+            "sl_lambda_2_idx": int(self.sl_lambda_2_idx),
+            "sl_lr_idx": int(self.sl_lr_idx),
+            "processor_type": PROCESSOR_TYPES[int(self.processor_type_idx)],
             # Latent confounder genes
-            'latent_rank_k': LATENT_RANK_K[int(self.latent_rank_k_idx)],
-            'lambda_L': LAMBDA_L[int(self.lambda_L_idx)],
-            'lambda_bow': LAMBDA_BOW[int(self.lambda_bow_idx)],
-            'warm_start_L_iters': WARM_START_L_ITERS[int(self.warm_start_L_iters_idx)],
+            "latent_rank_k": LATENT_RANK_K[int(self.latent_rank_k_idx)],
+            "lambda_L": LAMBDA_L[int(self.lambda_L_idx)],
+            "lambda_bow": LAMBDA_BOW[int(self.lambda_bow_idx)],
+            "warm_start_L_iters": WARM_START_L_ITERS[int(self.warm_start_L_iters_idx)],
         }
 
 
 # ============================================================================
 # Genome Initialization
 # ============================================================================
+
 
 def initialize_genome_clite(
     n_vars: int,
@@ -167,6 +187,7 @@ def initialize_genome_clite(
 
     # Generate random DAG topology
     from .memetic_utils import random_dag
+
     key, subkey = random.split(key)
     A_topology = random_dag(n_vars, edge_prob=edge_prob, key=subkey)
 
@@ -306,11 +327,14 @@ def initialize_genome_clite(
 # Genome Conversion Functions
 # ============================================================================
 
+
 def genome_to_sl_config_clite(genome: MACliteGenome) -> Dict[str, float]:
     """Convert genome to structure learning configuration."""
     # Lambda 1: [0.1, 2.0] with 10 discrete levels - INCREASED for stronger sparsity
     lambda_1_range = jnp.array([0.1, 2.0])  # Was [0.01, 0.5]
-    lambda_1 = lambda_1_range[0] + (genome.sl_lambda_1_idx / 9) * (lambda_1_range[1] - lambda_1_range[0])
+    lambda_1 = lambda_1_range[0] + (genome.sl_lambda_1_idx / 9) * (
+        lambda_1_range[1] - lambda_1_range[0]
+    )
 
     # Lambda 2: [0.001, 0.1] with log spacing - INCREASED for stronger acyclicity
     lambda_2_values = jnp.logspace(-3, -1, 10)  # Was logspace(-4, -2, 10)
@@ -321,9 +345,9 @@ def genome_to_sl_config_clite(genome: MACliteGenome) -> Dict[str, float]:
     lr = lr_range[0] + (genome.sl_lr_idx / 9) * (lr_range[1] - lr_range[0])
 
     return {
-        'lambda_1': float(lambda_1),
-        'lambda_2': float(lambda_2),
-        'learning_rate': float(lr),
+        "lambda_1": float(lambda_1),
+        "lambda_2": float(lambda_2),
+        "learning_rate": float(lr),
     }
 
 
@@ -341,53 +365,65 @@ def genome_to_processor_config_clite(genome: MACliteGenome) -> Dict[str, Any]:
     processor_type = PROCESSOR_TYPES[int(genome.processor_type_idx)]
 
     config = {
-        'processor_type': processor_type,
-        'learning_rate': PROCESSOR_LRS[int(genome.processor_lr_idx)],
-        'epochs': PROCESSOR_EPOCHS[int(genome.processor_epochs_idx)],
-        'batch_size': PROCESSOR_BATCH_SIZES[int(genome.processor_batch_size_idx)],
+        "processor_type": processor_type,
+        "learning_rate": PROCESSOR_LRS[int(genome.processor_lr_idx)],
+        "epochs": PROCESSOR_EPOCHS[int(genome.processor_epochs_idx)],
+        "batch_size": PROCESSOR_BATCH_SIZES[int(genome.processor_batch_size_idx)],
     }
 
-    if processor_type == 'mamba':
-        config.update({
-            'd_model': MAMBA_D_MODELS[int(genome.mamba_d_model_idx)],
-            'd_state': MAMBA_D_STATES[int(genome.mamba_d_state_idx)],
-            'd_conv': MAMBA_D_CONVS[int(genome.mamba_d_conv_idx)],
-            'expand': MAMBA_EXPANDS[int(genome.mamba_expand_idx)],
-        })
-    elif processor_type == 'transformer':
-        config.update({
-            'd_model': TRANSFORMER_D_MODELS[int(genome.transformer_d_model_idx)],
-            'n_heads': TRANSFORMER_N_HEADS[int(genome.transformer_n_heads_idx)],
-            'n_layers': TRANSFORMER_N_LAYERS[int(genome.transformer_n_layers_idx)],
-            'd_ff': TRANSFORMER_D_FFS[int(genome.transformer_d_ff_idx)],
-        })
-    elif processor_type == 'lstm':
-        config.update({
-            'hidden_size': LSTM_HIDDEN_SIZES[int(genome.lstm_hidden_size_idx)],
-            'n_layers': LSTM_N_LAYERS[int(genome.lstm_n_layers_idx)],
-            'bidirectional': LSTM_BIDIRECTIONALS[int(genome.lstm_bidirectional_idx)],
-            'dropout': LSTM_DROPOUTS[int(genome.lstm_dropout_idx)],
-        })
-    elif processor_type == 'gru':
-        config.update({
-            'hidden_size': GRU_HIDDEN_SIZES[int(genome.gru_hidden_size_idx)],
-            'n_layers': GRU_N_LAYERS[int(genome.gru_n_layers_idx)],
-            'bidirectional': GRU_BIDIRECTIONALS[int(genome.gru_bidirectional_idx)],
-            'dropout': GRU_DROPOUTS[int(genome.gru_dropout_idx)],
-        })
-    elif processor_type == 'gnn':
-        config.update({
-            'hidden_dim': GNN_HIDDEN_DIMS[int(genome.gnn_hidden_dim_idx)],
-            'n_layers': GNN_N_LAYERS[int(genome.gnn_n_layers_idx)],
-            'gnn_type': GNN_TYPES[int(genome.gnn_type_idx)],
-            'aggregation': GNN_AGGREGATIONS[int(genome.gnn_aggregation_idx)],
-        })
-    elif processor_type == 'elm':
-        config.update({
-            'hidden_dim': ELM_HIDDEN_DIMS[int(genome.elm_hidden_dim_idx)],
-            'n_hidden_nodes': ELM_N_HIDDEN_NODES[int(genome.elm_n_hidden_nodes_idx)],
-            'activation': ELM_ACTIVATIONS[int(genome.elm_activation_idx)],
-        })
+    if processor_type == "mamba":
+        config.update(
+            {
+                "d_model": MAMBA_D_MODELS[int(genome.mamba_d_model_idx)],
+                "d_state": MAMBA_D_STATES[int(genome.mamba_d_state_idx)],
+                "d_conv": MAMBA_D_CONVS[int(genome.mamba_d_conv_idx)],
+                "expand": MAMBA_EXPANDS[int(genome.mamba_expand_idx)],
+            }
+        )
+    elif processor_type == "transformer":
+        config.update(
+            {
+                "d_model": TRANSFORMER_D_MODELS[int(genome.transformer_d_model_idx)],
+                "n_heads": TRANSFORMER_N_HEADS[int(genome.transformer_n_heads_idx)],
+                "n_layers": TRANSFORMER_N_LAYERS[int(genome.transformer_n_layers_idx)],
+                "d_ff": TRANSFORMER_D_FFS[int(genome.transformer_d_ff_idx)],
+            }
+        )
+    elif processor_type == "lstm":
+        config.update(
+            {
+                "hidden_size": LSTM_HIDDEN_SIZES[int(genome.lstm_hidden_size_idx)],
+                "n_layers": LSTM_N_LAYERS[int(genome.lstm_n_layers_idx)],
+                "bidirectional": LSTM_BIDIRECTIONALS[int(genome.lstm_bidirectional_idx)],
+                "dropout": LSTM_DROPOUTS[int(genome.lstm_dropout_idx)],
+            }
+        )
+    elif processor_type == "gru":
+        config.update(
+            {
+                "hidden_size": GRU_HIDDEN_SIZES[int(genome.gru_hidden_size_idx)],
+                "n_layers": GRU_N_LAYERS[int(genome.gru_n_layers_idx)],
+                "bidirectional": GRU_BIDIRECTIONALS[int(genome.gru_bidirectional_idx)],
+                "dropout": GRU_DROPOUTS[int(genome.gru_dropout_idx)],
+            }
+        )
+    elif processor_type == "gnn":
+        config.update(
+            {
+                "hidden_dim": GNN_HIDDEN_DIMS[int(genome.gnn_hidden_dim_idx)],
+                "n_layers": GNN_N_LAYERS[int(genome.gnn_n_layers_idx)],
+                "gnn_type": GNN_TYPES[int(genome.gnn_type_idx)],
+                "aggregation": GNN_AGGREGATIONS[int(genome.gnn_aggregation_idx)],
+            }
+        )
+    elif processor_type == "elm":
+        config.update(
+            {
+                "hidden_dim": ELM_HIDDEN_DIMS[int(genome.elm_hidden_dim_idx)],
+                "n_hidden_nodes": ELM_N_HIDDEN_NODES[int(genome.elm_n_hidden_nodes_idx)],
+                "activation": ELM_ACTIVATIONS[int(genome.elm_activation_idx)],
+            }
+        )
 
     return config
 
@@ -406,10 +442,10 @@ def genome_to_latent_config_clite(genome: MACliteGenome) -> Dict[str, Any]:
             - warm_start_L_iters: int (warm-start iterations)
     """
     return {
-        'latent_rank_k': LATENT_RANK_K[int(genome.latent_rank_k_idx)],
-        'lambda_L': LAMBDA_L[int(genome.lambda_L_idx)],
-        'lambda_bow': LAMBDA_BOW[int(genome.lambda_bow_idx)],
-        'warm_start_L_iters': WARM_START_L_ITERS[int(genome.warm_start_L_iters_idx)],
+        "latent_rank_k": LATENT_RANK_K[int(genome.latent_rank_k_idx)],
+        "lambda_L": LAMBDA_L[int(genome.lambda_L_idx)],
+        "lambda_bow": LAMBDA_BOW[int(genome.lambda_bow_idx)],
+        "warm_start_L_iters": WARM_START_L_ITERS[int(genome.warm_start_L_iters_idx)],
     }
 
 
@@ -417,10 +453,9 @@ def genome_to_latent_config_clite(genome: MACliteGenome) -> Dict[str, Any]:
 # Genetic Operators (Crossover & Mutation)
 # ============================================================================
 
+
 def crossover_clite(
-    parent1: MACliteGenome,
-    parent2: MACliteGenome,
-    key: random.PRNGKey
+    parent1: MACliteGenome, parent2: MACliteGenome, key: random.PRNGKey
 ) -> Tuple[MACliteGenome, MACliteGenome]:
     """
     Crossover two C-Lite genomes to create two offspring.
@@ -430,39 +465,91 @@ def crossover_clite(
     key, subkey1, subkey2 = random.split(key, 3)
 
     # Crossover graph topologies
-    A1_new, A2_new = crossover(parent1.A_topology, parent2.A_topology, subkey1, method='uniform')
+    A1_new, A2_new = crossover(parent1.A_topology, parent2.A_topology, subkey1, method="uniform")
 
     # Crossover all index-based components (uniform probability)
-    n_indices = 35  # Total indices (4 SL + 1 proc_type + 23 proc_params + 3 training params + 4 L genes)
+    n_indices = (
+        35  # Total indices (4 SL + 1 proc_type + 23 proc_params + 3 training params + 4 L genes)
+    )
     key, subkey = random.split(key)
     mask = random.bernoulli(subkey, p=0.5, shape=(n_indices,))
 
     # Extract all indices from both parents
     p1_indices = [
-        parent1.sl_algorithm_idx, parent1.sl_lambda_1_idx, parent1.sl_lambda_2_idx, parent1.sl_lr_idx,
+        parent1.sl_algorithm_idx,
+        parent1.sl_lambda_1_idx,
+        parent1.sl_lambda_2_idx,
+        parent1.sl_lr_idx,
         parent1.processor_type_idx,
-        parent1.mamba_d_model_idx, parent1.mamba_d_state_idx, parent1.mamba_d_conv_idx, parent1.mamba_expand_idx,
-        parent1.transformer_d_model_idx, parent1.transformer_n_heads_idx, parent1.transformer_n_layers_idx, parent1.transformer_d_ff_idx,
-        parent1.lstm_hidden_size_idx, parent1.lstm_n_layers_idx, parent1.lstm_bidirectional_idx, parent1.lstm_dropout_idx,
-        parent1.gru_hidden_size_idx, parent1.gru_n_layers_idx, parent1.gru_bidirectional_idx, parent1.gru_dropout_idx,
-        parent1.gnn_hidden_dim_idx, parent1.gnn_n_layers_idx, parent1.gnn_type_idx, parent1.gnn_aggregation_idx,
-        parent1.elm_hidden_dim_idx, parent1.elm_n_hidden_nodes_idx, parent1.elm_activation_idx,
-        parent1.processor_lr_idx, parent1.processor_epochs_idx, parent1.processor_batch_size_idx,
+        parent1.mamba_d_model_idx,
+        parent1.mamba_d_state_idx,
+        parent1.mamba_d_conv_idx,
+        parent1.mamba_expand_idx,
+        parent1.transformer_d_model_idx,
+        parent1.transformer_n_heads_idx,
+        parent1.transformer_n_layers_idx,
+        parent1.transformer_d_ff_idx,
+        parent1.lstm_hidden_size_idx,
+        parent1.lstm_n_layers_idx,
+        parent1.lstm_bidirectional_idx,
+        parent1.lstm_dropout_idx,
+        parent1.gru_hidden_size_idx,
+        parent1.gru_n_layers_idx,
+        parent1.gru_bidirectional_idx,
+        parent1.gru_dropout_idx,
+        parent1.gnn_hidden_dim_idx,
+        parent1.gnn_n_layers_idx,
+        parent1.gnn_type_idx,
+        parent1.gnn_aggregation_idx,
+        parent1.elm_hidden_dim_idx,
+        parent1.elm_n_hidden_nodes_idx,
+        parent1.elm_activation_idx,
+        parent1.processor_lr_idx,
+        parent1.processor_epochs_idx,
+        parent1.processor_batch_size_idx,
         # Latent confounder genes
-        parent1.latent_rank_k_idx, parent1.lambda_L_idx, parent1.lambda_bow_idx, parent1.warm_start_L_iters_idx,
+        parent1.latent_rank_k_idx,
+        parent1.lambda_L_idx,
+        parent1.lambda_bow_idx,
+        parent1.warm_start_L_iters_idx,
     ]
     p2_indices = [
-        parent2.sl_algorithm_idx, parent2.sl_lambda_1_idx, parent2.sl_lambda_2_idx, parent2.sl_lr_idx,
+        parent2.sl_algorithm_idx,
+        parent2.sl_lambda_1_idx,
+        parent2.sl_lambda_2_idx,
+        parent2.sl_lr_idx,
         parent2.processor_type_idx,
-        parent2.mamba_d_model_idx, parent2.mamba_d_state_idx, parent2.mamba_d_conv_idx, parent2.mamba_expand_idx,
-        parent2.transformer_d_model_idx, parent2.transformer_n_heads_idx, parent2.transformer_n_layers_idx, parent2.transformer_d_ff_idx,
-        parent2.lstm_hidden_size_idx, parent2.lstm_n_layers_idx, parent2.lstm_bidirectional_idx, parent2.lstm_dropout_idx,
-        parent2.gru_hidden_size_idx, parent2.gru_n_layers_idx, parent2.gru_bidirectional_idx, parent2.gru_dropout_idx,
-        parent2.gnn_hidden_dim_idx, parent2.gnn_n_layers_idx, parent2.gnn_type_idx, parent2.gnn_aggregation_idx,
-        parent2.elm_hidden_dim_idx, parent2.elm_n_hidden_nodes_idx, parent2.elm_activation_idx,
-        parent2.processor_lr_idx, parent2.processor_epochs_idx, parent2.processor_batch_size_idx,
+        parent2.mamba_d_model_idx,
+        parent2.mamba_d_state_idx,
+        parent2.mamba_d_conv_idx,
+        parent2.mamba_expand_idx,
+        parent2.transformer_d_model_idx,
+        parent2.transformer_n_heads_idx,
+        parent2.transformer_n_layers_idx,
+        parent2.transformer_d_ff_idx,
+        parent2.lstm_hidden_size_idx,
+        parent2.lstm_n_layers_idx,
+        parent2.lstm_bidirectional_idx,
+        parent2.lstm_dropout_idx,
+        parent2.gru_hidden_size_idx,
+        parent2.gru_n_layers_idx,
+        parent2.gru_bidirectional_idx,
+        parent2.gru_dropout_idx,
+        parent2.gnn_hidden_dim_idx,
+        parent2.gnn_n_layers_idx,
+        parent2.gnn_type_idx,
+        parent2.gnn_aggregation_idx,
+        parent2.elm_hidden_dim_idx,
+        parent2.elm_n_hidden_nodes_idx,
+        parent2.elm_activation_idx,
+        parent2.processor_lr_idx,
+        parent2.processor_epochs_idx,
+        parent2.processor_batch_size_idx,
         # Latent confounder genes
-        parent2.latent_rank_k_idx, parent2.lambda_L_idx, parent2.lambda_bow_idx, parent2.warm_start_L_iters_idx,
+        parent2.latent_rank_k_idx,
+        parent2.lambda_L_idx,
+        parent2.lambda_bow_idx,
+        parent2.warm_start_L_iters_idx,
     ]
 
     # Apply crossover mask
@@ -472,41 +559,89 @@ def crossover_clite(
     # Create child genomes
     child1 = MACliteGenome(
         A_topology=A1_new,
-        sl_algorithm_idx=c1_indices[0], sl_lambda_1_idx=c1_indices[1], sl_lambda_2_idx=c1_indices[2], sl_lr_idx=c1_indices[3],
+        sl_algorithm_idx=c1_indices[0],
+        sl_lambda_1_idx=c1_indices[1],
+        sl_lambda_2_idx=c1_indices[2],
+        sl_lr_idx=c1_indices[3],
         processor_type_idx=c1_indices[4],
-        mamba_d_model_idx=c1_indices[5], mamba_d_state_idx=c1_indices[6], mamba_d_conv_idx=c1_indices[7], mamba_expand_idx=c1_indices[8],
-        transformer_d_model_idx=c1_indices[9], transformer_n_heads_idx=c1_indices[10], transformer_n_layers_idx=c1_indices[11], transformer_d_ff_idx=c1_indices[12],
-        lstm_hidden_size_idx=c1_indices[13], lstm_n_layers_idx=c1_indices[14], lstm_bidirectional_idx=c1_indices[15], lstm_dropout_idx=c1_indices[16],
-        gru_hidden_size_idx=c1_indices[17], gru_n_layers_idx=c1_indices[18], gru_bidirectional_idx=c1_indices[19], gru_dropout_idx=c1_indices[20],
-        gnn_hidden_dim_idx=c1_indices[21], gnn_n_layers_idx=c1_indices[22], gnn_type_idx=c1_indices[23], gnn_aggregation_idx=c1_indices[24],
-        elm_hidden_dim_idx=c1_indices[25], elm_n_hidden_nodes_idx=c1_indices[26], elm_activation_idx=c1_indices[27],
-        processor_lr_idx=c1_indices[28], processor_epochs_idx=c1_indices[29], processor_batch_size_idx=c1_indices[30],
+        mamba_d_model_idx=c1_indices[5],
+        mamba_d_state_idx=c1_indices[6],
+        mamba_d_conv_idx=c1_indices[7],
+        mamba_expand_idx=c1_indices[8],
+        transformer_d_model_idx=c1_indices[9],
+        transformer_n_heads_idx=c1_indices[10],
+        transformer_n_layers_idx=c1_indices[11],
+        transformer_d_ff_idx=c1_indices[12],
+        lstm_hidden_size_idx=c1_indices[13],
+        lstm_n_layers_idx=c1_indices[14],
+        lstm_bidirectional_idx=c1_indices[15],
+        lstm_dropout_idx=c1_indices[16],
+        gru_hidden_size_idx=c1_indices[17],
+        gru_n_layers_idx=c1_indices[18],
+        gru_bidirectional_idx=c1_indices[19],
+        gru_dropout_idx=c1_indices[20],
+        gnn_hidden_dim_idx=c1_indices[21],
+        gnn_n_layers_idx=c1_indices[22],
+        gnn_type_idx=c1_indices[23],
+        gnn_aggregation_idx=c1_indices[24],
+        elm_hidden_dim_idx=c1_indices[25],
+        elm_n_hidden_nodes_idx=c1_indices[26],
+        elm_activation_idx=c1_indices[27],
+        processor_lr_idx=c1_indices[28],
+        processor_epochs_idx=c1_indices[29],
+        processor_batch_size_idx=c1_indices[30],
         # Latent confounder genes
-        latent_rank_k_idx=c1_indices[31], lambda_L_idx=c1_indices[32], lambda_bow_idx=c1_indices[33], warm_start_L_iters_idx=c1_indices[34],
+        latent_rank_k_idx=c1_indices[31],
+        lambda_L_idx=c1_indices[32],
+        lambda_bow_idx=c1_indices[33],
+        warm_start_L_iters_idx=c1_indices[34],
     )
 
     child2 = MACliteGenome(
         A_topology=A2_new,
-        sl_algorithm_idx=c2_indices[0], sl_lambda_1_idx=c2_indices[1], sl_lambda_2_idx=c2_indices[2], sl_lr_idx=c2_indices[3],
+        sl_algorithm_idx=c2_indices[0],
+        sl_lambda_1_idx=c2_indices[1],
+        sl_lambda_2_idx=c2_indices[2],
+        sl_lr_idx=c2_indices[3],
         processor_type_idx=c2_indices[4],
-        mamba_d_model_idx=c2_indices[5], mamba_d_state_idx=c2_indices[6], mamba_d_conv_idx=c2_indices[7], mamba_expand_idx=c2_indices[8],
-        transformer_d_model_idx=c2_indices[9], transformer_n_heads_idx=c2_indices[10], transformer_n_layers_idx=c2_indices[11], transformer_d_ff_idx=c2_indices[12],
-        lstm_hidden_size_idx=c2_indices[13], lstm_n_layers_idx=c2_indices[14], lstm_bidirectional_idx=c2_indices[15], lstm_dropout_idx=c2_indices[16],
-        gru_hidden_size_idx=c2_indices[17], gru_n_layers_idx=c2_indices[18], gru_bidirectional_idx=c2_indices[19], gru_dropout_idx=c2_indices[20],
-        gnn_hidden_dim_idx=c2_indices[21], gnn_n_layers_idx=c2_indices[22], gnn_type_idx=c2_indices[23], gnn_aggregation_idx=c2_indices[24],
-        elm_hidden_dim_idx=c2_indices[25], elm_n_hidden_nodes_idx=c2_indices[26], elm_activation_idx=c2_indices[27],
-        processor_lr_idx=c2_indices[28], processor_epochs_idx=c2_indices[29], processor_batch_size_idx=c2_indices[30],
+        mamba_d_model_idx=c2_indices[5],
+        mamba_d_state_idx=c2_indices[6],
+        mamba_d_conv_idx=c2_indices[7],
+        mamba_expand_idx=c2_indices[8],
+        transformer_d_model_idx=c2_indices[9],
+        transformer_n_heads_idx=c2_indices[10],
+        transformer_n_layers_idx=c2_indices[11],
+        transformer_d_ff_idx=c2_indices[12],
+        lstm_hidden_size_idx=c2_indices[13],
+        lstm_n_layers_idx=c2_indices[14],
+        lstm_bidirectional_idx=c2_indices[15],
+        lstm_dropout_idx=c2_indices[16],
+        gru_hidden_size_idx=c2_indices[17],
+        gru_n_layers_idx=c2_indices[18],
+        gru_bidirectional_idx=c2_indices[19],
+        gru_dropout_idx=c2_indices[20],
+        gnn_hidden_dim_idx=c2_indices[21],
+        gnn_n_layers_idx=c2_indices[22],
+        gnn_type_idx=c2_indices[23],
+        gnn_aggregation_idx=c2_indices[24],
+        elm_hidden_dim_idx=c2_indices[25],
+        elm_n_hidden_nodes_idx=c2_indices[26],
+        elm_activation_idx=c2_indices[27],
+        processor_lr_idx=c2_indices[28],
+        processor_epochs_idx=c2_indices[29],
+        processor_batch_size_idx=c2_indices[30],
         # Latent confounder genes
-        latent_rank_k_idx=c2_indices[31], lambda_L_idx=c2_indices[32], lambda_bow_idx=c2_indices[33], warm_start_L_iters_idx=c2_indices[34],
+        latent_rank_k_idx=c2_indices[31],
+        lambda_L_idx=c2_indices[32],
+        lambda_bow_idx=c2_indices[33],
+        warm_start_L_iters_idx=c2_indices[34],
     )
 
     return child1, child2
 
 
 def mutate_clite(
-    genome: MACliteGenome,
-    key: random.PRNGKey,
-    mutation_rate: float = 0.15
+    genome: MACliteGenome, key: random.PRNGKey, mutation_rate: float = 0.15
 ) -> MACliteGenome:
     """
     Mutate a C-Lite genome.
@@ -516,7 +651,7 @@ def mutate_clite(
     key, subkey = random.split(key)
 
     # Mutate graph topology
-    A_mutated = mutate(genome.A_topology, subkey, mutation_rate=mutation_rate, mutation_type='flip')
+    A_mutated = mutate(genome.A_topology, subkey, mutation_rate=mutation_rate, mutation_type="flip")
 
     # Mutate each index-based component
     def mutate_index(idx: int, max_val: int, key: random.PRNGKey) -> int:
@@ -550,11 +685,17 @@ def mutate_clite(
     mamba_expand_idx = mutate_index(genome.mamba_expand_idx, len(MAMBA_EXPANDS), subkey)
 
     key, subkey = random.split(key)
-    transformer_d_model_idx = mutate_index(genome.transformer_d_model_idx, len(TRANSFORMER_D_MODELS), subkey)
+    transformer_d_model_idx = mutate_index(
+        genome.transformer_d_model_idx, len(TRANSFORMER_D_MODELS), subkey
+    )
     key, subkey = random.split(key)
-    transformer_n_heads_idx = mutate_index(genome.transformer_n_heads_idx, len(TRANSFORMER_N_HEADS), subkey)
+    transformer_n_heads_idx = mutate_index(
+        genome.transformer_n_heads_idx, len(TRANSFORMER_N_HEADS), subkey
+    )
     key, subkey = random.split(key)
-    transformer_n_layers_idx = mutate_index(genome.transformer_n_layers_idx, len(TRANSFORMER_N_LAYERS), subkey)
+    transformer_n_layers_idx = mutate_index(
+        genome.transformer_n_layers_idx, len(TRANSFORMER_N_LAYERS), subkey
+    )
     key, subkey = random.split(key)
     transformer_d_ff_idx = mutate_index(genome.transformer_d_ff_idx, len(TRANSFORMER_D_FFS), subkey)
 
@@ -563,7 +704,9 @@ def mutate_clite(
     key, subkey = random.split(key)
     lstm_n_layers_idx = mutate_index(genome.lstm_n_layers_idx, len(LSTM_N_LAYERS), subkey)
     key, subkey = random.split(key)
-    lstm_bidirectional_idx = mutate_index(genome.lstm_bidirectional_idx, len(LSTM_BIDIRECTIONALS), subkey)
+    lstm_bidirectional_idx = mutate_index(
+        genome.lstm_bidirectional_idx, len(LSTM_BIDIRECTIONALS), subkey
+    )
     key, subkey = random.split(key)
     lstm_dropout_idx = mutate_index(genome.lstm_dropout_idx, len(LSTM_DROPOUTS), subkey)
 
@@ -572,7 +715,9 @@ def mutate_clite(
     key, subkey = random.split(key)
     gru_n_layers_idx = mutate_index(genome.gru_n_layers_idx, len(GRU_N_LAYERS), subkey)
     key, subkey = random.split(key)
-    gru_bidirectional_idx = mutate_index(genome.gru_bidirectional_idx, len(GRU_BIDIRECTIONALS), subkey)
+    gru_bidirectional_idx = mutate_index(
+        genome.gru_bidirectional_idx, len(GRU_BIDIRECTIONALS), subkey
+    )
     key, subkey = random.split(key)
     gru_dropout_idx = mutate_index(genome.gru_dropout_idx, len(GRU_DROPOUTS), subkey)
 
@@ -588,7 +733,9 @@ def mutate_clite(
     key, subkey = random.split(key)
     elm_hidden_dim_idx = mutate_index(genome.elm_hidden_dim_idx, len(ELM_HIDDEN_DIMS), subkey)
     key, subkey = random.split(key)
-    elm_n_hidden_nodes_idx = mutate_index(genome.elm_n_hidden_nodes_idx, len(ELM_N_HIDDEN_NODES), subkey)
+    elm_n_hidden_nodes_idx = mutate_index(
+        genome.elm_n_hidden_nodes_idx, len(ELM_N_HIDDEN_NODES), subkey
+    )
     key, subkey = random.split(key)
     elm_activation_idx = mutate_index(genome.elm_activation_idx, len(ELM_ACTIVATIONS), subkey)
 
@@ -597,7 +744,9 @@ def mutate_clite(
     key, subkey = random.split(key)
     processor_epochs_idx = mutate_index(genome.processor_epochs_idx, len(PROCESSOR_EPOCHS), subkey)
     key, subkey = random.split(key)
-    processor_batch_size_idx = mutate_index(genome.processor_batch_size_idx, len(PROCESSOR_BATCH_SIZES), subkey)
+    processor_batch_size_idx = mutate_index(
+        genome.processor_batch_size_idx, len(PROCESSOR_BATCH_SIZES), subkey
+    )
 
     # Mutate latent confounder genes
     key, subkey = random.split(key)
@@ -607,7 +756,9 @@ def mutate_clite(
     key, subkey = random.split(key)
     lambda_bow_idx = mutate_index(genome.lambda_bow_idx, len(LAMBDA_BOW), subkey)
     key, subkey = random.split(key)
-    warm_start_L_iters_idx = mutate_index(genome.warm_start_L_iters_idx, len(WARM_START_L_ITERS), subkey)
+    warm_start_L_iters_idx = mutate_index(
+        genome.warm_start_L_iters_idx, len(WARM_START_L_ITERS), subkey
+    )
 
     return MACliteGenome(
         A_topology=A_mutated,

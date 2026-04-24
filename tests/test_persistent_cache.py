@@ -8,14 +8,14 @@ Validates that:
 4. Subsequent JIT calls can reuse cached compilations
 """
 
+import os
+import sys
+import tempfile
+
 import jax
 import jax.numpy as jnp
-import tempfile
-import os
-import shutil
-import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jcce.utils.gpu_config import configure_jax_multi_gpu
 
@@ -47,8 +47,7 @@ def test_cache_dir_created():
         cache_path = os.path.join(tmpdir, "jax_cache_test")
         assert not os.path.exists(cache_path), "Cache dir should not exist yet"
 
-        configure_jax_multi_gpu(memory_fraction=0.9, preallocate=False,
-                                cache_dir=cache_path)
+        configure_jax_multi_gpu(memory_fraction=0.9, preallocate=False, cache_dir=cache_path)
 
         assert os.path.isdir(cache_path), f"Cache dir not created at {cache_path}"
         print(f"  Cache dir created: {cache_path}")
@@ -64,13 +63,12 @@ def test_jit_populates_cache():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         cache_path = os.path.join(tmpdir, "jax_cache_jit")
-        configure_jax_multi_gpu(memory_fraction=0.9, preallocate=False,
-                                cache_dir=cache_path)
+        configure_jax_multi_gpu(memory_fraction=0.9, preallocate=False, cache_dir=cache_path)
 
         # Define and run a JIT function to trigger compilation
         @jax.jit
         def f(x):
-            return jnp.sum(x ** 2 + jnp.sin(x))
+            return jnp.sum(x**2 + jnp.sin(x))
 
         x = jnp.ones(100)
         result = f(x)
@@ -99,8 +97,7 @@ def test_cache_reuse():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         cache_path = os.path.join(tmpdir, "jax_cache_reuse")
-        configure_jax_multi_gpu(memory_fraction=0.9, preallocate=False,
-                                cache_dir=cache_path)
+        configure_jax_multi_gpu(memory_fraction=0.9, preallocate=False, cache_dir=cache_path)
 
         @jax.jit
         def g(x, y):

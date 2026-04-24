@@ -11,10 +11,11 @@ Key idea: State space models with input-dependent (selective) parameters
 allow the model to selectively propagate or forget information.
 """
 
+import math
+
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-import math
 
 
 def selective_scan(u, delta, A, B, C, D):
@@ -63,10 +64,10 @@ def selective_scan(u, delta, A, B, C, D):
     # Discretize A and B using zero-order hold
     # Memory optimization: These einsums are fused by XLA, don't materialize full tensor
     # deltaA[b, l, d, n] = exp(delta[b, l, d] * A[d, n])
-    deltaA = jnp.exp(jnp.einsum('bld,dn->bldn', delta, A))
+    deltaA = jnp.exp(jnp.einsum("bld,dn->bldn", delta, A))
 
     # deltaB_u[b, l, d, n] = delta[b, l, d] * B[b, l, n] * u[b, l, d]
-    deltaB_u = jnp.einsum('bld,bln,bld->bldn', delta, B, u)
+    deltaB_u = jnp.einsum("bld,bln,bld->bldn", delta, B, u)
 
     # Selective scan (recurrent computation)
     # Memory-efficient: jax.lax.scan only stores current state, not full trajectory
@@ -75,7 +76,7 @@ def selective_scan(u, delta, A, B, C, D):
         # h_new[b, d, n] = deltaA_t[b, d, n] * h[b, d, n] + deltaB_u_t[b, d, n]
         h_new = deltaA_t * h + deltaB_u_t
         # y_t[b, d] = C_t[b, n] @ h_new[b, d, n]
-        y_t = jnp.einsum('bdn,bn->bd', h_new, C_t)
+        y_t = jnp.einsum("bdn,bn->bd", h_new, C_t)
         return h_new, y_t
 
     # Initial state
@@ -129,7 +130,7 @@ class MambaBlock(nn.Module):
             features=self.d_inner,
             kernel_size=(self.d_conv,),
             feature_group_count=self.d_inner,  # Depthwise
-            padding='VALID',
+            padding="VALID",
             use_bias=True,
         )
 
@@ -152,10 +153,10 @@ class MambaBlock(nn.Module):
             self.d_inner,
             axis=0,
         )
-        self.A_log = self.param('A_log', lambda key: jnp.log(A))
+        self.A_log = self.param("A_log", lambda key: jnp.log(A))
 
         # D: (d_inner,) skip connection
-        self.D = self.param('D', lambda key: jnp.ones(self.d_inner))
+        self.D = self.param("D", lambda key: jnp.ones(self.d_inner))
 
         # Output projection
         self.out_proj = nn.Dense(self.d_model, use_bias=False)
@@ -182,7 +183,7 @@ class MambaBlock(nn.Module):
         x_conv_input = jnp.pad(
             x_proj,
             ((0, 0), (self.d_conv - 1, 0), (0, 0)),  # Pad left for causal
-            mode='constant',
+            mode="constant",
         )
         x_conv = self.conv1d(x_conv_input)  # (batch, seq_len, d_inner)
         x_conv = nn.silu(x_conv)  # SiLU activation
@@ -278,7 +279,7 @@ class MambaProcessor(nn.Module):
                 d_state=self.d_state,
                 d_conv=self.d_conv,
                 expand=self.expand,
-                name=f'mamba_block_{i}'
+                name=f"mamba_block_{i}",
             )
             h = block(h) + h  # Residual connection
 

@@ -10,9 +10,10 @@ The key insight is that valid counterfactual explanations should only
 modify CAUSES of the target variable, not EFFECTS or unrelated features.
 """
 
-import numpy as np
-from typing import Set, List, Dict, Optional, Tuple, Callable
 from collections import deque
+from typing import Callable, Dict, List, Optional, Set, Tuple
+
+import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
 
@@ -112,11 +113,7 @@ def get_descendants(dag: np.ndarray, node: int, threshold: float = 0.1) -> Set[i
     return descendants
 
 
-def get_markov_blanket_from_dag(
-    dag: np.ndarray,
-    node: int,
-    threshold: float = 0.1
-) -> Set[int]:
+def get_markov_blanket_from_dag(dag: np.ndarray, node: int, threshold: float = 0.1) -> Set[int]:
     """
     Compute Markov Blanket from DAG structure.
 
@@ -225,12 +222,12 @@ def compute_causal_validity_score(
 
     total_penalty = 0.0
     details = {
-        'n_immutable_violations': 0,
-        'n_descendant_violations': 0,
-        'n_non_causal_violations': 0,
-        'n_valid_changes': 0,
-        'changed_features': [],
-        'violation_features': [],
+        "n_immutable_violations": 0,
+        "n_descendant_violations": 0,
+        "n_non_causal_violations": 0,
+        "n_valid_changes": 0,
+        "changed_features": [],
+        "violation_features": [],
     }
 
     for i in range(n_features):
@@ -238,34 +235,32 @@ def compute_causal_validity_score(
             continue  # Skip target variable
 
         if relative_changes[i] > change_threshold:
-            details['changed_features'].append(i)
+            details["changed_features"].append(i)
 
             if i in immutable_features:
                 # Heavy penalty for immutable
                 total_penalty += 100.0
-                details['n_immutable_violations'] += 1
-                details['violation_features'].append((i, 'immutable'))
+                details["n_immutable_violations"] += 1
+                details["violation_features"].append((i, "immutable"))
 
             elif i in descendants:
                 # Medium penalty for descendants (effects)
                 total_penalty += 10.0
-                details['n_descendant_violations'] += 1
-                details['violation_features'].append((i, 'descendant'))
+                details["n_descendant_violations"] += 1
+                details["violation_features"].append((i, "descendant"))
 
             elif i not in ancestors:
                 # Light penalty for non-causal features
                 total_penalty += 2.0
-                details['n_non_causal_violations'] += 1
-                details['violation_features'].append((i, 'non_causal'))
+                details["n_non_causal_violations"] += 1
+                details["violation_features"].append((i, "non_causal"))
 
             else:
                 # Valid change (ancestor)
-                details['n_valid_changes'] += 1
+                details["n_valid_changes"] += 1
 
-    details['total_changes'] = len(details['changed_features'])
-    details['validity_ratio'] = (
-        details['n_valid_changes'] / max(details['total_changes'], 1)
-    )
+    details["total_changes"] = len(details["changed_features"])
+    details["validity_ratio"] = details["n_valid_changes"] / max(details["total_changes"], 1)
 
     return total_penalty, details
 
@@ -305,7 +300,7 @@ def compute_actionability_proxy(
         Tuple of (proxy_score, details_dict)
     """
     if not markov_blanket:
-        return float('inf'), {'error': 'Empty Markov Blanket'}
+        return float("inf"), {"error": "Empty Markov Blanket"}
 
     # 1. Actionability ratio
     ancestors = get_ancestors(dag, target_idx, threshold)
@@ -316,11 +311,11 @@ def compute_actionability_proxy(
     actionability_ratio = len(actionable_mb) / len(markov_blanket)
 
     details = {
-        'actionability_ratio': actionability_ratio,
-        'n_actionable_features': len(actionable_mb),
-        'n_non_actionable_features': len(non_actionable_mb),
-        'actionable_features': list(actionable_mb),
-        'non_actionable_features': list(non_actionable_mb),
+        "actionability_ratio": actionability_ratio,
+        "n_actionable_features": len(actionable_mb),
+        "n_non_actionable_features": len(non_actionable_mb),
+        "actionable_features": list(actionable_mb),
+        "non_actionable_features": list(non_actionable_mb),
     }
 
     # Base proxy score (inverted actionability)
@@ -329,14 +324,12 @@ def compute_actionability_proxy(
     # 2. Optional: Average decision margin
     if X is not None and classifier is not None:
         try:
-            sample_idx = np.random.choice(
-                len(X), size=min(n_samples, len(X)), replace=False
-            )
+            sample_idx = np.random.choice(len(X), size=min(n_samples, len(X)), replace=False)
             X_sample = X[sample_idx]
 
-            if hasattr(classifier, 'decision_function'):
+            if hasattr(classifier, "decision_function"):
                 margins = np.abs(classifier.decision_function(X_sample))
-            elif hasattr(classifier, 'predict_proba'):
+            elif hasattr(classifier, "predict_proba"):
                 proba = classifier.predict_proba(X_sample)
                 if proba.shape[1] == 2:
                     margins = np.abs(proba[:, 1] - 0.5) * 2
@@ -347,19 +340,17 @@ def compute_actionability_proxy(
 
             if margins is not None:
                 avg_margin = np.mean(margins)
-                details['avg_decision_margin'] = float(avg_margin)
+                details["avg_decision_margin"] = float(avg_margin)
                 # Higher margin = harder to flip = worse actionability
                 proxy_score += 0.3 * avg_margin
 
         except Exception as e:
-            details['margin_error'] = str(e)
+            details["margin_error"] = str(e)
 
     # 3. Optional: Feature elasticity (how much Y changes with MB features)
     if X is not None and classifier is not None and actionable_mb:
         try:
-            sample_idx = np.random.choice(
-                len(X), size=min(n_samples, len(X)), replace=False
-            )
+            sample_idx = np.random.choice(len(X), size=min(n_samples, len(X)), replace=False)
             X_sample = X[sample_idx].copy()
 
             elasticities = []
@@ -371,7 +362,7 @@ def compute_actionability_proxy(
                 X_perturbed = X_sample.copy()
                 X_perturbed[:, feat_idx] += delta
 
-                if hasattr(classifier, 'predict_proba'):
+                if hasattr(classifier, "predict_proba"):
                     y_original = classifier.predict_proba(X_sample)[:, -1]
                     y_perturbed = classifier.predict_proba(X_perturbed)[:, -1]
                     elasticity = np.mean(np.abs(y_perturbed - y_original)) / delta
@@ -379,14 +370,14 @@ def compute_actionability_proxy(
 
             if elasticities:
                 avg_elasticity = np.mean(elasticities)
-                details['avg_elasticity'] = float(avg_elasticity)
+                details["avg_elasticity"] = float(avg_elasticity)
                 # Higher elasticity = easier to change Y = better actionability
                 proxy_score -= 0.1 * min(avg_elasticity, 1.0)
 
         except Exception as e:
-            details['elasticity_error'] = str(e)
+            details["elasticity_error"] = str(e)
 
-    details['proxy_score'] = float(proxy_score)
+    details["proxy_score"] = float(proxy_score)
     return float(proxy_score), details
 
 
@@ -421,38 +412,38 @@ def identify_intervention_targets(
 
     # Categorize all features
     categories = {
-        'direct_causes': [],      # Parents of Y - strongest intervention targets
-        'indirect_causes': [],    # Other ancestors - also valid
-        'effects': [],            # Descendants - should NOT modify
-        'non_causal': [],         # No path to/from Y
-        'immutable': [],          # Marked as immutable
+        "direct_causes": [],  # Parents of Y - strongest intervention targets
+        "indirect_causes": [],  # Other ancestors - also valid
+        "effects": [],  # Descendants - should NOT modify
+        "non_causal": [],  # No path to/from Y
+        "immutable": [],  # Marked as immutable
     }
 
     for i in range(n_features):
         if i == target_idx:
             continue
 
-        name = feature_names[i] if feature_names else f'X{i}'
+        name = feature_names[i] if feature_names else f"X{i}"
 
         if i in immutable_indices:
-            categories['immutable'].append((i, name))
+            categories["immutable"].append((i, name))
         elif i in parents:
-            categories['direct_causes'].append((i, name))
+            categories["direct_causes"].append((i, name))
         elif i in ancestors:
-            categories['indirect_causes'].append((i, name))
+            categories["indirect_causes"].append((i, name))
         elif i in descendants:
-            categories['effects'].append((i, name))
+            categories["effects"].append((i, name))
         else:
-            categories['non_causal'].append((i, name))
+            categories["non_causal"].append((i, name))
 
     return {
-        'categories': categories,
-        'n_actionable': len(categories['direct_causes']) + len(categories['indirect_causes']),
-        'n_non_actionable': len(categories['effects']) + len(categories['immutable']),
-        'recommendation': (
+        "categories": categories,
+        "n_actionable": len(categories["direct_causes"]) + len(categories["indirect_causes"]),
+        "n_non_actionable": len(categories["effects"]) + len(categories["immutable"]),
+        "recommendation": (
             f"Prioritize interventions on {len(categories['direct_causes'])} direct causes. "
             f"Avoid modifying {len(categories['effects'])} effect variables."
-        )
+        ),
     }
 
 
@@ -478,7 +469,7 @@ def compute_plausibility_score(
     x_cf = np.atleast_2d(x_counterfactual)
     k = min(k, X_train.shape[0])
 
-    nn = NearestNeighbors(n_neighbors=k, metric='euclidean')
+    nn = NearestNeighbors(n_neighbors=k, metric="euclidean")
     nn.fit(X_train)
     distances, indices = nn.kneighbors(x_cf)
 
@@ -495,11 +486,11 @@ def compute_plausibility_score(
     plausibility_ratio = avg_dist / max(baseline_avg, 1e-10)
 
     return avg_dist, {
-        'avg_knn_distance': avg_dist,
-        'min_knn_distance': min_dist,
-        'max_knn_distance': max_dist,
-        'baseline_avg_knn_distance': baseline_avg,
-        'plausibility_ratio': plausibility_ratio,
-        'is_plausible': plausibility_ratio < 2.0,  # Within 2x typical distance
-        'k': k,
+        "avg_knn_distance": avg_dist,
+        "min_knn_distance": min_dist,
+        "max_knn_distance": max_dist,
+        "baseline_avg_knn_distance": baseline_avg,
+        "plausibility_ratio": plausibility_ratio,
+        "is_plausible": plausibility_ratio < 2.0,  # Within 2x typical distance
+        "k": k,
     }

@@ -9,18 +9,18 @@ Validates that:
 5. DAGMA is faster than expm for various d
 """
 
+import os
+import sys
+import time
+
 import jax
 import jax.numpy as jnp
-import jax.scipy as jsp
-import time
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jcce.structure_learning.jcce_learner import (
-    dag_constraint,
     compute_dag_constraint_checkpointed,
+    dag_constraint,
 )
 
 
@@ -31,12 +31,14 @@ def test_dag_detection():
     print("=" * 60)
 
     # DAG: strictly lower triangular
-    A_dag = jnp.array([
-        [0.0, 0.0, 0.0, 0.0],
-        [0.5, 0.0, 0.0, 0.0],
-        [0.3, 0.7, 0.0, 0.0],
-        [0.0, 0.2, 0.4, 0.0],
-    ])
+    A_dag = jnp.array(
+        [
+            [0.0, 0.0, 0.0, 0.0],
+            [0.5, 0.0, 0.0, 0.0],
+            [0.3, 0.7, 0.0, 0.0],
+            [0.0, 0.2, 0.4, 0.0],
+        ]
+    )
     h_dag = dag_constraint(A_dag)
     print(f"  DAG (lower triangular): h = {h_dag:.8f}")
     assert h_dag < 1e-4, f"DAG should have h~0, got {h_dag}"
@@ -48,21 +50,25 @@ def test_dag_detection():
     assert h_empty < 1e-6, f"Empty graph should have h=0, got {h_empty}"
 
     # 2-cycle
-    A_cycle2 = jnp.array([
-        [0.0, 0.5, 0.0],
-        [0.5, 0.0, 0.0],
-        [0.0, 0.0, 0.0],
-    ])
+    A_cycle2 = jnp.array(
+        [
+            [0.0, 0.5, 0.0],
+            [0.5, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        ]
+    )
     h_cycle2 = dag_constraint(A_cycle2)
     print(f"  2-cycle (0↔1):          h = {h_cycle2:.4f}")
     assert h_cycle2 > 0.01, f"Cycle should have h>0, got {h_cycle2}"
 
     # 3-cycle
-    A_cycle3 = jnp.array([
-        [0.0, 0.5, 0.0],
-        [0.0, 0.0, 0.5],
-        [0.5, 0.0, 0.0],
-    ])
+    A_cycle3 = jnp.array(
+        [
+            [0.0, 0.5, 0.0],
+            [0.0, 0.0, 0.5],
+            [0.5, 0.0, 0.0],
+        ]
+    )
     h_cycle3 = dag_constraint(A_cycle3)
     print(f"  3-cycle (0→1→2→0):      h = {h_cycle3:.4f}")
     assert h_cycle3 > 0.01, f"Cycle should have h>0, got {h_cycle3}"
@@ -94,7 +100,9 @@ def test_agreement_with_expm():
         dagma_is_dag = float(h_dagma) < 0.1
         expm_is_dag = float(h_expm) < 0.1
 
-        print(f"  d={d:2d} DAG:   DAGMA h={float(h_dagma):.6f}  expm h={float(h_expm):.6f}  agree={dagma_is_dag == expm_is_dag}")
+        print(
+            f"  d={d:2d} DAG:   DAGMA h={float(h_dagma):.6f}  expm h={float(h_expm):.6f}  agree={dagma_is_dag == expm_is_dag}"
+        )
         assert dagma_is_dag == expm_is_dag, f"Disagreement on DAG at d={d}"
 
         # Generate cyclic graph
@@ -107,7 +115,9 @@ def test_agreement_with_expm():
         dagma_is_cyclic = float(h_dagma_c) > 0.1
         expm_is_cyclic = float(h_expm_c) > 0.1
 
-        print(f"  d={d:2d} cycle: DAGMA h={float(h_dagma_c):.4f}  expm h={float(h_expm_c):.4f}  agree={dagma_is_cyclic == expm_is_cyclic}")
+        print(
+            f"  d={d:2d} cycle: DAGMA h={float(h_dagma_c):.4f}  expm h={float(h_expm_c):.4f}  agree={dagma_is_cyclic == expm_is_cyclic}"
+        )
         assert dagma_is_cyclic == expm_is_cyclic, f"Disagreement on cycle at d={d}"
 
     print("  PASSED\n")
@@ -136,7 +146,9 @@ def test_gradient_quality():
         dagma_norm = float(jnp.linalg.norm(grad_dagma))
         expm_norm = float(jnp.linalg.norm(grad_expm))
 
-        print(f"  d={d:2d}: DAGMA grad norm={dagma_norm:.4f} (nan={dagma_has_nan}, inf={dagma_has_inf})")
+        print(
+            f"  d={d:2d}: DAGMA grad norm={dagma_norm:.4f} (nan={dagma_has_nan}, inf={dagma_has_inf})"
+        )
         print(f"        expm  grad norm={expm_norm:.4f} (nan={expm_has_nan}, inf={expm_has_inf})")
 
         assert not dagma_has_nan, f"DAGMA gradient has NaN at d={d}"
@@ -175,7 +187,7 @@ def test_jit_compatibility():
         A_test = A + jax.random.normal(jax.random.PRNGKey(i), A.shape) * 0.01
         loss = loss_fn(A_test)
 
-    print(f"  5 JIT'd calls completed")
+    print("  5 JIT'd calls completed")
     print("  PASSED\n")
 
 
@@ -213,8 +225,10 @@ def test_performance_comparison():
             expm_jit(A).block_until_ready()
         expm_time = (time.perf_counter() - t0) / n_runs
 
-        speedup = expm_time / dagma_time if dagma_time > 0 else float('inf')
-        print(f"  d={d:2d}: DAGMA={dagma_time*1000:.3f}ms  expm={expm_time*1000:.3f}ms  speedup={speedup:.2f}x")
+        speedup = expm_time / dagma_time if dagma_time > 0 else float("inf")
+        print(
+            f"  d={d:2d}: DAGMA={dagma_time * 1000:.3f}ms  expm={expm_time * 1000:.3f}ms  speedup={speedup:.2f}x"
+        )
 
     # Also benchmark gradients
     print("\n  Gradient computation:")
@@ -240,8 +254,10 @@ def test_performance_comparison():
             expm_grad_jit(A).block_until_ready()
         expm_grad_time = (time.perf_counter() - t0) / n_runs
 
-        speedup = expm_grad_time / dagma_grad_time if dagma_grad_time > 0 else float('inf')
-        print(f"  d={d:2d}: DAGMA grad={dagma_grad_time*1000:.3f}ms  expm grad={expm_grad_time*1000:.3f}ms  speedup={speedup:.2f}x")
+        speedup = expm_grad_time / dagma_grad_time if dagma_grad_time > 0 else float("inf")
+        print(
+            f"  d={d:2d}: DAGMA grad={dagma_grad_time * 1000:.3f}ms  expm grad={expm_grad_time * 1000:.3f}ms  speedup={speedup:.2f}x"
+        )
 
     print("  DONE\n")
 
@@ -285,7 +301,7 @@ def test_constraint_in_optimization():
     print("  PASSED\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("DAGMA CONSTRAINT VALIDATION TEST SUITE")
     print("=" * 60 + "\n")

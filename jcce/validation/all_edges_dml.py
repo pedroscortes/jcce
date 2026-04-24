@@ -18,12 +18,15 @@ References:
 - Benjamini & Hochberg (1995) "Controlling the False Discovery Rate"
 """
 
-import numpy as np
-from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
-from scipy import stats
-import warnings
+from typing import Dict, List, Optional, Tuple
 
+import numpy as np
+from scipy import stats
+
+from jcce.structure_learning.effect_estimation import (
+    compute_valid_adjustment_sets,
+)
 from jcce.validation.dml_crossfitting import (
     DMLCrossFitter,
     DMLResult,
@@ -34,15 +37,12 @@ from jcce.validation.refutation_suite import (
     RefutationSuiteResult,
     create_simple_effect_estimator,
 )
-from jcce.structure_learning.effect_estimation import (
-    compute_valid_adjustment_sets,
-    _get_descendants,
-)
 
 
 @dataclass
 class EdgeEffectResult:
     """DML + refutation result for a single edge i→j in the DAG."""
+
     source_idx: int
     target_idx: int
     source_name: Optional[str]
@@ -63,27 +63,28 @@ class EdgeEffectResult:
     def to_dict(self) -> Dict:
         ci = self.dml_result.confidence_interval(0.05)
         result = {
-            'source_idx': self.source_idx,
-            'target_idx': self.target_idx,
-            'source_name': self.source_name,
-            'target_name': self.target_name,
-            'edge_weight': self.edge_weight,
-            'ate_mean': self.dml_result.ate_mean,
-            'ate_std': self.dml_result.ate_std,
-            'ci_95_lower': ci[0],
-            'ci_95_upper': ci[1],
-            'p_value': self.p_value,
-            'is_significant': self.is_significant,
-            'is_significant_fdr': self.is_significant_fdr,
+            "source_idx": self.source_idx,
+            "target_idx": self.target_idx,
+            "source_name": self.source_name,
+            "target_name": self.target_name,
+            "edge_weight": self.edge_weight,
+            "ate_mean": self.dml_result.ate_mean,
+            "ate_std": self.dml_result.ate_std,
+            "ci_95_lower": ci[0],
+            "ci_95_upper": ci[1],
+            "p_value": self.p_value,
+            "is_significant": self.is_significant,
+            "is_significant_fdr": self.is_significant_fdr,
         }
         if self.refutation_result is not None:
-            result['refutation'] = self.refutation_result.to_dict()
+            result["refutation"] = self.refutation_result.to_dict()
         return result
 
 
 @dataclass
 class AllEdgesDMLResult:
     """Aggregated DML results for all edges in the learned DAG."""
+
     edge_results: List[EdgeEffectResult]
     n_edges: int = field(init=False)
     n_significant: int = field(init=False)
@@ -91,19 +92,15 @@ class AllEdgesDMLResult:
 
     def __post_init__(self):
         self.n_edges = len(self.edge_results)
-        self.n_significant = sum(
-            1 for r in self.edge_results if r.is_significant
-        )
-        self.n_significant_fdr = sum(
-            1 for r in self.edge_results if r.is_significant_fdr
-        )
+        self.n_significant = sum(1 for r in self.edge_results if r.is_significant)
+        self.n_significant_fdr = sum(1 for r in self.edge_results if r.is_significant_fdr)
 
     def to_dict(self) -> Dict:
         return {
-            'n_edges': self.n_edges,
-            'n_significant': self.n_significant,
-            'n_significant_fdr': self.n_significant_fdr,
-            'edge_effects': [r.to_dict() for r in self.edge_results],
+            "n_edges": self.n_edges,
+            "n_significant": self.n_significant,
+            "n_significant_fdr": self.n_significant_fdr,
+            "edge_effects": [r.to_dict() for r in self.edge_results],
         }
 
     def to_storage_dict(self) -> Dict:
@@ -112,25 +109,22 @@ class AllEdgesDMLResult:
         for r in self.edge_results:
             ci = r.dml_result.confidence_interval(0.05)
             edge_effects[r.edge_key] = {
-                'ate': r.dml_result.ate_mean,
-                'ci_95': [ci[0], ci[1]],
-                'p_value': r.p_value,
-                'sig': r.is_significant,
-                'sig_fdr': r.is_significant_fdr,
+                "ate": r.dml_result.ate_mean,
+                "ci_95": [ci[0], ci[1]],
+                "p_value": r.p_value,
+                "sig": r.is_significant,
+                "sig_fdr": r.is_significant_fdr,
             }
         return {
-            'n_edges': self.n_edges,
-            'n_significant': self.n_significant,
-            'n_significant_fdr': self.n_significant_fdr,
-            'edge_effects': edge_effects,
+            "n_edges": self.n_edges,
+            "n_significant": self.n_significant,
+            "n_significant_fdr": self.n_significant_fdr,
+            "edge_effects": edge_effects,
         }
 
     def to_causal_effects_dict(self) -> Dict[str, float]:
         """Return flat {edge_key: ate} dict for viz compatibility."""
-        return {
-            r.edge_key: r.dml_result.ate_mean
-            for r in self.edge_results
-        }
+        return {r.edge_key: r.dml_result.ate_mean for r in self.edge_results}
 
     def summary_table(self) -> str:
         """Generate human-readable summary table."""
@@ -324,8 +318,7 @@ def run_all_edges_dml(
         edge_label = f"{src_name or f'X{src}'}->{tgt_name or f'X{tgt}'}"
 
         if verbose:
-            print(f"  [{edge_num+1}/{len(edges)}] {edge_label} "
-                  f"(weight={weight:.4f})...", end=" ")
+            print(f"  [{edge_num + 1}/{len(edges)}] {edge_label} (weight={weight:.4f})...", end=" ")
 
         # Skip edges where source is beyond X columns
         if src >= n_features:
@@ -364,9 +357,7 @@ def run_all_edges_dml(
 
         # Compute adjustment set for this edge using backdoor criterion
         # For edge i→j, we need adjustment set w.r.t. outcome j
-        adj_sets = compute_valid_adjustment_sets(
-            A_np, Y_idx=tgt, threshold=edge_threshold
-        )
+        adj_sets = compute_valid_adjustment_sets(A_np, Y_idx=tgt, threshold=edge_threshold)
         adj_set = adj_sets.get(src, set())
 
         if not adj_set:
@@ -377,10 +368,7 @@ def run_all_edges_dml(
             pass
 
         # Filter to valid feature indices only
-        covariate_indices = sorted([
-            idx for idx in adj_set
-            if idx < n_features and idx != src
-        ])
+        covariate_indices = sorted([idx for idx in adj_set if idx < n_features and idx != src])
 
         # Build covariate matrix
         if covariate_indices:
@@ -394,7 +382,9 @@ def run_all_edges_dml(
         # Run DML cross-fitting
         try:
             dml_result = dml.estimate_ate(
-                X=X_adj, T=T_binary, Y=outcome,
+                X=X_adj,
+                T=T_binary,
+                Y=outcome,
                 train_nuisance_fn=train_fn,
                 predict_nuisance_fn=predict_fn,
                 treatment_idx=src,
@@ -423,7 +413,9 @@ def run_all_edges_dml(
             try:
                 original_effect = effect_estimator(X_adj, T_binary, outcome)
                 refutation_result = refutation_suite.run_all(
-                    X=X_adj, T=T_binary, Y=outcome,
+                    X=X_adj,
+                    T=T_binary,
+                    Y=outcome,
                     estimate_effect_fn=effect_estimator,
                     original_effect=original_effect,
                 )
@@ -433,23 +425,24 @@ def run_all_edges_dml(
 
         is_significant = ci_excludes_zero and refutation_passes
 
-        edge_results.append(EdgeEffectResult(
-            source_idx=src,
-            target_idx=tgt,
-            source_name=src_name,
-            target_name=tgt_name,
-            edge_weight=weight,
-            dml_result=dml_result,
-            refutation_result=refutation_result,
-            is_significant=is_significant,
-            is_significant_fdr=False,  # set below after BH
-            p_value=p_value,
-        ))
+        edge_results.append(
+            EdgeEffectResult(
+                source_idx=src,
+                target_idx=tgt,
+                source_name=src_name,
+                target_name=tgt_name,
+                edge_weight=weight,
+                dml_result=dml_result,
+                refutation_result=refutation_result,
+                is_significant=is_significant,
+                is_significant_fdr=False,  # set below after BH
+                p_value=p_value,
+            )
+        )
 
         if verbose:
             sig_marker = "*" if is_significant else ""
-            print(f"ATE={dml_result.ate_mean:.4f} "
-                  f"p={p_value:.4f} {sig_marker}")
+            print(f"ATE={dml_result.ate_mean:.4f} p={p_value:.4f} {sig_marker}")
 
     if not edge_results:
         if verbose:

@@ -12,10 +12,10 @@ not every step, to avoid JAX recompilation.
 This is a NEW processor variant — the original MambaProcessor is unchanged.
 """
 
-import jax
+from typing import Optional
+
 import jax.numpy as jnp
 from flax import linen as nn
-from typing import Optional
 
 from jcce.models.mamba import MambaProcessor as _MambaProcessorBase
 
@@ -45,6 +45,7 @@ def topological_sort_from_adjacency(A: jnp.ndarray, threshold: float = 0.01) -> 
     # Kahn's algorithm (must be done in Python, not JAX-traced)
     # Convert to numpy for the algorithm
     import numpy as np
+
     in_deg = np.array(in_degree)
     B_np = np.array(B)
 
@@ -122,7 +123,7 @@ class CausalMambaProcessor(nn.Module):
 
         # Step 2: Project to d_model
         z_expanded = z_sorted[..., None]  # (B, N, 1)
-        z_projected = nn.Dense(self.d_model, name='input_projection')(z_expanded)
+        z_projected = nn.Dense(self.d_model, name="input_projection")(z_expanded)
 
         # Step 3: Apply Mamba (processes in topological order)
         mamba = _MambaProcessorBase(

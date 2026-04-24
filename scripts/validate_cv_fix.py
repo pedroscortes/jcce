@@ -12,9 +12,10 @@ Expected: All tests PASS with CV BAcc != 0.500
 If any test shows 0.500±0.000 or "FAILED", the fix didn't work.
 """
 
-import numpy as np
-import time
 import sys
+import time
+
+import numpy as np
 
 
 def test_cv_with_dataset(dataset_name, n_folds=2, max_iter=5):
@@ -25,13 +26,13 @@ def test_cv_with_dataset(dataset_name, n_folds=2, max_iter=5):
     X, Y, config = load_dataset(dataset_name)
     n_vars = X.shape[1]
     n_total = n_vars + 1
-    has_gt = config.get('true_dag') is not None
+    has_gt = config.get("true_dag") is not None
 
     # Simulate a Pareto solution's A_init (augmented space)
     rng = np.random.RandomState(42)
     A_init = rng.randn(n_total, n_total).astype(np.float32) * 0.1
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Testing: {dataset_name} (d={n_vars}, n={X.shape[0]})")
     print(f"  A_init shape: {A_init.shape} (augmented)")
     print(f"  true_dag: {'shape=' + str(config['true_dag'].shape) if has_gt else 'None'}")
@@ -40,31 +41,33 @@ def test_cv_with_dataset(dataset_name, n_folds=2, max_iter=5):
     t0 = time.time()
     try:
         result = evaluate_pareto_solution_cv(
-            X=X, Y=Y,
+            X=X,
+            Y=Y,
             hyperparams={
-                'lambda_1': 0.02, 'lambda_2': 0.01,
-                'lambda_class': 1.0, 'lr': 0.001,
-                'processor_config': {
-                    'hidden_dim': 64, 'n_hidden_nodes': 128,
-                    'activation': 'relu'
-                },
+                "lambda_1": 0.02,
+                "lambda_2": 0.01,
+                "lambda_class": 1.0,
+                "lr": 0.001,
+                "processor_config": {"hidden_dim": 64, "n_hidden_nodes": 128, "activation": "relu"},
             },
-            processor_type='elm',
+            processor_type="elm",
             A_init=A_init,
             n_folds=n_folds,
-            true_dag=config.get('true_dag'),
-            true_mb=config.get('true_mb'),
+            true_dag=config.get("true_dag"),
+            true_mb=config.get("true_mb"),
             golem_max_iter=max_iter,
             freeze_structure=True,
-            task='classification',
+            task="classification",
             verbose=True,
         )
         elapsed = time.time() - t0
         bacc = result.balanced_acc_mean
 
         if abs(bacc - 0.500) < 0.001 and result.balanced_acc_std < 0.001:
-            print(f"\n  FAILED: CV BAcc={bacc:.3f}±{result.balanced_acc_std:.3f} "
-                  f"(random baseline — CV silently failed)")
+            print(
+                f"\n  FAILED: CV BAcc={bacc:.3f}±{result.balanced_acc_std:.3f} "
+                f"(random baseline — CV silently failed)"
+            )
             return False
         else:
             print(f"\n  PASSED: CV BAcc={bacc:.3f}±{result.balanced_acc_std:.3f} ({elapsed:.1f}s)")
@@ -74,20 +77,21 @@ def test_cv_with_dataset(dataset_name, n_folds=2, max_iter=5):
         elapsed = time.time() - t0
         print(f"\n  FAILED with exception ({elapsed:.1f}s): {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
 
 def test_dataset_loading():
     """Verify all datasets load without errors."""
-    from jcce.data.benchmark_loader import load_dataset, list_datasets
+    from jcce.data.benchmark_loader import list_datasets, load_dataset
 
     print("Testing dataset loading...")
     all_ok = True
     for name in list_datasets():
         try:
             X, Y, config = load_dataset(name)
-            dag = config.get('true_dag')
+            dag = config.get("true_dag")
             dag_info = f"dag={dag.shape}, {int(dag.sum())}e" if dag is not None else "no GT"
             print(f"  {name:20s} X={str(X.shape):12s} Y_bal={Y.mean():.2f} {dag_info}")
         except Exception as e:
@@ -106,23 +110,23 @@ def main():
         sys.exit(1)
 
     # Step 2: CV on a GT dataset (the one that was failing)
-    lucas_ok = test_cv_with_dataset('lucas', n_folds=2, max_iter=5)
+    lucas_ok = test_cv_with_dataset("lucas", n_folds=2, max_iter=5)
 
     # Step 3: CV on a non-GT dataset (should always work since true_dag=None skips comparison)
-    heart_ok = test_cv_with_dataset('heart_disease', n_folds=2, max_iter=5)
+    heart_ok = test_cv_with_dataset("heart_disease", n_folds=2, max_iter=5)
 
     # Step 4: CV on a new GT dataset
-    child_ok = test_cv_with_dataset('child', n_folds=2, max_iter=5)
+    child_ok = test_cv_with_dataset("child", n_folds=2, max_iter=5)
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("VALIDATION SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     results = {
-        'Dataset loading': True,
-        'LUCAS CV (GT, d=11)': lucas_ok,
-        'Heart Disease CV (no GT, d=13)': heart_ok,
-        'CHILD CV (GT, d=19)': child_ok,
+        "Dataset loading": True,
+        "LUCAS CV (GT, d=11)": lucas_ok,
+        "Heart Disease CV (no GT, d=13)": heart_ok,
+        "CHILD CV (GT, d=19)": child_ok,
     }
     all_pass = True
     for test, passed in results.items():
@@ -139,5 +143,5 @@ def main():
     sys.exit(0 if all_pass else 1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

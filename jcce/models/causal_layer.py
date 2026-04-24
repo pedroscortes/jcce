@@ -140,10 +140,7 @@ def causal_layer_bwd(residuals: tuple, g_z: jnp.ndarray) -> tuple:
 
     # g_A = -g_epsilon · z^T (batch outer product, then mean over batch)
     # For each sample: outer product, then average across batch
-    g_A = -jnp.mean(
-        jax.vmap(lambda ge, zi: jnp.outer(ge, zi))(g_epsilon, z),
-        axis=0
-    )
+    g_A = -jnp.mean(jax.vmap(lambda ge, zi: jnp.outer(ge, zi))(g_epsilon, z), axis=0)
 
     return (g_epsilon, g_A)
 
@@ -157,7 +154,7 @@ def check_causal_layer_gradients_numerical(
     epsilon: jnp.ndarray,
     A: jnp.ndarray,
     eps: float = 1e-3,  # Optimal step size for finite differences
-    atol: float = 1e-2   # Relaxed tolerance for numerical methods
+    atol: float = 1e-2,  # Relaxed tolerance for numerical methods
 ) -> dict:
     """
     Numerically verify the custom gradients using finite differences.
@@ -184,7 +181,7 @@ def check_causal_layer_gradients_numerical(
     # Test loss function: sum of squared outputs
     def loss_fn(eps, a):
         z = implicit_causal_layer(eps, a)
-        return jnp.sum(z ** 2)
+        return jnp.sum(z**2)
 
     # Compute analytical gradients using custom VJP
     analytical_grad_eps = jax.grad(loss_fn, argnums=0)(epsilon, A)
@@ -220,5 +217,5 @@ def check_causal_layer_gradients_numerical(
             f"[OK] Gradient check PASSED (max_diff={max_diff:.2e}, tol={atol:.2e})"
             if passed
             else f"[FAIL] Gradient check FAILED (max_diff={max_diff:.2e}, tol={atol:.2e})"
-        )
+        ),
     }

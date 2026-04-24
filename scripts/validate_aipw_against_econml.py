@@ -17,9 +17,10 @@ Requirements:
 """
 
 import argparse
-import numpy as np
 import sys
 from typing import Dict, Tuple
+
+import numpy as np
 
 
 def generate_synthetic_ate_data(
@@ -70,7 +71,9 @@ def run_jcce_dml(X, T, Y, treatment_idx=0) -> Dict:
     train_fn, predict_fn = create_simple_nuisance_functions()
 
     result = dml.estimate_ate(
-        X=X, T=T, Y=Y,
+        X=X,
+        T=T,
+        Y=Y,
         train_nuisance_fn=train_fn,
         predict_nuisance_fn=predict_fn,
         treatment_idx=treatment_idx,
@@ -78,11 +81,11 @@ def run_jcce_dml(X, T, Y, treatment_idx=0) -> Dict:
 
     ci = result.confidence_interval(0.05)
     return {
-        'ate': result.ate_mean,
-        'std': result.ate_std,
-        'ci_lower': ci[0],
-        'ci_upper': ci[1],
-        'ci_width': ci[1] - ci[0],
+        "ate": result.ate_mean,
+        "std": result.ate_std,
+        "ci_lower": ci[0],
+        "ci_upper": ci[1],
+        "ci_width": ci[1] - ci[0],
     }
 
 
@@ -90,7 +93,7 @@ def run_econml_dml(X, T, Y) -> Dict:
     """Run EconML's LinearDRLearner (doubly-robust for binary treatment)."""
     try:
         from econml.dr import LinearDRLearner
-        from sklearn.linear_model import LogisticRegressionCV, LassoCV
+        from sklearn.linear_model import LassoCV, LogisticRegressionCV
     except ImportError:
         print("ERROR: econml not installed. Run: pip install econml")
         sys.exit(1)
@@ -107,21 +110,18 @@ def run_econml_dml(X, T, Y) -> Dict:
     ci_lower, ci_upper = float(ci[0]), float(ci[1])
 
     return {
-        'ate': ate,
-        'ci_lower': ci_lower,
-        'ci_upper': ci_upper,
-        'ci_width': ci_upper - ci_lower,
+        "ate": ate,
+        "ci_lower": ci_lower,
+        "ci_upper": ci_upper,
+        "ci_width": ci_upper - ci_lower,
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Validate AIPW against EconML')
-    parser.add_argument('--n-sims', type=int, default=20,
-                        help='Number of Monte Carlo simulations')
-    parser.add_argument('--n-samples', type=int, default=1000,
-                        help='Samples per simulation')
-    parser.add_argument('--true-ate', type=float, default=0.5,
-                        help='Ground truth ATE')
+    parser = argparse.ArgumentParser(description="Validate AIPW against EconML")
+    parser.add_argument("--n-sims", type=int, default=20, help="Number of Monte Carlo simulations")
+    parser.add_argument("--n-samples", type=int, default=1000, help="Samples per simulation")
+    parser.add_argument("--true-ate", type=float, default=0.5, help="Ground truth ATE")
     args = parser.parse_args()
 
     print("AIPW VALIDATION: JCCE vs EconML")
@@ -142,21 +142,23 @@ def main():
 
         # JCCE
         jcce_result = run_jcce_dml(X, T, Y)
-        jcce_ates.append(jcce_result['ate'])
-        jcce_widths.append(jcce_result['ci_width'])
-        if jcce_result['ci_lower'] <= true_ate <= jcce_result['ci_upper']:
+        jcce_ates.append(jcce_result["ate"])
+        jcce_widths.append(jcce_result["ci_width"])
+        if jcce_result["ci_lower"] <= true_ate <= jcce_result["ci_upper"]:
             jcce_coverage += 1
 
         # EconML
         econml = run_econml_dml(X, T, Y)
-        econml_ates.append(econml['ate'])
-        econml_widths.append(econml['ci_width'])
-        if econml['ci_lower'] <= true_ate <= econml['ci_upper']:
+        econml_ates.append(econml["ate"])
+        econml_widths.append(econml["ci_width"])
+        if econml["ci_lower"] <= true_ate <= econml["ci_upper"]:
             econml_coverage += 1
 
         if (sim + 1) % 5 == 0:
-            print(f"  Sim {sim+1}/{args.n_sims}: "
-                  f"JCCE={jcce_result['ate']:.4f} EconML={econml['ate']:.4f}")
+            print(
+                f"  Sim {sim + 1}/{args.n_sims}: "
+                f"JCCE={jcce_result['ate']:.4f} EconML={econml['ate']:.4f}"
+            )
 
     # Summary
     print()
@@ -167,14 +169,20 @@ def main():
     print("-" * 55)
     print(f"{'Mean ATE':<25} {np.mean(jcce_ates):<15.4f} {np.mean(econml_ates):<15.4f}")
     print(f"{'Std ATE':<25} {np.std(jcce_ates):<15.4f} {np.std(econml_ates):<15.4f}")
-    print(f"{'Bias (ATE - true)':<25} {np.mean(jcce_ates)-args.true_ate:<15.4f} "
-          f"{np.mean(econml_ates)-args.true_ate:<15.4f}")
-    print(f"{'RMSE':<25} "
-          f"{np.sqrt(np.mean((np.array(jcce_ates)-args.true_ate)**2)):<15.4f} "
-          f"{np.sqrt(np.mean((np.array(econml_ates)-args.true_ate)**2)):<15.4f}")
-    print(f"{'Coverage (95% CI)':<25} "
-          f"{jcce_coverage/args.n_sims:<15.1%} "
-          f"{econml_coverage/args.n_sims:<15.1%}")
+    print(
+        f"{'Bias (ATE - true)':<25} {np.mean(jcce_ates) - args.true_ate:<15.4f} "
+        f"{np.mean(econml_ates) - args.true_ate:<15.4f}"
+    )
+    print(
+        f"{'RMSE':<25} "
+        f"{np.sqrt(np.mean((np.array(jcce_ates) - args.true_ate) ** 2)):<15.4f} "
+        f"{np.sqrt(np.mean((np.array(econml_ates) - args.true_ate) ** 2)):<15.4f}"
+    )
+    print(
+        f"{'Coverage (95% CI)':<25} "
+        f"{jcce_coverage / args.n_sims:<15.1%} "
+        f"{econml_coverage / args.n_sims:<15.1%}"
+    )
     print(f"{'Mean CI width':<25} {np.mean(jcce_widths):<15.4f} {np.mean(econml_widths):<15.4f}")
     print()
 
@@ -189,13 +197,15 @@ def main():
     if corr > 0.9 and mean_abs_diff < 0.1:
         print("VERDICT: JCCE and EconML implementations AGREE closely.")
     elif corr > 0.7:
-        print("VERDICT: JCCE and EconML show MODERATE agreement. "
-              "Differences may be due to nuisance model choices.")
+        print(
+            "VERDICT: JCCE and EconML show MODERATE agreement. "
+            "Differences may be due to nuisance model choices."
+        )
     else:
         print("WARNING: JCCE and EconML show LOW agreement. Investigate!")
 
     print("=" * 60)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

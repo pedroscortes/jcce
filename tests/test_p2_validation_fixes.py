@@ -8,18 +8,18 @@ Covers:
 4. Refutation suite — existing module integration check
 """
 
-import numpy as np
-import pytest
-from scipy import stats
-
-import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+import sys
+
+import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 
 # =============================================================================
 # 1. Baseline DAG Comparison Tests
 # =============================================================================
+
 
 class TestBaselineComparison:
     """Test P2-A baseline DAG comparison components."""
@@ -29,8 +29,7 @@ class TestBaselineComparison:
         from p2_baseline_dag_comparison import generate_data
 
         data_full, X, Y, A_true = generate_data(
-            n_vars=5, n_samples=100, expected_degree=2.0,
-            noise_scale=0.5, seed=42
+            n_vars=5, n_samples=100, expected_degree=2.0, noise_scale=0.5, seed=42
         )
         assert X.shape == (100, 5)
         assert Y.shape == (100,)
@@ -39,7 +38,6 @@ class TestBaselineComparison:
 
     def test_evaluate_baseline(self):
         """evaluate_baseline returns valid metric dict."""
-        import jax.numpy as jnp
         from p2_baseline_dag_comparison import evaluate_baseline
 
         n_vars = 5
@@ -48,34 +46,38 @@ class TestBaselineComparison:
         A_true[1, 0] = 1.0
         A_true[2, 1] = 1.0
 
-        result = evaluate_baseline('test', A_est, A_true, n_vars, elapsed=1.0)
-        assert 'f1' in result
-        assert 'shd' in result
-        assert 'precision' in result
-        assert 'recall' in result
-        assert result['name'] == 'test'
-        assert result['time'] == 1.0
-        assert 0.0 <= result['f1'] <= 1.0
+        result = evaluate_baseline("test", A_est, A_true, n_vars, elapsed=1.0)
+        assert "f1" in result
+        assert "shd" in result
+        assert "precision" in result
+        assert "recall" in result
+        assert result["name"] == "test"
+        assert result["time"] == 1.0
+        assert 0.0 <= result["f1"] <= 1.0
 
     def test_pc_runner_callable(self):
         """run_pc function is importable and callable."""
         from p2_baseline_dag_comparison import run_pc
+
         assert callable(run_pc)
 
     def test_ges_runner_callable(self):
         """run_ges function is importable and callable."""
         from p2_baseline_dag_comparison import run_ges
+
         assert callable(run_ges)
 
     def test_dagma_runner_callable(self):
         """run_dagma function is importable and callable."""
         from p2_baseline_dag_comparison import run_dagma
+
         assert callable(run_dagma)
 
 
 # =============================================================================
 # 2. Cinelli Sensitivity Analysis Tests
 # =============================================================================
+
 
 class TestCinelliSensitivity:
     """Test Cinelli & Hazlett (2020) sensitivity analysis."""
@@ -111,8 +113,7 @@ class TestCinelliSensitivity:
         from jcce.validation.cinelli_sensitivity import robustness_value
 
         # Simulate large t-stat
-        rv_0, rv_a = robustness_value(
-            partial_r2_T=0.3, ate=1.0, se=0.1, dof=100)
+        rv_0, rv_a = robustness_value(partial_r2_T=0.3, ate=1.0, se=0.1, dof=100)
         assert rv_0 > 0.1, f"Expected RV > 0.1 for strong effect, got {rv_0}"
         assert rv_a > 0.0, f"Expected RV_alpha > 0, got {rv_a}"
 
@@ -121,8 +122,7 @@ class TestCinelliSensitivity:
         from jcce.validation.cinelli_sensitivity import robustness_value
 
         # Simulate small t-stat
-        rv_0, rv_a = robustness_value(
-            partial_r2_T=0.01, ate=0.05, se=0.1, dof=50)
+        rv_0, rv_a = robustness_value(partial_r2_T=0.01, ate=0.05, se=0.1, dof=50)
         assert rv_0 < 0.1, f"Expected low RV for weak effect, got {rv_0}"
 
     def test_bias_adjusted_estimate(self):
@@ -130,14 +130,14 @@ class TestCinelliSensitivity:
         from jcce.validation.cinelli_sensitivity import bias_adjusted_estimate
 
         result = bias_adjusted_estimate(
-            ate=0.5, se=0.1, r2_Y_confounder=0.1, r2_T_confounder=0.1,
-            partial_r2_T=0.2, dof=100)
+            ate=0.5, se=0.1, r2_Y_confounder=0.1, r2_T_confounder=0.1, partial_r2_T=0.2, dof=100
+        )
 
-        assert 'adj_estimate' in result
-        assert 'max_bias' in result
-        assert result['max_bias'] > 0
+        assert "adj_estimate" in result
+        assert "max_bias" in result
+        assert result["max_bias"] > 0
         # Adjusted estimate should be closer to zero
-        assert abs(result['adj_estimate']) < abs(0.5)
+        assert abs(result["adj_estimate"]) < abs(0.5)
 
     def test_cinelli_sensitivity_full(self):
         """Full cinelli_sensitivity function returns valid SensitivityResult."""
@@ -150,8 +150,8 @@ class TestCinelliSensitivity:
         Y = 0.5 * T + X @ rng.randn(3) * 0.3 + rng.randn(n) * 0.3
 
         result = cinelli_sensitivity(
-            Y, T, X, treatment_name="test_T",
-            feature_names=["X0", "X1", "X2"])
+            Y, T, X, treatment_name="test_T", feature_names=["X0", "X1", "X2"]
+        )
 
         assert result.treatment_name == "test_T"
         assert 0.0 <= result.rv <= 1.0
@@ -187,8 +187,8 @@ class TestCinelliSensitivity:
         result = cinelli_sensitivity(Y, T, X)
         d = result.to_dict()
         assert isinstance(d, dict)
-        assert 'rv' in d
-        assert 'is_robust' in d
+        assert "rv" in d
+        assert "is_robust" in d
 
     def test_covariate_benchmarks(self):
         """Covariate benchmarks produce valid R² values."""
@@ -201,18 +201,19 @@ class TestCinelliSensitivity:
         Y = 0.5 * T + X[:, 1] * 0.3 + rng.randn(n) * 0.3
 
         benchmarks = compute_covariate_benchmarks(
-            Y, T, X, feature_names=["X0", "X1", "X2"],
-            k_multipliers=(1.0,))
+            Y, T, X, feature_names=["X0", "X1", "X2"], k_multipliers=(1.0,)
+        )
 
         assert len(benchmarks) == 3  # One per covariate
         for name, bm in benchmarks.items():
-            assert 0.0 <= bm['r2_Y'] <= 1.0, f"{name}: r2_Y={bm['r2_Y']}"
-            assert 0.0 <= bm['r2_T'] <= 1.0, f"{name}: r2_T={bm['r2_T']}"
+            assert 0.0 <= bm["r2_Y"] <= 1.0, f"{name}: r2_Y={bm['r2_Y']}"
+            assert 0.0 <= bm["r2_T"] <= 1.0, f"{name}: r2_T={bm['r2_T']}"
 
 
 # =============================================================================
 # 3. Cross-Fitted Structure Learning Tests
 # =============================================================================
+
 
 class TestCrossFittedStructure:
     """Test P2-C cross-fitted structure learning components."""
@@ -222,8 +223,7 @@ class TestCrossFittedStructure:
         from p2_cross_fitted_structure_learning import generate_data
 
         X, Y, A_true = generate_data(
-            n_vars=5, n_samples=100, expected_degree=2.0,
-            noise_scale=0.5, seed=42
+            n_vars=5, n_samples=100, expected_degree=2.0, noise_scale=0.5, seed=42
         )
         assert X.shape == (100, 5)
         assert Y.shape == (100,)
@@ -239,7 +239,7 @@ class TestCrossFittedStructure:
         As = [A.copy() for _ in range(5)]
 
         result = compute_cross_fold_agreement(As, n_vars=5)
-        assert result['mean_agreement'] == 1.0
+        assert result["mean_agreement"] == 1.0
 
     def test_cross_fold_agreement_different(self):
         """Different DAGs should have lower agreement."""
@@ -256,9 +256,9 @@ class TestCrossFittedStructure:
             As.append(A)
 
         result = compute_cross_fold_agreement(As, n_vars=5)
-        assert result['mean_agreement'] < 1.0
-        assert 'n_stable_edges' in result
-        assert 'n_ever_edges' in result
+        assert result["mean_agreement"] < 1.0
+        assert "n_stable_edges" in result
+        assert "n_ever_edges" in result
 
     def test_cross_fold_agreement_single_fold(self):
         """Single fold should return agreement = 1.0."""
@@ -267,12 +267,13 @@ class TestCrossFittedStructure:
         A = np.zeros((6, 6))
         A[0, 1] = 0.5
         result = compute_cross_fold_agreement([A], n_vars=5)
-        assert result['mean_agreement'] == 1.0
+        assert result["mean_agreement"] == 1.0
 
 
 # =============================================================================
 # 4. Refutation Suite Integration Tests
 # =============================================================================
+
 
 class TestRefutationSuite:
     """Verify existing refutation suite works correctly."""
@@ -281,10 +282,9 @@ class TestRefutationSuite:
         """Refutation suite imports correctly."""
         from jcce.validation.refutation_suite import (
             RefutationSuite,
-            RefutationResult,
-            RefutationSuiteResult,
             create_simple_effect_estimator,
         )
+
         assert callable(RefutationSuite)
         assert callable(create_simple_effect_estimator)
 
@@ -304,9 +304,7 @@ class TestRefutationSuite:
 
     def test_suite_runs_all_tests(self):
         """RefutationSuite.run_all executes all 4 tests."""
-        from jcce.validation.refutation_suite import (
-            RefutationSuite, create_simple_effect_estimator
-        )
+        from jcce.validation.refutation_suite import RefutationSuite, create_simple_effect_estimator
 
         rng = np.random.RandomState(42)
         X = rng.randn(200, 3)
@@ -320,21 +318,19 @@ class TestRefutationSuite:
         results = suite.run_all(X, T, Y, estimator, original_effect)
 
         assert results.n_total == 4
-        assert 'placebo_treatment' in results.results
-        assert 'random_common_cause' in results.results
-        assert 'data_subset' in results.results
-        assert 'dummy_outcome' in results.results
+        assert "placebo_treatment" in results.results
+        assert "random_common_cause" in results.results
+        assert "data_subset" in results.results
+        assert "dummy_outcome" in results.results
 
     def test_benjamini_hochberg(self):
         """BH correction works correctly."""
         from jcce.validation.refutation_suite import RefutationSuite
 
         # All significant
-        rejected = RefutationSuite.benjamini_hochberg(
-            [0.001, 0.002, 0.003], fdr=0.05)
+        rejected = RefutationSuite.benjamini_hochberg([0.001, 0.002, 0.003], fdr=0.05)
         assert all(rejected)
 
         # None significant
-        rejected = RefutationSuite.benjamini_hochberg(
-            [0.5, 0.6, 0.7], fdr=0.05)
+        rejected = RefutationSuite.benjamini_hochberg([0.5, 0.6, 0.7], fdr=0.05)
         assert not any(rejected)

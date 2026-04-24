@@ -23,12 +23,13 @@ Usage:
     W = decode_cosmo_to_dag(genome, tau=0.1, epsilon=0.1, d=52)
 """
 
+from functools import partial
+from typing import NamedTuple
+
 import jax
 import jax.numpy as jnp
-from jax import random
-from typing import NamedTuple, Tuple
-from functools import partial
 import numpy as np
+from jax import random
 
 
 class COSMOGenome(NamedTuple):
@@ -39,16 +40,14 @@ class COSMOGenome(NamedTuple):
         H: Edge weights matrix (d × d)
         p: Priority vector (d,) defining topological order
     """
+
     H: jnp.ndarray  # Edge weights (d × d)
     p: jnp.ndarray  # Priority vector (d,)
 
 
 @partial(jax.jit, static_argnums=(3,))
 def decode_cosmo_to_dag(
-    genome: COSMOGenome,
-    tau: float = 0.1,
-    epsilon: float = 0.1,
-    d: int = 100
+    genome: COSMOGenome, tau: float = 0.1, epsilon: float = 0.1, d: int = 100
 ) -> jnp.ndarray:
     """
     Decode COSMO genome to weighted adjacency matrix.
@@ -86,11 +85,7 @@ def decode_cosmo_to_dag(
     return W
 
 
-def initialize_cosmo_genome(
-    key: random.PRNGKey,
-    d: int,
-    init_scale: float = 0.1
-) -> COSMOGenome:
+def initialize_cosmo_genome(key: random.PRNGKey, d: int, init_scale: float = 0.1) -> COSMOGenome:
     """
     Initialize random COSMO genome.
 
@@ -115,10 +110,7 @@ def initialize_cosmo_genome(
 
 @jax.jit
 def cosmo_soft_parent_weights(
-    genome: COSMOGenome,
-    j: int,
-    tau: float = 0.1,
-    epsilon: float = 0.1
+    genome: COSMOGenome, j: int, tau: float = 0.1, epsilon: float = 0.1
 ) -> jnp.ndarray:
     """
     Get soft parent weights for variable j.
@@ -165,7 +157,7 @@ class COSMOTemperatureSchedule:
         tau_init: float = 1.0,
         tau_final: float = 0.01,
         n_generations: int = 15,
-        schedule: str = 'exponential'
+        schedule: str = "exponential",
     ):
         """
         Initialize temperature schedule.
@@ -181,13 +173,9 @@ class COSMOTemperatureSchedule:
         self.n_generations = n_generations
         self.schedule = schedule
 
-        if schedule == 'exponential':
-            self.taus = jnp.logspace(
-                jnp.log10(tau_init),
-                jnp.log10(tau_final),
-                n_generations
-            )
-        elif schedule == 'linear':
+        if schedule == "exponential":
+            self.taus = jnp.logspace(jnp.log10(tau_init), jnp.log10(tau_final), n_generations)
+        elif schedule == "linear":
             self.taus = jnp.linspace(tau_init, tau_final, n_generations)
         else:
             raise ValueError(f"Unknown schedule: {schedule}")
@@ -223,9 +211,9 @@ def flat_params_to_cosmo(params: jnp.ndarray, d: int) -> COSMOGenome:
     Returns:
         COSMOGenome
     """
-    H_flat = params[:d*d]
+    H_flat = params[: d * d]
     H = H_flat.reshape((d, d))
-    p = params[d*d:]
+    p = params[d * d :]
     return COSMOGenome(H=H, p=p)
 
 
@@ -266,10 +254,7 @@ def cosmo_dag_check(W: jnp.ndarray, threshold: float = 1e-6) -> bool:
     return count == d
 
 
-def cosmo_sparsify(
-    genome: COSMOGenome,
-    threshold: float = 0.1
-) -> COSMOGenome:
+def cosmo_sparsify(genome: COSMOGenome, threshold: float = 0.1) -> COSMOGenome:
     """
     Sparsify COSMO genome by zeroing small edge weights.
 
@@ -288,10 +273,11 @@ def cosmo_sparsify(
 # NSGA-II Integration: Genome Conversion
 # ============================================================================
 
+
 def nsga2_decision_to_cosmo(
     decision_vars: np.ndarray,
     d: int,
-    n_hyperparams: int = 20  # Number of NSGA-II hyperparameter genes
+    n_hyperparams: int = 20,  # Number of NSGA-II hyperparameter genes
 ) -> COSMOGenome:
     """
     Convert NSGA-II decision variables to COSMO genome.
@@ -309,17 +295,14 @@ def nsga2_decision_to_cosmo(
     Returns:
         COSMOGenome
     """
-    H_flat = decision_vars[n_hyperparams:n_hyperparams + d*d]
-    p = decision_vars[n_hyperparams + d*d:n_hyperparams + d*d + d]
+    H_flat = decision_vars[n_hyperparams : n_hyperparams + d * d]
+    p = decision_vars[n_hyperparams + d * d : n_hyperparams + d * d + d]
 
     H = H_flat.reshape((d, d))
     return COSMOGenome(H=jnp.array(H), p=jnp.array(p))
 
 
-def cosmo_to_nsga2_decision(
-    genome: COSMOGenome,
-    hyperparams: np.ndarray
-) -> np.ndarray:
+def cosmo_to_nsga2_decision(genome: COSMOGenome, hyperparams: np.ndarray) -> np.ndarray:
     """
     Convert COSMO genome to NSGA-II decision variables.
 
@@ -339,7 +322,7 @@ def cosmo_to_nsga2_decision(
 # Quick Test
 # ============================================================================
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("Testing COSMO genome encoding...")
     print("=" * 60)
 

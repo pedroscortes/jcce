@@ -500,66 +500,6 @@ toml = [
 ]
 
 [[package]]
-name = "dep"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "econml" },
-    { name = "flax" },
-    { name = "grakel" },
-    { name = "jax", extra = ["cuda12"] },
-    { name = "matplotlib" },
-    { name = "networkx" },
-    { name = "numpy" },
-    { name = "optax" },
-    { name = "optuna" },
-    { name = "pandas" },
-    { name = "pymoo" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "scikit-learn" },
-    { name = "scipy" },
-    { name = "seaborn" },
-    { name = "thewalrus" },
-    { name = "tqdm" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "black" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "black", marker = "extra == 'dev'", specifier = ">=25.9.0" },
-    { name = "econml", specifier = ">=0.16.0" },
-    { name = "flax", specifier = ">=0.12.0" },
-    { name = "grakel", specifier = ">=0.1.10" },
-    { name = "jax", extras = ["cuda12"], specifier = ">=0.8.0" },
-    { name = "matplotlib", specifier = ">=3.10.0" },
-    { name = "networkx", specifier = ">=3.5" },
-    { name = "numpy", specifier = ">=2.3.0" },
-    { name = "optax", specifier = ">=0.2.6" },
-    { name = "optuna", specifier = ">=4.0.0" },
-    { name = "pandas", specifier = ">=2.3.0" },
-    { name = "pymoo", specifier = ">=0.6.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "pyyaml", specifier = ">=6.0.0" },
-    { name = "requests", specifier = ">=2.31.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.0" },
-    { name = "scikit-learn", specifier = ">=1.3.0" },
-    { name = "scipy", specifier = ">=1.16.0" },
-    { name = "seaborn", specifier = ">=0.13.0" },
-    { name = "thewalrus", specifier = ">=0.22.0" },
-    { name = "tqdm", specifier = ">=4.67.0" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "cycler"
 version = "0.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1002,6 +942,66 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f5/a8/dba41b8f574c188ca30866562ebf06fa0558446e11565436ead5ad4d5fe4/jaxlib-0.8.0-cp314-cp314t-manylinux_2_27_aarch64.whl", hash = "sha256:a5f0656bbbb3f135a360ce0fde55bf34faf73fbc62ab887941e85f0014b3f476", size = 73276773, upload-time = "2025-10-15T23:11:31.067Z" },
     { url = "https://files.pythonhosted.org/packages/6c/82/774ff02e014ee12925388f7a77fe9beda6a8d08537666ce6259fc810b9f6/jaxlib-0.8.0-cp314-cp314t-manylinux_2_27_x86_64.whl", hash = "sha256:61cb2fde154e5a399db2880d560e3443cfa97bda9f074b545c886232ac8fe024", size = 79805953, upload-time = "2025-10-15T23:11:34.323Z" },
 ]
+
+[[package]]
+name = "jcce"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "econml" },
+    { name = "flax" },
+    { name = "grakel" },
+    { name = "jax", extra = ["cuda12"] },
+    { name = "matplotlib" },
+    { name = "networkx" },
+    { name = "numpy" },
+    { name = "optax" },
+    { name = "optuna" },
+    { name = "pandas" },
+    { name = "pymoo" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "seaborn" },
+    { name = "thewalrus" },
+    { name = "tqdm" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "black" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "black", marker = "extra == 'dev'", specifier = ">=25.9.0" },
+    { name = "econml", specifier = ">=0.16.0" },
+    { name = "flax", specifier = ">=0.12.0" },
+    { name = "grakel", specifier = ">=0.1.10" },
+    { name = "jax", extras = ["cuda12"], specifier = ">=0.8.0" },
+    { name = "matplotlib", specifier = ">=3.10.0" },
+    { name = "networkx", specifier = ">=3.5" },
+    { name = "numpy", specifier = ">=2.3.0" },
+    { name = "optax", specifier = ">=0.2.6" },
+    { name = "optuna", specifier = ">=4.0.0" },
+    { name = "pandas", specifier = ">=2.3.0" },
+    { name = "pymoo", specifier = ">=0.6.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "requests", specifier = ">=2.31.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.0" },
+    { name = "scikit-learn", specifier = ">=1.3.0" },
+    { name = "scipy", specifier = ">=1.16.0" },
+    { name = "seaborn", specifier = ">=0.13.0" },
+    { name = "thewalrus", specifier = ">=0.22.0" },
+    { name = "tqdm", specifier = ">=4.67.0" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "joblib"

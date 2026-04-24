@@ -14,24 +14,29 @@ Usage:
     )
 """
 
+from typing import Dict, Optional
+
 import jax
 import jax.numpy as jnp
 import jax.random as random
 import numpy as np
-from typing import Dict, Optional
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import (
-    balanced_accuracy_score, f1_score, precision_score,
-    recall_score, roc_auc_score, accuracy_score,
-)
 
 from jcce.structure_learning.jcce_learner import create_processor
 
 
 def _is_jax_array(x):
     """Check if x is a JAX/numpy array (trainable parameter)."""
-    return isinstance(x, (jnp.ndarray, np.ndarray)) and hasattr(x, 'shape') and x.shape != ()
+    return isinstance(x, (jnp.ndarray, np.ndarray)) and hasattr(x, "shape") and x.shape != ()
 
 
 def _split_params(params):
@@ -39,7 +44,7 @@ def _split_params(params):
     trainable = {}
     static = {}
     for k, v in params.items():
-        if isinstance(v, (jnp.ndarray,)) and hasattr(v, 'shape'):
+        if isinstance(v, (jnp.ndarray,)) and hasattr(v, "shape"):
             trainable[k] = v
         elif isinstance(v, np.ndarray):
             trainable[k] = jnp.array(v)
@@ -78,8 +83,9 @@ def _train_classifier(
 
     # Detect which kwargs the processor's forward() accepts
     import inspect
+
     _fwd_sig = inspect.signature(processor.forward)
-    _fwd_accepts_training = 'training' in _fwd_sig.parameters
+    _fwd_accepts_training = "training" in _fwd_sig.parameters
 
     # BCE loss — only takes trainable params as first arg (for grad)
     def loss_fn(trainable_params, X_batch, Y_batch):
@@ -90,12 +96,14 @@ def _train_classifier(
             logits = processor.forward(X_batch, params, skip_centering=True)
         logits = jnp.clip(logits, -6, 6)
         bce = -jnp.mean(
-            Y_batch * jax.nn.log_sigmoid(logits) +
-            (1 - Y_batch) * jax.nn.log_sigmoid(-logits)
+            Y_batch * jax.nn.log_sigmoid(logits) + (1 - Y_batch) * jax.nn.log_sigmoid(-logits)
         )
         # L2 reg on weight matrices
-        l2 = sum(jnp.sum(p ** 2) for p in jax.tree.leaves(trainable_params)
-                 if hasattr(p, 'ndim') and p.ndim >= 2)
+        l2 = sum(
+            jnp.sum(p**2)
+            for p in jax.tree.leaves(trainable_params)
+            if hasattr(p, "ndim") and p.ndim >= 2
+        )
         return bce + 1e-4 * l2
 
     grad_fn = jax.jit(jax.value_and_grad(loss_fn))
@@ -104,7 +112,7 @@ def _train_classifier(
     m = jax.tree.map(jnp.zeros_like, trainable)
     v = jax.tree.map(jnp.zeros_like, trainable)
 
-    best_loss = float('inf')
+    best_loss = float("inf")
     best_trainable = trainable
     patience_counter = 0
 
@@ -121,12 +129,14 @@ def _train_classifier(
         # Adam update
         t = epoch + 1
         m = jax.tree.map(lambda mi, g: 0.9 * mi + 0.1 * g, m, grads)
-        v = jax.tree.map(lambda vi, g: 0.999 * vi + 0.001 * g ** 2, v, grads)
-        m_hat = jax.tree.map(lambda mi: mi / (1 - 0.9 ** t), m)
-        v_hat = jax.tree.map(lambda vi: vi / (1 - 0.999 ** t), v)
+        v = jax.tree.map(lambda vi, g: 0.999 * vi + 0.001 * g**2, v, grads)
+        m_hat = jax.tree.map(lambda mi: mi / (1 - 0.9**t), m)
+        v_hat = jax.tree.map(lambda vi: vi / (1 - 0.999**t), v)
         trainable = jax.tree.map(
             lambda p, mh, vh: p - lr * mh / (jnp.sqrt(vh) + 1e-8),
-            trainable, m_hat, v_hat,
+            trainable,
+            m_hat,
+            v_hat,
         )
 
         lv = float(loss_val)
@@ -145,8 +155,9 @@ def _train_classifier(
 def _predict(processor, params, X: np.ndarray) -> tuple:
     """Get predictions and probabilities from trained processor."""
     import inspect
+
     X_jax = jnp.array(np.asarray(X))
-    if 'training' in inspect.signature(processor.forward).parameters:
+    if "training" in inspect.signature(processor.forward).parameters:
         logits = processor.forward(X_jax, params, training=False, skip_centering=True)
     else:
         logits = processor.forward(X_jax, params, skip_centering=True)
@@ -158,7 +169,7 @@ def _predict(processor, params, X: np.ndarray) -> tuple:
 def train_and_evaluate_processor(
     X: np.ndarray,
     Y: np.ndarray,
-    processor_type: str = 'mlp',
+    processor_type: str = "mlp",
     n_splits: int = 5,
     seed: int = 42,
     lr: float = 1e-3,
@@ -205,8 +216,12 @@ def train_and_evaluate_processor(
 
         # Train
         params = _train_classifier(
-            processor, X_train, Y_train, train_key,
-            lr=lr, n_epochs=n_epochs,
+            processor,
+            X_train,
+            Y_train,
+            train_key,
+            lr=lr,
+            n_epochs=n_epochs,
         )
 
         # Predict
@@ -214,31 +229,33 @@ def train_and_evaluate_processor(
 
         # Metrics
         fold_metrics = {
-            'fold': fold_i,
-            'accuracy': float(accuracy_score(Y_val_int, y_pred)),
-            'balanced_acc': float(balanced_accuracy_score(Y_val_int, y_pred)),
-            'f1': float(f1_score(Y_val_int, y_pred, average='macro', zero_division=0)),
-            'precision': float(precision_score(Y_val_int, y_pred, average='macro', zero_division=0)),
-            'recall': float(recall_score(Y_val_int, y_pred, average='macro', zero_division=0)),
+            "fold": fold_i,
+            "accuracy": float(accuracy_score(Y_val_int, y_pred)),
+            "balanced_acc": float(balanced_accuracy_score(Y_val_int, y_pred)),
+            "f1": float(f1_score(Y_val_int, y_pred, average="macro", zero_division=0)),
+            "precision": float(
+                precision_score(Y_val_int, y_pred, average="macro", zero_division=0)
+            ),
+            "recall": float(recall_score(Y_val_int, y_pred, average="macro", zero_division=0)),
         }
         try:
-            fold_metrics['roc_auc'] = float(roc_auc_score(Y_val_int, y_prob))
+            fold_metrics["roc_auc"] = float(roc_auc_score(Y_val_int, y_prob))
         except ValueError:
-            fold_metrics['roc_auc'] = float('nan')
+            fold_metrics["roc_auc"] = float("nan")
 
         per_fold.append(fold_metrics)
 
     # Aggregate
-    metric_keys = ['accuracy', 'balanced_acc', 'f1', 'precision', 'recall', 'roc_auc']
-    summary = {'processor_type': processor_type}
+    metric_keys = ["accuracy", "balanced_acc", "f1", "precision", "recall", "roc_auc"]
+    summary = {"processor_type": processor_type}
     for mk in metric_keys:
         vals = [f[mk] for f in per_fold if not np.isnan(f[mk])]
         if vals:
-            summary[f'{mk}_mean'] = float(np.mean(vals))
-            summary[f'{mk}_std'] = float(np.std(vals))
+            summary[f"{mk}_mean"] = float(np.mean(vals))
+            summary[f"{mk}_std"] = float(np.std(vals))
         else:
-            summary[f'{mk}_mean'] = float('nan')
-            summary[f'{mk}_std'] = float('nan')
-    summary['per_fold'] = per_fold
+            summary[f"{mk}_mean"] = float("nan")
+            summary[f"{mk}_std"] = float("nan")
+    summary["per_fold"] = per_fold
 
     return summary

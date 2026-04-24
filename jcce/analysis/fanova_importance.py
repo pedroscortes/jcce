@@ -15,12 +15,14 @@ Usage:
     )
 """
 
+from typing import Dict, List, Optional
+
 import numpy as np
-from typing import Dict, List, Optional, Tuple
 
 try:
     import optuna
-    from optuna.importance import get_param_importances, FanovaImportanceEvaluator
+    from optuna.importance import FanovaImportanceEvaluator, get_param_importances
+
     _HAS_OPTUNA = True
 except ImportError:
     _HAS_OPTUNA = False
@@ -73,8 +75,8 @@ def compute_importances_both_objectives(
         Dict with 'balanced_accuracy' and 'sparsity' importance dicts.
     """
     return {
-        'balanced_accuracy': compute_param_importances(study, target_index=0, evaluator=evaluator),
-        'sparsity': compute_param_importances(study, target_index=1, evaluator=evaluator),
+        "balanced_accuracy": compute_param_importances(study, target_index=0, evaluator=evaluator),
+        "sparsity": compute_param_importances(study, target_index=1, evaluator=evaluator),
     }
 
 
@@ -99,7 +101,7 @@ def track_importance_stability(
     if not _HAS_OPTUNA:
         raise ImportError("optuna is required")
 
-    completed = [t for t in study.trials if t.state.name == 'COMPLETE']
+    completed = [t for t in study.trials if t.state.name == "COMPLETE"]
     completed.sort(key=lambda t: t.number)
 
     snapshots = []
@@ -191,7 +193,7 @@ def get_frozen_params(
                 # Get median value from completed trials
                 values = []
                 for trial in study.trials:
-                    if trial.state.name == 'COMPLETE' and param in trial.params:
+                    if trial.state.name == "COMPLETE" and param in trial.params:
                         values.append(trial.params[param])
                 if values:
                     if isinstance(values[0], (int, float)):
@@ -199,6 +201,7 @@ def get_frozen_params(
                     else:
                         # Categorical: use mode
                         from collections import Counter
+
                         frozen[param] = Counter(values).most_common(1)[0][0]
                 else:
                     frozen[param] = None

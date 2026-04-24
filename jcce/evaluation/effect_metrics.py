@@ -21,15 +21,15 @@ References:
 v6.0: Initial implementation following CAUSAL_EFFECT_ESTIMATION_IMPLEMENTATION_PLAN.md
 """
 
-import jax.numpy as jnp
-import numpy as np
-from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
+from typing import Dict, Optional
 
+import jax.numpy as jnp
 
 # ============================================================================
 # Primary Metrics
 # ============================================================================
+
 
 def compute_pehe(tau_pred: jnp.ndarray, tau_true: jnp.ndarray) -> float:
     """
@@ -109,11 +109,8 @@ def compute_ate_bias(tau_pred: jnp.ndarray, ate_true: float) -> float:
 # Secondary Metrics
 # ============================================================================
 
-def compute_att_error(
-    tau_pred: jnp.ndarray,
-    tau_true: jnp.ndarray,
-    T: jnp.ndarray
-) -> float:
+
+def compute_att_error(tau_pred: jnp.ndarray, tau_true: jnp.ndarray, T: jnp.ndarray) -> float:
     """
     Error in Average Treatment Effect on the Treated (ATT).
 
@@ -140,9 +137,7 @@ def compute_att_error(
 
 
 def compute_policy_risk(
-    tau_pred: jnp.ndarray,
-    tau_true: jnp.ndarray,
-    cost_ratio: float = 1.0
+    tau_pred: jnp.ndarray, tau_true: jnp.ndarray, cost_ratio: float = 1.0
 ) -> float:
     """
     Policy risk: measures quality of treatment decisions.
@@ -176,10 +171,7 @@ def compute_policy_risk(
     return float(jnp.mean(fp_cost + fn_cost))
 
 
-def compute_policy_value(
-    tau_pred: jnp.ndarray,
-    tau_true: jnp.ndarray
-) -> float:
+def compute_policy_value(tau_pred: jnp.ndarray, tau_true: jnp.ndarray) -> float:
     """
     Policy value: expected outcome improvement from following predictions.
 
@@ -205,10 +197,9 @@ def compute_policy_value(
 # Diagnostic Metrics
 # ============================================================================
 
+
 def compute_propensity_diagnostics(
-    propensity_pred: jnp.ndarray,
-    T: jnp.ndarray,
-    propensity_true: Optional[jnp.ndarray] = None
+    propensity_pred: jnp.ndarray, T: jnp.ndarray, propensity_true: Optional[jnp.ndarray] = None
 ) -> Dict[str, float]:
     """
     Compute diagnostics for propensity score estimation.
@@ -224,32 +215,34 @@ def compute_propensity_diagnostics(
     p = propensity_pred.squeeze()
 
     diagnostics = {
-        'propensity_mean': float(jnp.mean(p)),
-        'propensity_std': float(jnp.std(p)),
-        'propensity_min': float(jnp.min(p)),
-        'propensity_max': float(jnp.max(p)),
-        'propensity_variance': float(jnp.var(p)),
+        "propensity_mean": float(jnp.mean(p)),
+        "propensity_std": float(jnp.std(p)),
+        "propensity_min": float(jnp.min(p)),
+        "propensity_max": float(jnp.max(p)),
+        "propensity_variance": float(jnp.var(p)),
     }
 
     # Check for collapse (all predictions similar)
-    diagnostics['propensity_collapsed'] = diagnostics['propensity_variance'] < 0.01
+    diagnostics["propensity_collapsed"] = diagnostics["propensity_variance"] < 0.01
 
     # Propensity BCE (same as loss)
     eps = 1e-7
     p_clipped = jnp.clip(p, eps, 1 - eps)
     bce = -jnp.mean(T * jnp.log(p_clipped) + (1 - T) * jnp.log(1 - p_clipped))
-    diagnostics['propensity_bce'] = float(bce)
+    diagnostics["propensity_bce"] = float(bce)
 
     # AUC approximation (correlation with treatment)
     # This is a rough proxy; true AUC requires sklearn
     correlation = jnp.corrcoef(p, T)[0, 1]
-    diagnostics['propensity_treatment_corr'] = float(correlation) if not jnp.isnan(correlation) else 0.0
+    diagnostics["propensity_treatment_corr"] = (
+        float(correlation) if not jnp.isnan(correlation) else 0.0
+    )
 
     # Compare to true propensity if available
     if propensity_true is not None:
         p_true = propensity_true.squeeze()
-        diagnostics['propensity_mse'] = float(jnp.mean((p - p_true) ** 2))
-        diagnostics['propensity_mae'] = float(jnp.mean(jnp.abs(p - p_true)))
+        diagnostics["propensity_mse"] = float(jnp.mean((p - p_true) ** 2))
+        diagnostics["propensity_mae"] = float(jnp.mean(jnp.abs(p - p_true)))
 
     return diagnostics
 
@@ -265,12 +258,12 @@ def compute_effect_heterogeneity(tau_pred: jnp.ndarray) -> Dict[str, float]:
         Dictionary of heterogeneity metrics
     """
     return {
-        'cate_mean': float(jnp.mean(tau_pred)),
-        'cate_std': float(jnp.std(tau_pred)),
-        'cate_min': float(jnp.min(tau_pred)),
-        'cate_max': float(jnp.max(tau_pred)),
-        'cate_iqr': float(jnp.percentile(tau_pred, 75) - jnp.percentile(tau_pred, 25)),
-        'cate_positive_frac': float(jnp.mean(tau_pred > 0)),
+        "cate_mean": float(jnp.mean(tau_pred)),
+        "cate_std": float(jnp.std(tau_pred)),
+        "cate_min": float(jnp.min(tau_pred)),
+        "cate_max": float(jnp.max(tau_pred)),
+        "cate_iqr": float(jnp.percentile(tau_pred, 75) - jnp.percentile(tau_pred, 25)),
+        "cate_positive_frac": float(jnp.mean(tau_pred > 0)),
     }
 
 
@@ -278,9 +271,11 @@ def compute_effect_heterogeneity(tau_pred: jnp.ndarray) -> Dict[str, float]:
 # Comprehensive Evaluation
 # ============================================================================
 
+
 @dataclass
 class EffectEvaluationResults:
     """Container for comprehensive evaluation results."""
+
     # Primary metrics
     PEHE: float
     PEHE_squared: float
@@ -308,7 +303,7 @@ def evaluate_effect_estimation(
     ate_true: float,
     T: jnp.ndarray,
     propensity_pred: Optional[jnp.ndarray] = None,
-    propensity_true: Optional[jnp.ndarray] = None
+    propensity_true: Optional[jnp.ndarray] = None,
 ) -> EffectEvaluationResults:
     """
     Comprehensive evaluation of effect estimation quality.
@@ -342,9 +337,7 @@ def evaluate_effect_estimation(
 
     # Propensity diagnostics
     if propensity_pred is not None:
-        prop_diag = compute_propensity_diagnostics(
-            propensity_pred, T, propensity_true
-        )
+        prop_diag = compute_propensity_diagnostics(propensity_pred, T, propensity_true)
     else:
         prop_diag = {}
 
@@ -360,14 +353,12 @@ def evaluate_effect_estimation(
         policy_value=policy_value,
         cate_std_pred=cate_std_pred,
         cate_std_true=cate_std_true,
-        propensity_diagnostics=prop_diag
+        propensity_diagnostics=prop_diag,
     )
 
 
 def format_evaluation_report(
-    results: EffectEvaluationResults,
-    dataset_name: str = "unknown",
-    method_name: str = "JCCE"
+    results: EffectEvaluationResults, dataset_name: str = "unknown", method_name: str = "JCCE"
 ) -> str:
     """
     Format evaluation results as a printable report.
@@ -410,13 +401,13 @@ SECONDARY METRICS:
 
     if results.propensity_diagnostics:
         pd = results.propensity_diagnostics
-        prop_status = "COLLAPSED" if pd.get('propensity_collapsed', False) else "OK"
+        prop_status = "COLLAPSED" if pd.get("propensity_collapsed", False) else "OK"
         report += f"""
 PROPENSITY DIAGNOSTICS:
-  Mean:           {pd.get('propensity_mean', 0):.4f}
-  Std:            {pd.get('propensity_std', 0):.4f}
-  Variance:       {pd.get('propensity_variance', 0):.4f} [{prop_status}]
-  BCE Loss:       {pd.get('propensity_bce', 0):.4f}
+  Mean:           {pd.get("propensity_mean", 0):.4f}
+  Std:            {pd.get("propensity_std", 0):.4f}
+  Variance:       {pd.get("propensity_variance", 0):.4f} [{prop_status}]
+  BCE Loss:       {pd.get("propensity_bce", 0):.4f}
 """
 
     report += "=" * 80
@@ -428,9 +419,8 @@ PROPENSITY DIAGNOSTICS:
 # Benchmark Comparison Utilities
 # ============================================================================
 
-def compare_methods(
-    results_dict: Dict[str, EffectEvaluationResults]
-) -> str:
+
+def compare_methods(results_dict: Dict[str, EffectEvaluationResults]) -> str:
     """
     Generate comparison table for multiple methods.
 

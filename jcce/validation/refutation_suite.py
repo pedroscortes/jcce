@@ -15,16 +15,18 @@ References:
 - Cinelli & Hazlett (2020) "Making Sense of Sensitivity"
 """
 
-import numpy as np
-from typing import Dict, List, Optional, Callable, Any
-from dataclasses import dataclass, field
-from scipy import stats
 import warnings
+from dataclasses import dataclass, field
+from typing import Callable, Dict, List, Optional
+
+import numpy as np
+from scipy import stats
 
 
 @dataclass
 class RefutationResult:
     """Result of a single refutation test."""
+
     test_name: str
     passed: bool
     p_value: float
@@ -35,19 +37,20 @@ class RefutationResult:
 
     def to_dict(self) -> Dict:
         return {
-            'test_name': self.test_name,
-            'passed': self.passed,
-            'p_value': self.p_value,
-            'original_effect': self.original_effect,
-            'refuted_effect': self.refuted_effect,
-            'effect_ratio': self.effect_ratio,
-            'details': self.details,
+            "test_name": self.test_name,
+            "passed": self.passed,
+            "p_value": self.p_value,
+            "original_effect": self.original_effect,
+            "refuted_effect": self.refuted_effect,
+            "effect_ratio": self.effect_ratio,
+            "details": self.details,
         }
 
 
 @dataclass
 class RefutationSuiteResult:
     """Aggregated result of all refutation tests."""
+
     results: Dict[str, RefutationResult]
     n_passed: int = field(init=False)
     n_total: int = field(init=False)
@@ -61,18 +64,18 @@ class RefutationSuiteResult:
 
     def to_dict(self) -> Dict:
         return {
-            'results': {k: v.to_dict() for k, v in self.results.items()},
-            'n_passed': self.n_passed,
-            'n_total': self.n_total,
-            'pass_rate': self.pass_rate,
-            'corrected_results': self.corrected_results,
+            "results": {k: v.to_dict() for k, v in self.results.items()},
+            "n_passed": self.n_passed,
+            "n_total": self.n_total,
+            "pass_rate": self.pass_rate,
+            "corrected_results": self.corrected_results,
         }
 
     def summary(self) -> str:
         """Generate human-readable summary."""
         lines = [
             f"Refutation Test Summary: {self.n_passed}/{self.n_total} passed ({self.pass_rate:.1%})",
-            "-" * 60
+            "-" * 60,
         ]
         for name, result in self.results.items():
             status = "PASS" if result.passed else "FAIL"
@@ -160,21 +163,21 @@ class RefutationSuite:
             RefutationSuiteResult with all test results
         """
         # Handle JAX arrays
-        if hasattr(X, 'device_buffer') or str(type(X)).find('jax') >= 0:
+        if hasattr(X, "device_buffer") or str(type(X)).find("jax") >= 0:
             X = np.array(X)
-        if hasattr(T, 'device_buffer') or str(type(T)).find('jax') >= 0:
+        if hasattr(T, "device_buffer") or str(type(T)).find("jax") >= 0:
             T = np.array(T)
-        if hasattr(Y, 'device_buffer') or str(type(Y)).find('jax') >= 0:
+        if hasattr(Y, "device_buffer") or str(type(Y)).find("jax") >= 0:
             Y = np.array(Y)
 
         T = T.flatten()
         Y = Y.flatten()
 
         available_tests = {
-            'placebo_treatment': self.placebo_treatment_test,
-            'random_common_cause': self.random_common_cause_test,
-            'data_subset': self.data_subset_test,
-            'dummy_outcome': self.dummy_outcome_test,
+            "placebo_treatment": self.placebo_treatment_test,
+            "random_common_cause": self.random_common_cause_test,
+            "data_subset": self.data_subset_test,
+            "dummy_outcome": self.dummy_outcome_test,
         }
 
         if tests is None:
@@ -187,9 +190,7 @@ class RefutationSuite:
                 continue
 
             try:
-                result = available_tests[test_name](
-                    X, T, Y, estimate_effect_fn, original_effect
-                )
+                result = available_tests[test_name](X, T, Y, estimate_effect_fn, original_effect)
                 results[test_name] = result
             except Exception as e:
                 warnings.warn(f"Test {test_name} failed: {e}")
@@ -198,9 +199,9 @@ class RefutationSuite:
                     passed=False,
                     p_value=1.0,
                     original_effect=original_effect,
-                    refuted_effect=float('nan'),
-                    effect_ratio=float('nan'),
-                    details={'error': str(e)}
+                    refuted_effect=float("nan"),
+                    effect_ratio=float("nan"),
+                    details={"error": str(e)},
                 )
 
         # Apply multiple testing correction
@@ -208,14 +209,9 @@ class RefutationSuite:
         if apply_correction and len(results) > 1:
             p_values = [r.p_value for r in results.values()]
             rejected = self.benjamini_hochberg(p_values)
-            corrected_results = {
-                name: rej for name, rej in zip(results.keys(), rejected)
-            }
+            corrected_results = {name: rej for name, rej in zip(results.keys(), rejected)}
 
-        return RefutationSuiteResult(
-            results=results,
-            corrected_results=corrected_results
-        )
+        return RefutationSuiteResult(results=results, corrected_results=corrected_results)
 
     def placebo_treatment_test(
         self,
@@ -223,7 +219,7 @@ class RefutationSuite:
         T: np.ndarray,
         Y: np.ndarray,
         estimate_effect_fn: Callable,
-        original_effect: float
+        original_effect: float,
     ) -> RefutationResult:
         """
         Placebo treatment test.
@@ -250,13 +246,13 @@ class RefutationSuite:
 
         if len(placebo_effects) < 10:
             return RefutationResult(
-                test_name='placebo_treatment',
+                test_name="placebo_treatment",
                 passed=False,
                 p_value=1.0,
                 original_effect=original_effect,
-                refuted_effect=float('nan'),
-                effect_ratio=float('nan'),
-                details={'error': 'Too few successful simulations'}
+                refuted_effect=float("nan"),
+                effect_ratio=float("nan"),
+                details={"error": "Too few successful simulations"},
             )
 
         placebo_mean = np.mean(placebo_effects)
@@ -274,7 +270,9 @@ class RefutationSuite:
         # Pass if:
         # 1. Original effect is significantly different from placebo (p < 0.05)
         # 2. Placebo effects are near zero
-        placebo_near_zero = abs(placebo_mean) < self.placebo_threshold * abs(original_effect + 1e-10)
+        placebo_near_zero = abs(placebo_mean) < self.placebo_threshold * abs(
+            original_effect + 1e-10
+        )
         significantly_different = p_value < 0.05
 
         passed = significantly_different and placebo_near_zero
@@ -282,19 +280,19 @@ class RefutationSuite:
         effect_ratio = abs(original_effect) / (abs(placebo_mean) + 1e-10)
 
         return RefutationResult(
-            test_name='placebo_treatment',
+            test_name="placebo_treatment",
             passed=passed,
             p_value=p_value,
             original_effect=original_effect,
             refuted_effect=placebo_mean,
             effect_ratio=effect_ratio,
             details={
-                'placebo_mean': placebo_mean,
-                'placebo_std': placebo_std,
-                'z_score': z_score if placebo_std > 1e-10 else None,
-                'n_simulations': len(placebo_effects),
-                'placebo_near_zero': placebo_near_zero,
-            }
+                "placebo_mean": placebo_mean,
+                "placebo_std": placebo_std,
+                "z_score": z_score if placebo_std > 1e-10 else None,
+                "n_simulations": len(placebo_effects),
+                "placebo_near_zero": placebo_near_zero,
+            },
         )
 
     def random_common_cause_test(
@@ -303,7 +301,7 @@ class RefutationSuite:
         T: np.ndarray,
         Y: np.ndarray,
         estimate_effect_fn: Callable,
-        original_effect: float
+        original_effect: float,
     ) -> RefutationResult:
         """
         Random common cause test.
@@ -329,13 +327,13 @@ class RefutationSuite:
 
         if len(confounded_effects) < 10:
             return RefutationResult(
-                test_name='random_common_cause',
+                test_name="random_common_cause",
                 passed=False,
                 p_value=1.0,
                 original_effect=original_effect,
-                refuted_effect=float('nan'),
-                effect_ratio=float('nan'),
-                details={'error': 'Too few successful simulations'}
+                refuted_effect=float("nan"),
+                effect_ratio=float("nan"),
+                details={"error": "Too few successful simulations"},
             )
 
         confounded_mean = np.mean(confounded_effects)
@@ -357,18 +355,18 @@ class RefutationSuite:
             p_value = 1.0 if abs(original_effect - confounded_mean) < 1e-10 else 0.0
 
         return RefutationResult(
-            test_name='random_common_cause',
+            test_name="random_common_cause",
             passed=passed,
             p_value=p_value,
             original_effect=original_effect,
             refuted_effect=confounded_mean,
             effect_ratio=1 - effect_change,
             details={
-                'confounded_mean': confounded_mean,
-                'confounded_std': confounded_std,
-                'effect_change': effect_change,
-                'n_simulations': len(confounded_effects),
-            }
+                "confounded_mean": confounded_mean,
+                "confounded_std": confounded_std,
+                "effect_change": effect_change,
+                "n_simulations": len(confounded_effects),
+            },
         )
 
     def data_subset_test(
@@ -377,7 +375,7 @@ class RefutationSuite:
         T: np.ndarray,
         Y: np.ndarray,
         estimate_effect_fn: Callable,
-        original_effect: float
+        original_effect: float,
     ) -> RefutationResult:
         """
         Data subset test.
@@ -402,13 +400,13 @@ class RefutationSuite:
 
         if len(subset_effects) < 10:
             return RefutationResult(
-                test_name='data_subset',
+                test_name="data_subset",
                 passed=False,
                 p_value=1.0,
                 original_effect=original_effect,
-                refuted_effect=float('nan'),
-                effect_ratio=float('nan'),
-                details={'error': 'Too few successful simulations'}
+                refuted_effect=float("nan"),
+                effect_ratio=float("nan"),
+                details={"error": "Too few successful simulations"},
             )
 
         subset_mean = np.mean(subset_effects)
@@ -424,19 +422,19 @@ class RefutationSuite:
         mean_deviation = abs(subset_mean - original_effect) / (abs(original_effect) + 1e-10)
 
         return RefutationResult(
-            test_name='data_subset',
+            test_name="data_subset",
             passed=passed,
             p_value=0.95 if passed else 0.01,  # Heuristic p-value
             original_effect=original_effect,
             refuted_effect=subset_mean,
             effect_ratio=1 - cv,
             details={
-                'subset_mean': subset_mean,
-                'subset_std': subset_std,
-                'coefficient_of_variation': cv,
-                'mean_deviation': mean_deviation,
-                'n_simulations': len(subset_effects),
-            }
+                "subset_mean": subset_mean,
+                "subset_std": subset_std,
+                "coefficient_of_variation": cv,
+                "mean_deviation": mean_deviation,
+                "n_simulations": len(subset_effects),
+            },
         )
 
     def dummy_outcome_test(
@@ -445,7 +443,7 @@ class RefutationSuite:
         T: np.ndarray,
         Y: np.ndarray,
         estimate_effect_fn: Callable,
-        original_effect: float
+        original_effect: float,
     ) -> RefutationResult:
         """
         Dummy outcome test.
@@ -470,13 +468,13 @@ class RefutationSuite:
 
         if len(dummy_effects) < 10:
             return RefutationResult(
-                test_name='dummy_outcome',
+                test_name="dummy_outcome",
                 passed=False,
                 p_value=1.0,
                 original_effect=original_effect,
-                refuted_effect=float('nan'),
-                effect_ratio=float('nan'),
-                details={'error': 'Too few successful simulations'}
+                refuted_effect=float("nan"),
+                effect_ratio=float("nan"),
+                details={"error": "Too few successful simulations"},
             )
 
         dummy_mean = np.mean(dummy_effects)
@@ -497,17 +495,17 @@ class RefutationSuite:
         effect_ratio = abs(original_effect) / (abs(dummy_mean) + 1e-10)
 
         return RefutationResult(
-            test_name='dummy_outcome',
+            test_name="dummy_outcome",
             passed=passed,
             p_value=p_value,
             original_effect=original_effect,
             refuted_effect=dummy_mean,
             effect_ratio=effect_ratio,
             details={
-                'dummy_mean': dummy_mean,
-                'dummy_std': dummy_std,
-                'n_simulations': len(dummy_effects),
-            }
+                "dummy_mean": dummy_mean,
+                "dummy_std": dummy_std,
+                "n_simulations": len(dummy_effects),
+            },
         )
 
     @staticmethod
@@ -542,7 +540,7 @@ class RefutationSuite:
 
         # All hypotheses up to max_reject_idx are rejected
         reject_sorted_final = np.zeros(n, dtype=bool)
-        reject_sorted_final[:max_reject_idx + 1] = True
+        reject_sorted_final[: max_reject_idx + 1] = True
 
         # Map back to original order
         reject = [False] * n
@@ -555,6 +553,7 @@ class RefutationSuite:
 # =============================================================================
 # Utility Functions
 # =============================================================================
+
 
 def create_simple_effect_estimator():
     """

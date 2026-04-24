@@ -9,24 +9,24 @@ This allows us to reuse existing tested implementations (Mamba, ELM, GNN)
 without reimplementing them from scratch.
 """
 
+from typing import Dict
+
 import jax
 import jax.numpy as jnp
 from jax import random
-from flax import linen as nn
-from typing import Dict, Any, Tuple
-import optax
+
+from jcce.models.elm import ELMProcessor as ELMProcessorBase
+from jcce.models.gnn import CausalGNN
+from jcce.models.mamba import MambaProcessor as MambaProcessorBase
 
 # Import existing processors
 from jcce.models.mlp import MLPProcessor as MLPProcessorBase
 from jcce.models.processor_wrappers import TransformerProcessor as TransformerProcessorBase
-from jcce.models.mamba import MambaProcessor as MambaProcessorBase
-from jcce.models.elm import ELMProcessor as ELMProcessorBase
-from jcce.models.gnn import CausalGNN
-
 
 # ============================================================================
 # Flax to Dict Converter
 # ============================================================================
+
 
 def flax_to_dict_params(flax_params: Dict) -> Dict[str, jnp.ndarray]:
     """
@@ -38,14 +38,14 @@ def flax_to_dict_params(flax_params: Dict) -> Dict[str, jnp.ndarray]:
     Returns:
         flat_dict: Simple dict mapping keys to arrays
     """
-    from jax.tree_util import tree_flatten, tree_unflatten
+    from jax.tree_util import tree_flatten
 
     flat_params, tree_def = tree_flatten(flax_params)
 
     return {
-        'flat_params': jnp.concatenate([p.flatten() for p in flat_params]),
-        'tree_def': tree_def,
-        'shapes': [p.shape for p in flat_params],
+        "flat_params": jnp.concatenate([p.flatten() for p in flat_params]),
+        "tree_def": tree_def,
+        "shapes": [p.shape for p in flat_params],
     }
 
 
@@ -61,18 +61,19 @@ def dict_to_flax_params(param_dict: Dict) -> Dict:
     """
     from jax.tree_util import tree_unflatten
 
-    flat_array = param_dict['flat_params']
-    tree_def = param_dict['tree_def']
-    shapes = param_dict['shapes']
+    flat_array = param_dict["flat_params"]
+    tree_def = param_dict["tree_def"]
+    shapes = param_dict["shapes"]
 
     # Reconstruct individual arrays
     # Use math.prod (pure Python) instead of jnp.prod to avoid tracer issues in vmap/JIT
     import math
+
     arrays = []
     idx = 0
     for shape in shapes:
         size = math.prod(shape)
-        arrays.append(flat_array[idx:idx+size].reshape(shape))
+        arrays.append(flat_array[idx : idx + size].reshape(shape))
         idx += size
 
     return tree_unflatten(tree_def, arrays)
@@ -81,6 +82,7 @@ def dict_to_flax_params(param_dict: Dict) -> Dict:
 # ============================================================================
 # MLP Adapter
 # ============================================================================
+
 
 class MLPAdapter:
     """
@@ -93,7 +95,7 @@ class MLPAdapter:
         self,
         hidden_dim: int = 64,
         n_layers: int = 2,
-        activation: str = 'relu',
+        activation: str = "relu",
         key: random.PRNGKey = None,
         dropout_rate: float = 0.1,
     ):
@@ -123,19 +125,26 @@ class MLPAdapter:
 
         # Convert to dict format
         param_dict = flax_to_dict_params(flax_params)
-        param_dict['n_inputs'] = n_inputs
+        param_dict["n_inputs"] = n_inputs
 
         # Output projection — trainable (Session 29 Fix 1). Must be in init_params so
         # optimizer can update it. Frozen projection (server) fails with local training
         # dynamics (DAGMA, JIT) — produces BAcc < 0.5 (anti-correlated predictions).
         # The E[Y] shortcut is blocked by mean centering in forward() (Fix 2 reverted).
         key_proj = random.PRNGKey(0)
-        param_dict['output_proj_W'] = random.normal(key_proj, (self.hidden_dim, 1)) * 0.5
-        param_dict['output_proj_b'] = jnp.zeros(1)
+        param_dict["output_proj_W"] = random.normal(key_proj, (self.hidden_dim, 1)) * 0.5
+        param_dict["output_proj_b"] = jnp.zeros(1)
 
         return param_dict
 
-    def forward(self, X: jnp.ndarray, params: Dict, training: bool = True, rng_key: random.PRNGKey = None, skip_centering: bool = False) -> jnp.ndarray:
+    def forward(
+        self,
+        X: jnp.ndarray,
+        params: Dict,
+        training: bool = True,
+        rng_key: random.PRNGKey = None,
+        skip_centering: bool = False,
+    ) -> jnp.ndarray:
         """
         Forward pass through MLP.
 
@@ -157,8 +166,9 @@ class MLPAdapter:
         # Forward through MLP (no adjacency matrix needed)
         # training=True enables dropout (requires RNG key)
         if training and rng_key is not None:
-            h = self.model.apply(flax_params, X, A=None, training=training,
-                                 rngs={'dropout': rng_key})
+            h = self.model.apply(
+                flax_params, X, A=None, training=training, rngs={"dropout": rng_key}
+            )
         else:
             # Deterministic mode (no dropout RNG needed)
             h = self.model.apply(flax_params, X, A=None, training=False)
@@ -168,30 +178,32 @@ class MLPAdapter:
         h_pooled = jnp.mean(h, axis=1)  # (n_samples, hidden_dim)
 
         # Project to scalar output (backward compat: lazy-create if loading old pkl)
-        if 'output_proj_W' not in params:
+        if "output_proj_W" not in params:
             key = random.PRNGKey(0)
-            params['output_proj_W'] = random.normal(key, (self.hidden_dim, 1)) * 0.5
-            params['output_proj_b'] = jnp.zeros(1)
+            params["output_proj_W"] = random.normal(key, (self.hidden_dim, 1)) * 0.5
+            params["output_proj_b"] = jnp.zeros(1)
 
         # Apply normalization if weights were solved with normalized features
-        if params.get('_weights_solved', False) and '_H_mean' in params:
-            h_pooled = (h_pooled - params['_H_mean']) / params['_H_std']
+        if params.get("_weights_solved", False) and "_H_mean" in params:
+            h_pooled = (h_pooled - params["_H_mean"]) / params["_H_std"]
 
         # For classification (skip_centering=True), normalize h_pooled BEFORE
         # the output projection. This prevents reconstruction-driven h_pooled
         # drift from causing logit divergence, while preserving output_proj_b
         # as a learnable class prior.
         # X reconstruction (skip_centering=False) still uses output centering below.
-        if skip_centering and not params.get('_weights_solved', False):
-            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8)
+        if skip_centering and not params.get("_weights_solved", False):
+            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (
+                jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8
+            )
 
-        output = h_pooled @ params['output_proj_W'] + params['output_proj_b']
+        output = h_pooled @ params["output_proj_W"] + params["output_proj_b"]
         output = output.squeeze()
 
         # Mean centering: prevents constant-output shortcut for X reconstruction.
         # Skip for Y classification — centering forces sigmoid(~0)=0.5,
         # making BCE=ln(2) (dead signal). Y_recon and X_recon still use centering.
-        if not skip_centering and not params.get('_weights_solved', False):
+        if not skip_centering and not params.get("_weights_solved", False):
             output = output - jnp.mean(output)
 
         return output
@@ -203,8 +215,14 @@ class MLPAdapter:
         h_pooled = jnp.mean(h, axis=1)
         return h_pooled
 
-    def solve_output_weights(self, X: jnp.ndarray, y: jnp.ndarray, params: Dict,
-                             lambda_reg: float = 1e-4, for_classification: bool = True) -> Dict:
+    def solve_output_weights(
+        self,
+        X: jnp.ndarray,
+        y: jnp.ndarray,
+        params: Dict,
+        lambda_reg: float = 1e-4,
+        for_classification: bool = True,
+    ) -> Dict:
         """
         Solve for optimal output weights.
         v6.1.1: Uses logistic regression for classification (not ridge!).
@@ -246,10 +264,10 @@ class MLPAdapter:
                 W = W - lr * grad_W
                 b = b - lr * grad_b
 
-            params['output_proj_W'] = W
-            params['output_proj_b'] = b
-            params['_H_mean'] = H_mean
-            params['_H_std'] = H_std
+            params["output_proj_W"] = W
+            params["output_proj_b"] = b
+            params["_H_mean"] = H_mean
+            params["_H_std"] = H_std
         else:
             # Ridge regression (for regression tasks)
             HTH = H.T @ H + lambda_reg * jnp.eye(n_hidden)
@@ -257,11 +275,11 @@ class MLPAdapter:
             W = jnp.linalg.solve(HTH, HTy)
             predictions = H @ W
             b = jnp.mean(y.reshape(-1, 1) - predictions)
-            params['output_proj_W'] = W
-            params['output_proj_b'] = jnp.array([b])
+            params["output_proj_W"] = W
+            params["output_proj_b"] = jnp.array([b])
 
         # Mark that weights were solved (skip centering in forward)
-        params['_weights_solved'] = True
+        params["_weights_solved"] = True
 
         return params
 
@@ -269,6 +287,7 @@ class MLPAdapter:
 # ============================================================================
 # Transformer Adapter
 # ============================================================================
+
 
 class TransformerAdapter:
     """
@@ -313,16 +332,23 @@ class TransformerAdapter:
 
         # Convert to dict format
         param_dict = flax_to_dict_params(flax_params)
-        param_dict['n_inputs'] = n_inputs
+        param_dict["n_inputs"] = n_inputs
 
         # Output projection — trainable. See MLPAdapter init_params comment.
         key_proj = random.PRNGKey(0)
-        param_dict['output_proj_W'] = random.normal(key_proj, (self.d_model, 1)) * 0.5
-        param_dict['output_proj_b'] = jnp.zeros(1)
+        param_dict["output_proj_W"] = random.normal(key_proj, (self.d_model, 1)) * 0.5
+        param_dict["output_proj_b"] = jnp.zeros(1)
 
         return param_dict
 
-    def forward(self, X: jnp.ndarray, params: Dict, training: bool = True, rng_key: random.PRNGKey = None, skip_centering: bool = False) -> jnp.ndarray:
+    def forward(
+        self,
+        X: jnp.ndarray,
+        params: Dict,
+        training: bool = True,
+        rng_key: random.PRNGKey = None,
+        skip_centering: bool = False,
+    ) -> jnp.ndarray:
         """
         Forward pass through Transformer.
 
@@ -344,34 +370,39 @@ class TransformerAdapter:
         # Forward through Transformer (no adjacency matrix for structure learning)
         # training=True enables dropout (requires RNG key)
         if training and rng_key is not None:
-            h = self.model.apply(flax_params, X, A=None, training=training,
-                                 rngs={'dropout': rng_key})  # (n_samples, n_inputs, d_model)
+            h = self.model.apply(
+                flax_params, X, A=None, training=training, rngs={"dropout": rng_key}
+            )  # (n_samples, n_inputs, d_model)
         else:
             # Deterministic mode (evaluation or no RNG provided)
-            h = self.model.apply(flax_params, X, A=None, training=False)  # (n_samples, n_inputs, d_model)
+            h = self.model.apply(
+                flax_params, X, A=None, training=False
+            )  # (n_samples, n_inputs, d_model)
 
         # Pool across features: mean pooling
         h_pooled = jnp.mean(h, axis=1)  # (n_samples, d_model)
 
         # Project to scalar output (backward compat: lazy-create if loading old pkl)
-        if 'output_proj_W' not in params:
+        if "output_proj_W" not in params:
             key = random.PRNGKey(0)
-            params['output_proj_W'] = random.normal(key, (self.d_model, 1)) * 0.5
-            params['output_proj_b'] = jnp.zeros(1)
+            params["output_proj_W"] = random.normal(key, (self.d_model, 1)) * 0.5
+            params["output_proj_b"] = jnp.zeros(1)
 
         # Apply normalization if weights were solved with normalized features
-        if params.get('_weights_solved', False) and '_H_mean' in params:
-            h_pooled = (h_pooled - params['_H_mean']) / params['_H_std']
+        if params.get("_weights_solved", False) and "_H_mean" in params:
+            h_pooled = (h_pooled - params["_H_mean"]) / params["_H_std"]
 
         # Normalize h_pooled for classification (see MLPAdapter.forward comment)
-        if skip_centering and not params.get('_weights_solved', False):
-            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8)
+        if skip_centering and not params.get("_weights_solved", False):
+            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (
+                jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8
+            )
 
-        output = h_pooled @ params['output_proj_W'] + params['output_proj_b']
+        output = h_pooled @ params["output_proj_W"] + params["output_proj_b"]
         output = output.squeeze()
 
         # Skip centering for classification (see MLPAdapter.forward comment)
-        if not skip_centering and not params.get('_weights_solved', False):
+        if not skip_centering and not params.get("_weights_solved", False):
             output = output - jnp.mean(output)
 
         return output
@@ -383,8 +414,14 @@ class TransformerAdapter:
         h_pooled = jnp.mean(h, axis=1)
         return h_pooled
 
-    def solve_output_weights(self, X: jnp.ndarray, y: jnp.ndarray, params: Dict,
-                             lambda_reg: float = 1e-4, for_classification: bool = True) -> Dict:
+    def solve_output_weights(
+        self,
+        X: jnp.ndarray,
+        y: jnp.ndarray,
+        params: Dict,
+        lambda_reg: float = 1e-4,
+        for_classification: bool = True,
+    ) -> Dict:
         """
         Solve for optimal output weights.
         v6.1.3: Uses logistic regression for classification (like ELM/MLP).
@@ -434,10 +471,10 @@ class TransformerAdapter:
                 b = b - lr * grad_b
 
             # Store normalized weights (will be applied to normalized features in forward)
-            params['output_proj_W'] = W
-            params['output_proj_b'] = b
-            params['_H_mean'] = H_mean  # Store normalization params
-            params['_H_std'] = H_std
+            params["output_proj_W"] = W
+            params["output_proj_b"] = b
+            params["_H_mean"] = H_mean  # Store normalization params
+            params["_H_std"] = H_std
         else:
             # Ridge regression (for regression tasks)
             HTH = H.T @ H + lambda_reg * jnp.eye(n_hidden)
@@ -445,11 +482,11 @@ class TransformerAdapter:
             W_out_solved = jnp.linalg.solve(HTH, HTy)
             predictions = H @ W_out_solved
             b_out_solved = jnp.mean(y.reshape(-1, 1) - predictions)
-            params['output_proj_W'] = W_out_solved
-            params['output_proj_b'] = jnp.array([b_out_solved])
+            params["output_proj_W"] = W_out_solved
+            params["output_proj_b"] = jnp.array([b_out_solved])
 
         # Mark that weights were solved
-        params['_weights_solved'] = True
+        params["_weights_solved"] = True
 
         return params
 
@@ -457,6 +494,7 @@ class TransformerAdapter:
 # ============================================================================
 # Mamba Adapter
 # ============================================================================
+
 
 def get_mamba_config(n_features: int) -> dict:
     """
@@ -473,11 +511,11 @@ def get_mamba_config(n_features: int) -> dict:
         dict with d_model, d_state, d_conv, expand
     """
     if n_features <= 13:
-        return {'d_model': 128, 'd_state': 8, 'd_conv': 4, 'expand': 2}
+        return {"d_model": 128, "d_state": 8, "d_conv": 4, "expand": 2}
     elif n_features <= 25:
-        return {'d_model': 64, 'd_state': 4, 'd_conv': 4, 'expand': 2}
+        return {"d_model": 64, "d_state": 4, "d_conv": 4, "expand": 2}
     else:  # > 25 features
-        return {'d_model': 32, 'd_state': 4, 'd_conv': 4, 'expand': 2}
+        return {"d_model": 32, "d_state": 4, "d_conv": 4, "expand": 2}
 
 
 class MambaAdapter:
@@ -522,19 +560,21 @@ class MambaAdapter:
     def init_params(self, n_inputs: int) -> Dict:
         """Initialize parameters in dict format."""
         # Create dummy input to initialize Flax model
-        dummy_input = jnp.ones((1, n_inputs, self.model.d_model))  # (batch=1, seq_len=n_inputs, d_model)
+        dummy_input = jnp.ones(
+            (1, n_inputs, self.model.d_model)
+        )  # (batch=1, seq_len=n_inputs, d_model)
 
         # Initialize Flax parameters (MambaProcessor only takes z_sequence)
         flax_params = self.model.init(self.key, dummy_input)
 
         # Convert to dict format for GOLEM
         param_dict = flax_to_dict_params(flax_params)
-        param_dict['n_inputs'] = n_inputs  # Store for reshaping
+        param_dict["n_inputs"] = n_inputs  # Store for reshaping
 
         # Output projection — trainable. See MLPAdapter init_params comment.
         key_proj = random.PRNGKey(0)
-        param_dict['output_proj_W'] = random.normal(key_proj, (self.d_model, 1)) * 0.5
-        param_dict['output_proj_b'] = jnp.zeros(1)
+        param_dict["output_proj_W"] = random.normal(key_proj, (self.d_model, 1)) * 0.5
+        param_dict["output_proj_b"] = jnp.zeros(1)
 
         return param_dict
 
@@ -557,7 +597,9 @@ class MambaAdapter:
 
         # Reshape for Mamba: (batch, seq_len, d_model)
         # Project input to d_model dimension
-        X_projected = jnp.tile(X[:, :, jnp.newaxis], (1, 1, self.model.d_model))  # (n_samples, n_inputs, d_model)
+        X_projected = jnp.tile(
+            X[:, :, jnp.newaxis], (1, 1, self.model.d_model)
+        )  # (n_samples, n_inputs, d_model)
 
         # Forward through Mamba (only takes z_sequence)
         h = self.model.apply(flax_params, X_projected)  # (n_samples, n_inputs, d_model)
@@ -566,20 +608,22 @@ class MambaAdapter:
         h_pooled = jnp.mean(h, axis=1)  # (n_samples, d_model)
 
         # Project to scalar output (backward compat: lazy-create if loading old pkl)
-        if 'output_proj_W' not in params:
+        if "output_proj_W" not in params:
             key = random.PRNGKey(0)
-            params['output_proj_W'] = random.normal(key, (self.d_model, 1)) * 0.5
-            params['output_proj_b'] = jnp.zeros(1)
+            params["output_proj_W"] = random.normal(key, (self.d_model, 1)) * 0.5
+            params["output_proj_b"] = jnp.zeros(1)
 
         # Normalize h_pooled for classification (see MLPAdapter.forward comment)
-        if skip_centering and not params.get('_weights_solved', False):
-            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8)
+        if skip_centering and not params.get("_weights_solved", False):
+            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (
+                jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8
+            )
 
-        output = h_pooled @ params['output_proj_W'] + params['output_proj_b']
+        output = h_pooled @ params["output_proj_W"] + params["output_proj_b"]
         output = output.squeeze()  # (n_samples,)
 
         # Skip centering for classification (see MLPAdapter.forward comment)
-        if not skip_centering and not params.get('_weights_solved', False):
+        if not skip_centering and not params.get("_weights_solved", False):
             output = output - jnp.mean(output)
 
         return output
@@ -597,8 +641,14 @@ class MambaAdapter:
         h_pooled = jnp.mean(h, axis=1)
         return h_pooled
 
-    def solve_output_weights(self, X: jnp.ndarray, y: jnp.ndarray, params: Dict,
-                             lambda_reg: float = 1e-4, for_classification: bool = True) -> Dict:
+    def solve_output_weights(
+        self,
+        X: jnp.ndarray,
+        y: jnp.ndarray,
+        params: Dict,
+        lambda_reg: float = 1e-4,
+        for_classification: bool = True,
+    ) -> Dict:
         """Solve output weights via logistic regression (classification) or ridge (regression)."""
         H = self.get_hidden_features(X, params)
         n_hidden = H.shape[1]
@@ -622,8 +672,8 @@ class MambaAdapter:
                 W = W - lr * grad_W
                 b = b - lr * grad_b
 
-            params['output_proj_W'] = W
-            params['output_proj_b'] = b
+            params["output_proj_W"] = W
+            params["output_proj_b"] = b
         else:
             # Ridge regression
             HTH = H.T @ H + lambda_reg * jnp.eye(n_hidden)
@@ -631,11 +681,11 @@ class MambaAdapter:
             W = jnp.linalg.solve(HTH, HTy)
             predictions = H @ W
             b = jnp.mean(y.reshape(-1, 1) - predictions)
-            params['output_proj_W'] = W
-            params['output_proj_b'] = jnp.array([b])
+            params["output_proj_W"] = W
+            params["output_proj_b"] = jnp.array([b])
 
         # Mark that weights were solved (for consistency)
-        params['_weights_solved'] = True
+        params["_weights_solved"] = True
 
         return params
 
@@ -643,6 +693,7 @@ class MambaAdapter:
 # ============================================================================
 # ELM Adapter
 # ============================================================================
+
 
 class ELMAdapter:
     """
@@ -655,8 +706,8 @@ class ELMAdapter:
         self,
         hidden_dim: int = 32,
         n_hidden_nodes: int = 128,
-        activation: str = 'tanh',
-        key: random.PRNGKey = None
+        activation: str = "tanh",
+        key: random.PRNGKey = None,
     ):
         self.hidden_dim = hidden_dim
         self.n_hidden_nodes = n_hidden_nodes
@@ -680,12 +731,12 @@ class ELMAdapter:
 
         # Convert to dict format
         param_dict = flax_to_dict_params(flax_params)
-        param_dict['n_inputs'] = n_inputs
+        param_dict["n_inputs"] = n_inputs
 
         # Output projection — trainable. ELM uses scale 1.0 for wider initial range.
         key_proj = random.PRNGKey(0)
-        param_dict['output_proj_W'] = random.normal(key_proj, (self.hidden_dim, 1)) * 1.0
-        param_dict['output_proj_b'] = jnp.zeros(1)
+        param_dict["output_proj_W"] = random.normal(key_proj, (self.hidden_dim, 1)) * 1.0
+        param_dict["output_proj_b"] = jnp.zeros(1)
 
         return param_dict
 
@@ -707,26 +758,30 @@ class ELMAdapter:
         flax_params = dict_to_flax_params(params)
 
         # Forward through ELM (no adjacency matrix needed)
-        h = self.model.apply(flax_params, X, A=None, training=False)  # (n_samples, n_inputs, hidden_dim)
+        h = self.model.apply(
+            flax_params, X, A=None, training=False
+        )  # (n_samples, n_inputs, hidden_dim)
 
         # Pool across features
         h_pooled = jnp.mean(h, axis=1)  # (n_samples, hidden_dim)
 
         # Project to scalar output (backward compat: lazy-create if loading old pkl)
-        if 'output_proj_W' not in params:
+        if "output_proj_W" not in params:
             key = random.PRNGKey(0)
-            params['output_proj_W'] = random.normal(key, (self.hidden_dim, 1)) * 1.0
-            params['output_proj_b'] = jnp.zeros(1)
+            params["output_proj_W"] = random.normal(key, (self.hidden_dim, 1)) * 1.0
+            params["output_proj_b"] = jnp.zeros(1)
 
         # Normalize h_pooled for classification (see MLPAdapter.forward comment)
-        if skip_centering and not params.get('_weights_solved', False):
-            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8)
+        if skip_centering and not params.get("_weights_solved", False):
+            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (
+                jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8
+            )
 
-        output = h_pooled @ params['output_proj_W'] + params['output_proj_b']
+        output = h_pooled @ params["output_proj_W"] + params["output_proj_b"]
         output = output.squeeze()
 
         # Skip centering for classification (see MLPAdapter.forward comment)
-        if not skip_centering and not params.get('_weights_solved', False):
+        if not skip_centering and not params.get("_weights_solved", False):
             output = output - jnp.mean(output)
 
         return output
@@ -747,8 +802,14 @@ class ELMAdapter:
         h_pooled = jnp.mean(h, axis=1)
         return h_pooled
 
-    def solve_output_weights(self, X: jnp.ndarray, y: jnp.ndarray, params: Dict,
-                             lambda_reg: float = 1e-4, for_classification: bool = True) -> Dict:
+    def solve_output_weights(
+        self,
+        X: jnp.ndarray,
+        y: jnp.ndarray,
+        params: Dict,
+        lambda_reg: float = 1e-4,
+        for_classification: bool = True,
+    ) -> Dict:
         """
         Solve for optimal output weights.
 
@@ -798,8 +859,8 @@ class ELMAdapter:
                 W = W - lr * grad_W
                 b = b - lr * grad_b
 
-            params['output_proj_W'] = W
-            params['output_proj_b'] = b
+            params["output_proj_W"] = W
+            params["output_proj_b"] = b
         else:
             # Ridge regression: W = (H'H + λI)^{-1} H'y
             HTH = H.T @ H + lambda_reg * jnp.eye(n_hidden)
@@ -810,11 +871,11 @@ class ELMAdapter:
             predictions = H @ W_out_solved
             b_out_solved = jnp.mean(y.reshape(-1, 1) - predictions)
 
-            params['output_proj_W'] = W_out_solved
-            params['output_proj_b'] = jnp.array([b_out_solved])
+            params["output_proj_W"] = W_out_solved
+            params["output_proj_b"] = jnp.array([b_out_solved])
 
         # Mark that weights were solved (skip centering in forward)
-        params['_weights_solved'] = True
+        params["_weights_solved"] = True
 
         return params
 
@@ -822,6 +883,7 @@ class ELMAdapter:
 # ============================================================================
 # GNN Adapter
 # ============================================================================
+
 
 class GNNAdapter:
     """
@@ -836,9 +898,9 @@ class GNNAdapter:
         self,
         hidden_dim: int = 64,
         n_layers: int = 2,
-        gnn_type: str = 'gcn',
-        sage_aggregation: str = 'mean',
-        key: random.PRNGKey = None
+        gnn_type: str = "gcn",
+        sage_aggregation: str = "mean",
+        key: random.PRNGKey = None,
     ):
         self.hidden_dim = hidden_dim
         self.n_layers = n_layers
@@ -852,7 +914,7 @@ class GNNAdapter:
             n_layers=n_layers,
             layer_type=gnn_type,  # Use layer_type parameter
             sage_aggregation=sage_aggregation,  # Fixed: use sage_aggregation for GraphSAGE
-            aggregation='last',  # Keep default for multi-layer aggregation
+            aggregation="last",  # Keep default for multi-layer aggregation
         )
 
     def init_params(self, n_inputs: int) -> Dict:
@@ -866,16 +928,18 @@ class GNNAdapter:
 
         # Convert to dict format
         param_dict = flax_to_dict_params(flax_params)
-        param_dict['n_inputs'] = n_inputs
+        param_dict["n_inputs"] = n_inputs
 
         # Output projection — trainable. See MLPAdapter init_params comment.
         key_proj = random.PRNGKey(0)
-        param_dict['output_proj_W'] = random.normal(key_proj, (self.hidden_dim, 1)) * 0.5
-        param_dict['output_proj_b'] = jnp.zeros(1)
+        param_dict["output_proj_W"] = random.normal(key_proj, (self.hidden_dim, 1)) * 0.5
+        param_dict["output_proj_b"] = jnp.zeros(1)
 
         return param_dict
 
-    def forward(self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None, skip_centering: bool = False) -> jnp.ndarray:
+    def forward(
+        self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None, skip_centering: bool = False
+    ) -> jnp.ndarray:
         """
         Forward pass through GNN.
 
@@ -905,29 +969,33 @@ class GNNAdapter:
         h_pooled = jnp.mean(h, axis=1)  # (n_samples, hidden_dim)
 
         # Project to scalar output (backward compat: lazy-create if loading old pkl)
-        if 'output_proj_W' not in params:
+        if "output_proj_W" not in params:
             key = random.PRNGKey(0)
-            params['output_proj_W'] = random.normal(key, (self.hidden_dim, 1)) * 0.5
-            params['output_proj_b'] = jnp.zeros(1)
+            params["output_proj_W"] = random.normal(key, (self.hidden_dim, 1)) * 0.5
+            params["output_proj_b"] = jnp.zeros(1)
 
         # Apply H normalization if weights were solved with normalized features
-        if params.get('_weights_solved', False) and '_H_mean' in params:
-            h_pooled = (h_pooled - params['_H_mean']) / params['_H_std']
+        if params.get("_weights_solved", False) and "_H_mean" in params:
+            h_pooled = (h_pooled - params["_H_mean"]) / params["_H_std"]
 
         # Normalize h_pooled for classification (see MLPAdapter.forward comment)
-        if skip_centering and not params.get('_weights_solved', False):
-            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8)
+        if skip_centering and not params.get("_weights_solved", False):
+            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (
+                jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8
+            )
 
-        output = h_pooled @ params['output_proj_W'] + params['output_proj_b']
+        output = h_pooled @ params["output_proj_W"] + params["output_proj_b"]
         output = output.squeeze()
 
         # Skip centering for classification (see MLPAdapter.forward comment)
-        if not skip_centering and not params.get('_weights_solved', False):
+        if not skip_centering and not params.get("_weights_solved", False):
             output = output - jnp.mean(output)
 
         return output
 
-    def get_hidden_features(self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None) -> jnp.ndarray:
+    def get_hidden_features(
+        self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None
+    ) -> jnp.ndarray:
         """Get hidden features (h_pooled) for solving output weights."""
         n_samples, n_inputs = X.shape
         flax_params = dict_to_flax_params(params)
@@ -939,9 +1007,15 @@ class GNNAdapter:
         h_pooled = jnp.mean(h, axis=1)
         return h_pooled
 
-    def solve_output_weights(self, X: jnp.ndarray, y: jnp.ndarray, params: Dict,
-                             lambda_reg: float = 1e-4, for_classification: bool = True,
-                             A: jnp.ndarray = None) -> Dict:
+    def solve_output_weights(
+        self,
+        X: jnp.ndarray,
+        y: jnp.ndarray,
+        params: Dict,
+        lambda_reg: float = 1e-4,
+        for_classification: bool = True,
+        A: jnp.ndarray = None,
+    ) -> Dict:
         """
         Solve output weights via logistic regression (classification) or ridge (regression).
 
@@ -985,10 +1059,10 @@ class GNNAdapter:
                 W = W - lr * grad_W
                 b = b - lr * grad_b
 
-            params['output_proj_W'] = W
-            params['output_proj_b'] = b
-            params['_H_mean'] = H_mean
-            params['_H_std'] = H_std
+            params["output_proj_W"] = W
+            params["output_proj_b"] = b
+            params["_H_mean"] = H_mean
+            params["_H_std"] = H_std
         else:
             # Ridge regression
             HTH = H.T @ H + lambda_reg * jnp.eye(n_hidden)
@@ -996,11 +1070,11 @@ class GNNAdapter:
             W = jnp.linalg.solve(HTH, HTy)
             predictions = H @ W
             b = jnp.mean(y.reshape(-1, 1) - predictions)
-            params['output_proj_W'] = W
-            params['output_proj_b'] = jnp.array([b])
+            params["output_proj_W"] = W
+            params["output_proj_b"] = jnp.array([b])
 
         # Mark that weights were solved (for consistency)
-        params['_weights_solved'] = True
+        params["_weights_solved"] = True
 
         return params
 
@@ -1009,7 +1083,9 @@ class GNNAdapter:
 # DAG-Attention Transformer Adapter
 # ============================================================================
 
-from jcce.models.dag_attention_transformer import DAGAttentionTransformer as DAGAttentionTransformerBase
+from jcce.models.dag_attention_transformer import (
+    DAGAttentionTransformer as DAGAttentionTransformerBase,
+)
 
 
 class DAGAttentionAdapter:
@@ -1053,17 +1129,24 @@ class DAGAttentionAdapter:
         flax_params = self.model.init(self.key, dummy_input, A=dummy_A, training=False)
 
         param_dict = flax_to_dict_params(flax_params)
-        param_dict['n_inputs'] = n_inputs
+        param_dict["n_inputs"] = n_inputs
 
         key_proj = random.PRNGKey(0)
-        param_dict['output_proj_W'] = random.normal(key_proj, (self.d_model, 1)) * 0.5
-        param_dict['output_proj_b'] = jnp.zeros(1)
+        param_dict["output_proj_W"] = random.normal(key_proj, (self.d_model, 1)) * 0.5
+        param_dict["output_proj_b"] = jnp.zeros(1)
 
         return param_dict
 
-    def forward(self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None,
-                training: bool = True, rng_key: random.PRNGKey = None,
-                skip_centering: bool = False, return_attn: bool = False) -> jnp.ndarray:
+    def forward(
+        self,
+        X: jnp.ndarray,
+        params: Dict,
+        A: jnp.ndarray = None,
+        training: bool = True,
+        rng_key: random.PRNGKey = None,
+        skip_centering: bool = False,
+        return_attn: bool = False,
+    ) -> jnp.ndarray:
         """
         Forward pass with soft DAG-masked attention.
 
@@ -1081,13 +1164,15 @@ class DAGAttentionAdapter:
 
         if training and rng_key is not None:
             result = self.model.apply(
-                flax_params, X, A=A, training=training, return_attn=return_attn,
-                rngs={'dropout': rng_key}
+                flax_params,
+                X,
+                A=A,
+                training=training,
+                return_attn=return_attn,
+                rngs={"dropout": rng_key},
             )
         else:
-            result = self.model.apply(
-                flax_params, X, A=A, training=False, return_attn=return_attn
-            )
+            result = self.model.apply(flax_params, X, A=A, training=False, return_attn=return_attn)
 
         if return_attn:
             h, attn_list = result
@@ -1098,36 +1183,46 @@ class DAGAttentionAdapter:
         # Pool across features
         h_pooled = jnp.mean(h, axis=1)
 
-        if 'output_proj_W' not in params:
+        if "output_proj_W" not in params:
             key = random.PRNGKey(0)
-            params['output_proj_W'] = random.normal(key, (self.d_model, 1)) * 0.5
-            params['output_proj_b'] = jnp.zeros(1)
+            params["output_proj_W"] = random.normal(key, (self.d_model, 1)) * 0.5
+            params["output_proj_b"] = jnp.zeros(1)
 
-        if params.get('_weights_solved', False) and '_H_mean' in params:
-            h_pooled = (h_pooled - params['_H_mean']) / params['_H_std']
+        if params.get("_weights_solved", False) and "_H_mean" in params:
+            h_pooled = (h_pooled - params["_H_mean"]) / params["_H_std"]
 
-        if skip_centering and not params.get('_weights_solved', False):
-            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8)
+        if skip_centering and not params.get("_weights_solved", False):
+            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (
+                jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8
+            )
 
-        output = h_pooled @ params['output_proj_W'] + params['output_proj_b']
+        output = h_pooled @ params["output_proj_W"] + params["output_proj_b"]
         output = output.squeeze()
 
-        if not skip_centering and not params.get('_weights_solved', False):
+        if not skip_centering and not params.get("_weights_solved", False):
             output = output - jnp.mean(output)
 
         if return_attn:
             return output, attn_list
         return output
 
-    def get_hidden_features(self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None) -> jnp.ndarray:
+    def get_hidden_features(
+        self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None
+    ) -> jnp.ndarray:
         flax_params = dict_to_flax_params(params)
         h = self.model.apply(flax_params, X, A=A, training=False)
         h_pooled = jnp.mean(h, axis=1)
         return h_pooled
 
-    def solve_output_weights(self, X: jnp.ndarray, y: jnp.ndarray, params: Dict,
-                             lambda_reg: float = 1e-4, for_classification: bool = True,
-                             A: jnp.ndarray = None) -> Dict:
+    def solve_output_weights(
+        self,
+        X: jnp.ndarray,
+        y: jnp.ndarray,
+        params: Dict,
+        lambda_reg: float = 1e-4,
+        for_classification: bool = True,
+        A: jnp.ndarray = None,
+    ) -> Dict:
         H = self.get_hidden_features(X, params, A=A)
         n_hidden = H.shape[1]
         n_samples = len(y)
@@ -1153,28 +1248,26 @@ class DAGAttentionAdapter:
                 W = W - lr * grad_W
                 b = b - lr * grad_b
 
-            params['output_proj_W'] = W
-            params['output_proj_b'] = b
-            params['_H_mean'] = H_mean
-            params['_H_std'] = H_std
+            params["output_proj_W"] = W
+            params["output_proj_b"] = b
+            params["_H_mean"] = H_mean
+            params["_H_std"] = H_std
         else:
             HTH = H.T @ H + lambda_reg * jnp.eye(n_hidden)
             HTy = H.T @ y.reshape(-1, 1)
             W = jnp.linalg.solve(HTH, HTy)
             predictions = H @ W
             b = jnp.mean(y.reshape(-1, 1) - predictions)
-            params['output_proj_W'] = W
-            params['output_proj_b'] = jnp.array([b])
+            params["output_proj_W"] = W
+            params["output_proj_b"] = jnp.array([b])
 
-        params['_weights_solved'] = True
+        params["_weights_solved"] = True
         return params
 
     def consistency_loss(self, X: jnp.ndarray, params: Dict, A: jnp.ndarray) -> jnp.ndarray:
         """Compute attention-DAG consistency loss for the multi-loss objective."""
         flax_params = dict_to_flax_params(params)
-        _, attn_list = self.model.apply(
-            flax_params, X, A=A, training=False, return_attn=True
-        )
+        _, attn_list = self.model.apply(flax_params, X, A=A, training=False, return_attn=True)
         return DAGAttentionTransformerBase.consistency_loss(
             attn_list, A, temperature=self.temperature
         )
@@ -1232,11 +1325,11 @@ class CausalMambaAdapter:
         flax_params = self.model.init(self.key, dummy_input, topo_order=None, training=False)
 
         param_dict = flax_to_dict_params(flax_params)
-        param_dict['n_inputs'] = n_inputs
+        param_dict["n_inputs"] = n_inputs
 
         key_proj = random.PRNGKey(0)
-        param_dict['output_proj_W'] = random.normal(key_proj, (self.d_model, 1)) * 0.5
-        param_dict['output_proj_b'] = jnp.zeros(1)
+        param_dict["output_proj_W"] = random.normal(key_proj, (self.d_model, 1)) * 0.5
+        param_dict["output_proj_b"] = jnp.zeros(1)
 
         return param_dict
 
@@ -1246,8 +1339,9 @@ class CausalMambaAdapter:
         if self._topo_order is None or self._call_count % self.reorder_interval == 0:
             self._topo_order = topological_sort_from_adjacency(A, threshold=0.01)
 
-    def forward(self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None,
-                skip_centering: bool = False) -> jnp.ndarray:
+    def forward(
+        self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None, skip_centering: bool = False
+    ) -> jnp.ndarray:
         """
         Forward pass with topological variable ordering.
 
@@ -1272,23 +1366,27 @@ class CausalMambaAdapter:
         # Pool across sequence
         h_pooled = jnp.mean(h, axis=1)
 
-        if 'output_proj_W' not in params:
+        if "output_proj_W" not in params:
             key = random.PRNGKey(0)
-            params['output_proj_W'] = random.normal(key, (self.d_model, 1)) * 0.5
-            params['output_proj_b'] = jnp.zeros(1)
+            params["output_proj_W"] = random.normal(key, (self.d_model, 1)) * 0.5
+            params["output_proj_b"] = jnp.zeros(1)
 
-        if skip_centering and not params.get('_weights_solved', False):
-            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8)
+        if skip_centering and not params.get("_weights_solved", False):
+            h_pooled = (h_pooled - jnp.mean(h_pooled, axis=0, keepdims=True)) / (
+                jnp.std(h_pooled, axis=0, keepdims=True) + 1e-8
+            )
 
-        output = h_pooled @ params['output_proj_W'] + params['output_proj_b']
+        output = h_pooled @ params["output_proj_W"] + params["output_proj_b"]
         output = output.squeeze()
 
-        if not skip_centering and not params.get('_weights_solved', False):
+        if not skip_centering and not params.get("_weights_solved", False):
             output = output - jnp.mean(output)
 
         return output
 
-    def get_hidden_features(self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None) -> jnp.ndarray:
+    def get_hidden_features(
+        self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None
+    ) -> jnp.ndarray:
         flax_params = dict_to_flax_params(params)
         topo_order = None
         if A is not None:
@@ -1297,9 +1395,15 @@ class CausalMambaAdapter:
         h_pooled = jnp.mean(h, axis=1)
         return h_pooled
 
-    def solve_output_weights(self, X: jnp.ndarray, y: jnp.ndarray, params: Dict,
-                             lambda_reg: float = 1e-4, for_classification: bool = True,
-                             A: jnp.ndarray = None) -> Dict:
+    def solve_output_weights(
+        self,
+        X: jnp.ndarray,
+        y: jnp.ndarray,
+        params: Dict,
+        lambda_reg: float = 1e-4,
+        for_classification: bool = True,
+        A: jnp.ndarray = None,
+    ) -> Dict:
         H = self.get_hidden_features(X, params, A=A)
         n_hidden = H.shape[1]
         n_samples = len(y)
@@ -1321,24 +1425,25 @@ class CausalMambaAdapter:
                 W = W - lr * grad_W
                 b = b - lr * grad_b
 
-            params['output_proj_W'] = W
-            params['output_proj_b'] = b
+            params["output_proj_W"] = W
+            params["output_proj_b"] = b
         else:
             HTH = H.T @ H + lambda_reg * jnp.eye(n_hidden)
             HTy = H.T @ y.reshape(-1, 1)
             W = jnp.linalg.solve(HTH, HTy)
             predictions = H @ W
             b = jnp.mean(y.reshape(-1, 1) - predictions)
-            params['output_proj_W'] = W
-            params['output_proj_b'] = jnp.array([b])
+            params["output_proj_W"] = W
+            params["output_proj_b"] = jnp.array([b])
 
-        params['_weights_solved'] = True
+        params["_weights_solved"] = True
         return params
 
 
 # ============================================================================
 # Effect Adapter Wrapper (for Causal Effect Estimation)
 # ============================================================================
+
 
 class EffectAdapterWrapper:
     """
@@ -1368,7 +1473,7 @@ class EffectAdapterWrapper:
         latent_dim: int = 4,
         head_hidden_dim: int = 32,
         enable_effects: bool = True,
-        key: random.PRNGKey = None
+        key: random.PRNGKey = None,
     ):
         """
         Initialize effect adapter wrapper.
@@ -1388,11 +1493,12 @@ class EffectAdapterWrapper:
 
         # Import effect heads from effect_estimation module
         from jcce.structure_learning.effect_estimation import EffectHeads
+
         self.effect_heads = EffectHeads(head_hidden_dim=head_hidden_dim)
 
         # Get hidden_dim from base adapter (adapters store this)
-        self.hidden_dim = getattr(base_adapter, 'hidden_dim', 32)
-        if hasattr(base_adapter, 'd_model'):
+        self.hidden_dim = getattr(base_adapter, "hidden_dim", 32)
+        if hasattr(base_adapter, "d_model"):
             self.hidden_dim = base_adapter.d_model
 
     def init_params(self, n_inputs: int) -> Dict:
@@ -1417,10 +1523,10 @@ class EffectAdapterWrapper:
             effect_params = self.effect_heads.init(key1, dummy_input, training=False)
 
             # Store effect head params
-            params['effect_heads'] = flax_to_dict_params(effect_params)
-            params['effect_enabled'] = True
-            params['latent_dim'] = self.latent_dim
-            params['head_hidden_dim'] = self.head_hidden_dim
+            params["effect_heads"] = flax_to_dict_params(effect_params)
+            params["effect_enabled"] = True
+            params["latent_dim"] = self.latent_dim
+            params["head_hidden_dim"] = self.head_hidden_dim
 
         return params
 
@@ -1447,7 +1553,7 @@ class EffectAdapterWrapper:
         sample_indices: jnp.ndarray = None,
         rng_key: random.PRNGKey = None,
         training: bool = True,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, jnp.ndarray]:
         """
         Forward pass with effect estimation.
@@ -1481,9 +1587,9 @@ class EffectAdapterWrapper:
         # Use base forward for standard output
         output = self.base_adapter.forward(X, params, **kwargs)
 
-        result = {'output': output}
+        result = {"output": output}
 
-        if not self.enable_effects or not params.get('effect_enabled', False):
+        if not self.enable_effects or not params.get("effect_enabled", False):
             return result
 
         # Extract representation from base adapter
@@ -1500,13 +1606,12 @@ class EffectAdapterWrapper:
         augmented_rep = jnp.concatenate([representation, L_batch], axis=-1)
 
         # Get effect head params
-        effect_params = dict_to_flax_params(params['effect_heads'])
+        effect_params = dict_to_flax_params(params["effect_heads"])
 
         # Forward through effect heads
         if training and rng_key is not None:
             y0, y1, propensity = self.effect_heads.apply(
-                effect_params, augmented_rep, training=training,
-                rngs={'dropout': rng_key}
+                effect_params, augmented_rep, training=training, rngs={"dropout": rng_key}
             )
         else:
             y0, y1, propensity = self.effect_heads.apply(
@@ -1519,23 +1624,20 @@ class EffectAdapterWrapper:
         # Compute CATE
         tau = y1 - y0
 
-        result.update({
-            'representation': representation,
-            'y0': y0.squeeze(),
-            'y1': y1.squeeze(),
-            'propensity': propensity.squeeze(),
-            'tau': tau.squeeze(),
-            'ATE': jnp.mean(tau)
-        })
+        result.update(
+            {
+                "representation": representation,
+                "y0": y0.squeeze(),
+                "y1": y1.squeeze(),
+                "propensity": propensity.squeeze(),
+                "tau": tau.squeeze(),
+                "ATE": jnp.mean(tau),
+            }
+        )
 
         return result
 
-    def _get_representation(
-        self,
-        X: jnp.ndarray,
-        params: Dict,
-        **kwargs
-    ) -> jnp.ndarray:
+    def _get_representation(self, X: jnp.ndarray, params: Dict, **kwargs) -> jnp.ndarray:
         """
         Extract pooled representation from base adapter.
 
@@ -1554,25 +1656,25 @@ class EffectAdapterWrapper:
         # Convert params to Flax format
         flax_params = dict_to_flax_params(params)
 
-        if adapter_name == 'ELMAdapter':
+        if adapter_name == "ELMAdapter":
             h = self.base_adapter.model.apply(flax_params, X, A=None, training=False)
             return jnp.mean(h, axis=1)  # Pool over nodes
 
-        elif adapter_name == 'MLPAdapter':
+        elif adapter_name == "MLPAdapter":
             h = self.base_adapter.model.apply(flax_params, X, A=None, training=False)
             return jnp.mean(h, axis=1)
 
-        elif adapter_name == 'TransformerAdapter':
+        elif adapter_name == "TransformerAdapter":
             h = self.base_adapter.model.apply(flax_params, X, A=None, training=False)
             return jnp.mean(h, axis=1)
 
-        elif adapter_name == 'MambaAdapter':
+        elif adapter_name == "MambaAdapter":
             X_projected = jnp.tile(X[:, :, jnp.newaxis], (1, 1, self.base_adapter.model.d_model))
             h = self.base_adapter.model.apply(flax_params, X_projected)
             return jnp.mean(h, axis=1)
 
-        elif adapter_name == 'GNNAdapter':
-            A = kwargs.get('A', jnp.eye(X.shape[1]))
+        elif adapter_name == "GNNAdapter":
+            A = kwargs.get("A", jnp.eye(X.shape[1]))
             h = self.base_adapter.model.apply(flax_params, X, A, training=False)
             return jnp.mean(h, axis=1)
 
@@ -1588,7 +1690,7 @@ def create_effect_adapter(
     head_hidden_dim: int = 32,
     enable_effects: bool = True,
     key: random.PRNGKey = None,
-    **adapter_kwargs
+    **adapter_kwargs,
 ) -> EffectAdapterWrapper:
     """
     Factory function to create any processor adapter with effect estimation.
@@ -1612,50 +1714,50 @@ def create_effect_adapter(
     # Create base adapter
     processor_type = processor_type.lower()
 
-    if processor_type == 'elm':
+    if processor_type == "elm":
         base_adapter = ELMAdapter(
-            hidden_dim=adapter_kwargs.get('hidden_dim', 32),
-            n_hidden_nodes=adapter_kwargs.get('n_hidden_nodes', 128),
-            activation=adapter_kwargs.get('activation', 'tanh'),
-            key=key1
+            hidden_dim=adapter_kwargs.get("hidden_dim", 32),
+            n_hidden_nodes=adapter_kwargs.get("n_hidden_nodes", 128),
+            activation=adapter_kwargs.get("activation", "tanh"),
+            key=key1,
         )
 
-    elif processor_type == 'mlp':
+    elif processor_type == "mlp":
         base_adapter = MLPAdapter(
-            hidden_dim=adapter_kwargs.get('hidden_dim', 64),
-            n_layers=adapter_kwargs.get('n_layers', 2),
-            activation=adapter_kwargs.get('activation', 'relu'),
-            dropout_rate=adapter_kwargs.get('dropout_rate', 0.1),
-            key=key1
+            hidden_dim=adapter_kwargs.get("hidden_dim", 64),
+            n_layers=adapter_kwargs.get("n_layers", 2),
+            activation=adapter_kwargs.get("activation", "relu"),
+            dropout_rate=adapter_kwargs.get("dropout_rate", 0.1),
+            key=key1,
         )
 
-    elif processor_type == 'transformer':
+    elif processor_type == "transformer":
         base_adapter = TransformerAdapter(
-            d_model=adapter_kwargs.get('d_model', 128),
-            n_heads=adapter_kwargs.get('n_heads', 4),
-            n_layers=adapter_kwargs.get('n_layers', 2),
-            d_ff=adapter_kwargs.get('d_ff', 512),
-            dropout_rate=adapter_kwargs.get('dropout_rate', 0.1),
-            key=key1
+            d_model=adapter_kwargs.get("d_model", 128),
+            n_heads=adapter_kwargs.get("n_heads", 4),
+            n_layers=adapter_kwargs.get("n_layers", 2),
+            d_ff=adapter_kwargs.get("d_ff", 512),
+            dropout_rate=adapter_kwargs.get("dropout_rate", 0.1),
+            key=key1,
         )
 
-    elif processor_type == 'mamba':
+    elif processor_type == "mamba":
         base_adapter = MambaAdapter(
-            d_model=adapter_kwargs.get('d_model', 128),
-            d_state=adapter_kwargs.get('d_state', 16),
-            d_conv=adapter_kwargs.get('d_conv', 4),
-            expand=adapter_kwargs.get('expand', 2),
-            n_features=adapter_kwargs.get('n_features', None),
-            key=key1
+            d_model=adapter_kwargs.get("d_model", 128),
+            d_state=adapter_kwargs.get("d_state", 16),
+            d_conv=adapter_kwargs.get("d_conv", 4),
+            expand=adapter_kwargs.get("expand", 2),
+            n_features=adapter_kwargs.get("n_features", None),
+            key=key1,
         )
 
-    elif processor_type == 'gnn':
+    elif processor_type == "gnn":
         base_adapter = GNNAdapter(
-            hidden_dim=adapter_kwargs.get('hidden_dim', 64),
-            n_layers=adapter_kwargs.get('n_layers', 2),
-            gnn_type=adapter_kwargs.get('gnn_type', 'gcn'),
-            sage_aggregation=adapter_kwargs.get('sage_aggregation', 'mean'),
-            key=key1
+            hidden_dim=adapter_kwargs.get("hidden_dim", 64),
+            n_layers=adapter_kwargs.get("n_layers", 2),
+            gnn_type=adapter_kwargs.get("gnn_type", "gcn"),
+            sage_aggregation=adapter_kwargs.get("sage_aggregation", "mean"),
+            key=key1,
         )
 
     else:
@@ -1667,7 +1769,7 @@ def create_effect_adapter(
         latent_dim=latent_dim,
         head_hidden_dim=head_hidden_dim,
         enable_effects=enable_effects,
-        key=key2
+        key=key2,
     )
 
 
@@ -1675,9 +1777,9 @@ def create_effect_adapter(
 # Test Functions
 # ============================================================================
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("Testing Processor Adapters")
-    print("="*60)
+    print("=" * 60)
 
     key = random.PRNGKey(42)
     n_samples, n_inputs = 10, 5
@@ -1689,7 +1791,7 @@ if __name__ == '__main__':
     params_mlp = mlp.init_params(n_inputs)
     output_mlp = mlp.forward(X, params_mlp)
     print(f"   Input: {X.shape}, Output: {output_mlp.shape}")
-    print(f"   [OK] MLP working!")
+    print("   [OK] MLP working!")
 
     # Test Transformer
     print("\n2. Transformer Adapter")
@@ -1697,7 +1799,7 @@ if __name__ == '__main__':
     params_transformer = transformer.init_params(n_inputs)
     output_transformer = transformer.forward(X, params_transformer)
     print(f"   Input: {X.shape}, Output: {output_transformer.shape}")
-    print(f"   [OK] Transformer working!")
+    print("   [OK] Transformer working!")
 
     # Test Mamba
     print("\n3. Mamba Adapter")
@@ -1705,7 +1807,7 @@ if __name__ == '__main__':
     params_mamba = mamba.init_params(n_inputs)
     output_mamba = mamba.forward(X, params_mamba)
     print(f"   Input: {X.shape}, Output: {output_mamba.shape}")
-    print(f"   [OK] Mamba working!")
+    print("   [OK] Mamba working!")
 
     # Test ELM
     print("\n4. ELM Adapter")
@@ -1713,31 +1815,33 @@ if __name__ == '__main__':
     params_elm = elm.init_params(n_inputs)
     output_elm = elm.forward(X, params_elm)
     print(f"   Input: {X.shape}, Output: {output_elm.shape}")
-    print(f"   [OK] ELM working!")
+    print("   [OK] ELM working!")
 
     # Test GNN
     print("\n5. GNN Adapter")
-    gnn = GNNAdapter(hidden_dim=32, n_layers=2, gnn_type='gcn', key=key)
+    gnn = GNNAdapter(hidden_dim=32, n_layers=2, gnn_type="gcn", key=key)
     params_gnn = gnn.init_params(n_inputs)
     A_test = random.bernoulli(key, p=0.3, shape=(n_inputs, n_inputs)).astype(jnp.float32)
     output_gnn = gnn.forward(X, params_gnn, A=A_test)
     print(f"   Input: {X.shape}, Adjacency: {A_test.shape}, Output: {output_gnn.shape}")
-    print(f"   [OK] GNN working!")
+    print("   [OK] GNN working!")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("[OK] All adapters working!")
 
     # Test EffectAdapterWrapper with all processors
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Testing Effect Adapter Wrapper (ALL Processors)")
-    print("="*60)
+    print("=" * 60)
 
     latent_dim = 4
     U = random.normal(key, (n_samples, latent_dim))  # Latent scores
     T = (random.uniform(key, (n_samples,)) > 0.5).astype(jnp.float32)  # Treatment
 
-    for processor_type in ['elm', 'mlp', 'transformer', 'mamba', 'gnn']:
-        print(f"\n6.{['elm', 'mlp', 'transformer', 'mamba', 'gnn'].index(processor_type)+1}. {processor_type.upper()} with Effect Heads")
+    for processor_type in ["elm", "mlp", "transformer", "mamba", "gnn"]:
+        print(
+            f"\n6.{['elm', 'mlp', 'transformer', 'mamba', 'gnn'].index(processor_type) + 1}. {processor_type.upper()} with Effect Heads"
+        )
         try:
             effect_adapter = create_effect_adapter(
                 processor_type=processor_type,
@@ -1749,7 +1853,7 @@ if __name__ == '__main__':
                 d_model=32,
                 n_layers=1,
                 n_heads=2,
-                d_ff=64
+                d_ff=64,
             )
 
             params = effect_adapter.init_params(n_inputs)
@@ -1760,14 +1864,12 @@ if __name__ == '__main__':
             print(f"   Standard forward: {output.shape}")
 
             # Test forward with effects
-            if processor_type == 'gnn':
+            if processor_type == "gnn":
                 outputs = effect_adapter.forward_with_effects(
                     X, params, U, T, training=False, A=A_test
                 )
             else:
-                outputs = effect_adapter.forward_with_effects(
-                    X, params, U, T, training=False
-                )
+                outputs = effect_adapter.forward_with_effects(X, params, U, T, training=False)
 
             print(f"   Effect outputs: y0={outputs['y0'].shape}, y1={outputs['y1'].shape}")
             print(f"   CATE (tau): {outputs['tau'].shape}, ATE={float(outputs['ATE']):.4f}")
@@ -1776,5 +1878,5 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"   [ERROR] Error: {e}")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("[OK] All effect adapters working!")

@@ -36,18 +36,13 @@ class MLPProcessor(nn.Module):
 
     hidden_dim: int = 32
     n_layers: int = 2
-    activation: str = 'relu'
+    activation: str = "relu"
     use_layer_norm: bool = True
     use_residual: bool = True
     dropout_rate: float = 0.1
 
     @nn.compact
-    def __call__(
-        self,
-        z: jnp.ndarray,
-        A: jnp.ndarray = None,
-        training: bool = True
-    ) -> jnp.ndarray:
+    def __call__(self, z: jnp.ndarray, A: jnp.ndarray = None, training: bool = True) -> jnp.ndarray:
         """
         Process latent factors with MLP.
 
@@ -121,11 +116,11 @@ class MLPProcessor(nn.Module):
 
     def _activation(self, x: jnp.ndarray) -> jnp.ndarray:
         """Apply activation function."""
-        if self.activation == 'relu':
+        if self.activation == "relu":
             return nn.relu(x)
-        elif self.activation == 'gelu':
+        elif self.activation == "gelu":
             return nn.gelu(x)
-        elif self.activation == 'tanh':
+        elif self.activation == "tanh":
             return jnp.tanh(x)
         else:
             raise ValueError(f"Unknown activation: {self.activation}")

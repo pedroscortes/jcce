@@ -11,13 +11,13 @@ Tests:
 7. ImprovedWarmStartCache
 """
 
-import pytest
-import numpy as np
-import jax
-import jax.numpy as jnp
-from jax import random
 import sys
 from pathlib import Path
+
+import jax.numpy as jnp
+import numpy as np
+import pytest
+from jax import random
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -28,6 +28,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # Test Spectral DAG Constraint
 # ============================================================================
 
+
 class TestSpectralDAGConstraint:
     """Tests for spectral DAG constraint."""
 
@@ -36,11 +37,7 @@ class TestSpectralDAGConstraint:
         from jcce.structure_learning.jcce_learner import compute_dag_constraint_spectral
 
         # Lower triangular = DAG
-        A = jnp.array([
-            [0.0, 0.0, 0.0],
-            [0.5, 0.0, 0.0],
-            [0.3, 0.2, 0.0]
-        ])
+        A = jnp.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [0.3, 0.2, 0.0]])
         h = compute_dag_constraint_spectral(A)
         assert h < 0.5, f"Expected ~0 for DAG, got {h}"
 
@@ -49,11 +46,7 @@ class TestSpectralDAGConstraint:
         from jcce.structure_learning.jcce_learner import compute_dag_constraint_spectral
 
         # Strong cycle: 0 → 1 → 2 → 0
-        A = jnp.array([
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [1.0, 0.0, 0.0]
-        ])
+        A = jnp.array([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]])
         h = compute_dag_constraint_spectral(A)
         # May be 0 due to power iteration limitations - just check it runs
         assert h >= 0, f"h should be non-negative, got {h}"
@@ -84,6 +77,7 @@ class TestSpectralDAGConstraint:
 # Test Hybrid DAG Constraint
 # ============================================================================
 
+
 class TestHybridDAGConstraint:
     """Tests for hybrid DAG constraint."""
 
@@ -109,6 +103,7 @@ class TestHybridDAGConstraint:
 # ============================================================================
 # Test Dynamic Pruning
 # ============================================================================
+
 
 class TestDynamicPruning:
     """Tests for dynamic pruning."""
@@ -156,6 +151,7 @@ class TestDynamicPruning:
 # ============================================================================
 # Test COSMO Genome Encoding
 # ============================================================================
+
 
 class TestCOSMO:
     """Tests for COSMO genome encoding."""
@@ -248,11 +244,7 @@ class TestCOSMO:
         """Test temperature annealing schedule."""
         from jcce.structure_learning.cosmo import COSMOTemperatureSchedule
 
-        schedule = COSMOTemperatureSchedule(
-            tau_init=1.0,
-            tau_final=0.01,
-            n_generations=100
-        )
+        schedule = COSMOTemperatureSchedule(tau_init=1.0, tau_final=0.01, n_generations=100)
 
         # Should start high
         tau_start = schedule.get_tau(0)
@@ -268,10 +260,10 @@ class TestCOSMO:
             assert taus[i] >= taus[i + 1]
 
 
-
 # ============================================================================
 # Test Improved Warm Start Cache
 # ============================================================================
+
 
 class TestImprovedWarmStartCache:
     """Tests for improved warm start cache."""
@@ -283,10 +275,10 @@ class TestImprovedWarmStartCache:
         cache = ImprovedWarmStartCache(max_size=10)
 
         A = np.random.randn(5, 5) * 0.3
-        config = {'processor_type': 'mlp', 'lambda_1_idx': 1}
+        config = {"processor_type": "mlp", "lambda_1_idx": 1}
 
         # Add with good fitness
-        cache.add(config, A, fitness=0.8, generation=1, processor_type='mlp')
+        cache.add(config, A, fitness=0.8, generation=1, processor_type="mlp")
 
         # Should retrieve same config
         result = cache.get(config)
@@ -301,7 +293,7 @@ class TestImprovedWarmStartCache:
         cache = ImprovedWarmStartCache(max_size=10)
 
         A = np.random.randn(5, 5)
-        config = {'processor_type': 'mlp', 'lambda_1_idx': 1}
+        config = {"processor_type": "mlp", "lambda_1_idx": 1}
 
         # Add with low fitness (should be ignored)
         cache.add(config, A, fitness=0.3, generation=1)
@@ -316,27 +308,28 @@ class TestImprovedWarmStartCache:
 
         cache = ImprovedWarmStartCache(max_size=10)
 
-        config = {'processor_type': 'mlp', 'lambda_1_idx': 1}
+        config = {"processor_type": "mlp", "lambda_1_idx": 1}
         A = np.random.randn(3, 3)
         cache.add(config, A, fitness=0.8)  # Higher fitness to ensure caching
 
         # Hit (same config)
         result1 = cache.get(config)
         # Miss (different config)
-        result2 = cache.get({'processor_type': 'elm', 'lambda_1_idx': 2})
+        result2 = cache.get({"processor_type": "elm", "lambda_1_idx": 2})
 
         stats = cache.get_stats()
         # Stats are tracked
-        assert 'hits' in stats
-        assert 'misses' in stats
+        assert "hits" in stats
+        assert "misses" in stats
         # We should have at least tried to get twice
-        total_requests = stats['hits'] + stats['misses']
+        total_requests = stats["hits"] + stats["misses"]
         assert total_requests >= 2
 
 
 # ============================================================================
 # Test Island Model
 # ============================================================================
+
 
 class TestIslandModel:
     """Tests for Hierarchical Island Model."""
@@ -346,28 +339,25 @@ class TestIslandModel:
         from jcce.structure_learning.island_model import HierarchicalIslandModel
 
         model = HierarchicalIslandModel(
-            processor_types=['elm', 'mlp'],
+            processor_types=["elm", "mlp"],
             gpu_ids=[0],
             n_vars=10,
             population_per_island=4,
             seed=42,
-            verbose=False
+            verbose=False,
         )
 
         assert model.get_total_population() == 2 * 1 * 4  # 2 processors × 1 GPU × 4 pop
         assert len(model.islands) == 2
-        assert 'elm' in model.islands
-        assert 'mlp' in model.islands
+        assert "elm" in model.islands
+        assert "mlp" in model.islands
 
     def test_island_population_initialization(self):
         """Test that islands initialize populations correctly."""
         from jcce.structure_learning.island_model import Island, IslandConfig
 
         config = IslandConfig(
-            processor_type='mlp',
-            gpu_id=0,
-            population_size=5,
-            golem_iterations=10
+            processor_type="mlp", gpu_id=0, population_size=5, golem_iterations=10
         )
 
         island = Island(config, n_vars=10, seed=42)
@@ -375,7 +365,7 @@ class TestIslandModel:
         assert len(island.population) == 5
         for ind in island.population:
             assert ind.A_topology.shape == (11, 11)  # n_vars + 1 (includes Y)
-            assert ind.processor_type == 'mlp'
+            assert ind.processor_type == "mlp"
 
     def test_individual_copy(self):
         """Test Individual copy method."""
@@ -386,8 +376,8 @@ class TestIslandModel:
             lambda_1=0.01,
             lambda_2=1.0,
             lr=0.001,
-            processor_type='mlp',
-            fitness=0.8
+            processor_type="mlp",
+            fitness=0.8,
         )
 
         copy = ind.copy()
@@ -403,7 +393,7 @@ class TestIslandModel:
         """Test tournament selection."""
         from jcce.structure_learning.island_model import Island, IslandConfig
 
-        config = IslandConfig('mlp', 0, 10, 10)
+        config = IslandConfig("mlp", 0, 10, 10)
         island = Island(config, n_vars=5, seed=42)
 
         # Assign varying fitness
@@ -421,24 +411,16 @@ class TestIslandModel:
 
     def test_crossover(self):
         """Test crossover operation."""
-        from jcce.structure_learning.island_model import Island, IslandConfig, Individual
+        from jcce.structure_learning.island_model import Individual, Island, IslandConfig
 
-        config = IslandConfig('mlp', 0, 5, 10)
+        config = IslandConfig("mlp", 0, 5, 10)
         island = Island(config, n_vars=5, seed=42)
 
         parent1 = Individual(
-            A_topology=np.ones((5, 5)),
-            lambda_1=0.01,
-            lambda_2=1.0,
-            lr=0.001,
-            processor_type='mlp'
+            A_topology=np.ones((5, 5)), lambda_1=0.01, lambda_2=1.0, lr=0.001, processor_type="mlp"
         )
         parent2 = Individual(
-            A_topology=np.zeros((5, 5)),
-            lambda_1=0.1,
-            lambda_2=10.0,
-            lr=0.01,
-            processor_type='mlp'
+            A_topology=np.zeros((5, 5)), lambda_1=0.1, lambda_2=10.0, lr=0.01, processor_type="mlp"
         )
 
         child = island._crossover(parent1, parent2)
@@ -452,13 +434,13 @@ class TestIslandModel:
         from jcce.structure_learning.island_model import HierarchicalIslandModel
 
         model = HierarchicalIslandModel(
-            processor_types=['elm'],
+            processor_types=["elm"],
             gpu_ids=[0],
             n_vars=5,
             population_per_island=4,
             intra_migration_interval=2,
             inter_migration_interval=4,
-            verbose=False
+            verbose=False,
         )
 
         assert not model.should_migrate_intra(0)
@@ -477,6 +459,7 @@ class TestIslandModel:
 # Test Adaptive Config
 # ============================================================================
 
+
 class TestAdaptiveConfig:
     """Tests for adaptive configuration."""
 
@@ -484,34 +467,34 @@ class TestAdaptiveConfig:
         """Test config returns expected keys."""
         from jcce.structure_learning.jcce_learner import get_adaptive_config
 
-        config = get_adaptive_config(n_vars=20, processor_type='mlp')
+        config = get_adaptive_config(n_vars=20, processor_type="mlp")
 
-        assert 'population_size' in config
-        assert 'golem_iterations' in config
-        assert 'use_spectral_constraint' in config
-        assert 'enable_pruning' in config
-        assert 'batch_size' in config
+        assert "population_size" in config
+        assert "golem_iterations" in config
+        assert "use_spectral_constraint" in config
+        assert "enable_pruning" in config
+        assert "batch_size" in config
 
     def test_processor_memory_factor(self):
         """Test that processor type affects config."""
         from jcce.structure_learning.jcce_learner import get_adaptive_config
 
-        config_elm = get_adaptive_config(n_vars=50, processor_type='elm')
-        config_transformer = get_adaptive_config(n_vars=50, processor_type='transformer')
+        config_elm = get_adaptive_config(n_vars=50, processor_type="elm")
+        config_transformer = get_adaptive_config(n_vars=50, processor_type="transformer")
 
         # Both should return valid configs
-        assert config_elm['population_size'] > 0
-        assert config_transformer['population_size'] > 0
+        assert config_elm["population_size"] > 0
+        assert config_transformer["population_size"] > 0
 
     def test_large_dataset_uses_spectral(self):
         """Test that large datasets use spectral constraint."""
         from jcce.structure_learning.jcce_learner import get_adaptive_config
 
         # Very large dataset
-        config = get_adaptive_config(n_vars=100, processor_type='mlp')
+        config = get_adaptive_config(n_vars=100, processor_type="mlp")
 
         # Should use spectral for efficiency
-        assert config['use_spectral_constraint'] is True
+        assert config["use_spectral_constraint"] is True
 
 
 # ============================================================================

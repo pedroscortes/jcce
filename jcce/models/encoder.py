@@ -60,9 +60,7 @@ class Encoder(nn.Module):
         return mu, log_var
 
 
-def reparameterize(
-    mu: jnp.ndarray, log_var: jnp.ndarray, key: jnp.ndarray
-) -> jnp.ndarray:
+def reparameterize(mu: jnp.ndarray, log_var: jnp.ndarray, key: jnp.ndarray) -> jnp.ndarray:
     """
     Reparameterization trick for VAE.
 

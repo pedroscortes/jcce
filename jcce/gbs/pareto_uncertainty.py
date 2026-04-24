@@ -77,8 +77,7 @@ def dequantized_hellinger_matrix(
     H = np.zeros((n, n))
     for i in range(n):
         for j in range(i + 1, n):
-            h = dequantized_hellinger(W_list[i], W_list[j],
-                                      n_mean=n_mean, max_order=max_order)
+            h = dequantized_hellinger(W_list[i], W_list[j], n_mean=n_mean, max_order=max_order)
             H[i, j] = h
             H[j, i] = h
     return H
@@ -210,20 +209,20 @@ def hellinger_vs_shd_correlation(
 
     if len(h_upper) < 3 or np.std(h_upper) < 1e-10 or np.std(s_upper) < 1e-10:
         return {
-            'pearson_r': 0.0,
-            'spearman_rho': 0.0,
-            'shd_matrix': S,
-            'hellinger_matrix': H,
+            "pearson_r": 0.0,
+            "spearman_rho": 0.0,
+            "shd_matrix": S,
+            "hellinger_matrix": H,
         }
 
     r, _ = pearsonr(h_upper, s_upper)
     rho, _ = spearmanr(h_upper, s_upper)
 
     return {
-        'pearson_r': float(r),
-        'spearman_rho': float(rho),
-        'shd_matrix': S,
-        'hellinger_matrix': H,
+        "pearson_r": float(r),
+        "spearman_rho": float(rho),
+        "shd_matrix": S,
+        "hellinger_matrix": H,
     }
 
 
@@ -260,17 +259,18 @@ def pareto_uncertainty_report(
 
     H = dequantized_hellinger_matrix(pareto_dags, scale, n_mean, max_order)
 
-    corr = hellinger_vs_shd_correlation(pareto_dags, H=H, scale=scale,
-                                         n_mean=n_mean, max_order=max_order)
+    corr = hellinger_vs_shd_correlation(
+        pareto_dags, H=H, scale=scale, n_mean=n_mean, max_order=max_order
+    )
 
     return {
-        'hellinger_matrix': H,
-        'diameter': hellinger_diameter(H),
-        'mean_dispersion': mean_hellinger_dispersion(H),
-        'coverage': hellinger_coverage(H),
-        'pearson_r': corr['pearson_r'],
-        'spearman_rho': corr['spearman_rho'],
-        'shd_matrix': corr['shd_matrix'],
-        'n_dags': n,
-        'd': d,
+        "hellinger_matrix": H,
+        "diameter": hellinger_diameter(H),
+        "mean_dispersion": mean_hellinger_dispersion(H),
+        "coverage": hellinger_coverage(H),
+        "pearson_r": corr["pearson_r"],
+        "spearman_rho": corr["spearman_rho"],
+        "shd_matrix": corr["shd_matrix"],
+        "n_dags": n,
+        "d": d,
     }

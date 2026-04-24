@@ -8,10 +8,14 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from jcce.data.dag_generator import DAGConfig, generate_dag, count_edges, get_average_degree
+from jcce.data.dag_generator import DAGConfig, count_edges, generate_dag, get_average_degree
 from jcce.data.scm import LinearSCM, SCMConfig
-from jcce.data.synthetic_dataset import generate_synthetic_dataset, SyntheticDatasetConfig, create_simple_dataset
-from jcce.utils.graph_utils import topological_sort, validate_dag, compute_graph_statistics
+from jcce.data.synthetic_dataset import (
+    SyntheticDatasetConfig,
+    create_simple_dataset,
+    generate_synthetic_dataset,
+)
+from jcce.utils.graph_utils import compute_graph_statistics, topological_sort, validate_dag
 
 
 class TestDAGGeneration:

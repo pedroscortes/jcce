@@ -11,15 +11,13 @@ Tests:
 7. Integration test with 5-node DAG
 """
 
-import numpy as np
 import unittest
-import warnings
+
+import numpy as np
 
 from jcce.validation.all_edges_dml import (
-    EdgeEffectResult,
-    AllEdgesDMLResult,
-    extract_all_edges,
     _benjamini_hochberg,
+    extract_all_edges,
     run_all_edges_dml,
 )
 
@@ -76,6 +74,7 @@ class TestAdjustmentSets(unittest.TestCase):
         from jcce.structure_learning.effect_estimation import (
             compute_valid_adjustment_sets,
         )
+
         # A[i,j] = i→j, 3 nodes (A=0, B=1, C=2)
         A = np.zeros((3, 3))
         A[0, 1] = 0.5  # A→B
@@ -112,10 +111,15 @@ class TestDMLXtoX(unittest.TestCase):
         A_est[0, 1] = 0.5  # X0→X1
 
         result = run_all_edges_dml(
-            X=X, Y=Y, A_est=A_est, Y_idx=2,
-            feature_names=['X0', 'X1'],
-            n_dml_folds=3, n_dml_repeats=3,
-            run_refutation=False, verbose=False,
+            X=X,
+            Y=Y,
+            A_est=A_est,
+            Y_idx=2,
+            feature_names=["X0", "X1"],
+            n_dml_folds=3,
+            n_dml_repeats=3,
+            run_refutation=False,
+            verbose=False,
         )
 
         self.assertIsNotNone(result)
@@ -141,10 +145,15 @@ class TestDMLXtoY(unittest.TestCase):
         A_est[0, 2] = 0.8  # X0→Y (Y_idx=2)
 
         result = run_all_edges_dml(
-            X=X, Y=Y, A_est=A_est, Y_idx=2,
-            feature_names=['X0', 'X1'],
-            n_dml_folds=3, n_dml_repeats=3,
-            run_refutation=False, verbose=False,
+            X=X,
+            Y=Y,
+            A_est=A_est,
+            Y_idx=2,
+            feature_names=["X0", "X1"],
+            n_dml_folds=3,
+            n_dml_repeats=3,
+            run_refutation=False,
+            verbose=False,
         )
 
         self.assertIsNotNone(result)
@@ -197,7 +206,10 @@ class TestEmptyDAG(unittest.TestCase):
         A_est = np.zeros((4, 4))
 
         result = run_all_edges_dml(
-            X=X, Y=Y, A_est=A_est, Y_idx=3,
+            X=X,
+            Y=Y,
+            A_est=A_est,
+            Y_idx=3,
             verbose=False,
         )
         self.assertIsNone(result)
@@ -226,10 +238,15 @@ class TestIntegration(unittest.TestCase):
         A_est[3, 4] = 0.6  # X3→Y
 
         result = run_all_edges_dml(
-            X=X, Y=Y, A_est=A_est, Y_idx=4,
-            feature_names=['X0', 'X1', 'X2', 'X3'],
-            n_dml_folds=3, n_dml_repeats=3,
-            run_refutation=False, verbose=False,
+            X=X,
+            Y=Y,
+            A_est=A_est,
+            Y_idx=4,
+            feature_names=["X0", "X1", "X2", "X3"],
+            n_dml_folds=3,
+            n_dml_repeats=3,
+            run_refutation=False,
+            verbose=False,
         )
 
         self.assertIsNotNone(result)
@@ -237,33 +254,33 @@ class TestIntegration(unittest.TestCase):
 
         # Verify result structure
         d = result.to_dict()
-        self.assertIn('n_edges', d)
-        self.assertIn('n_significant', d)
-        self.assertIn('n_significant_fdr', d)
-        self.assertIn('edge_effects', d)
-        self.assertEqual(len(d['edge_effects']), 4)
+        self.assertIn("n_edges", d)
+        self.assertIn("n_significant", d)
+        self.assertIn("n_significant_fdr", d)
+        self.assertIn("edge_effects", d)
+        self.assertEqual(len(d["edge_effects"]), 4)
 
         # Verify storage dict
         storage = result.to_storage_dict()
-        self.assertIn('edge_effects', storage)
-        for key in storage['edge_effects']:
-            self.assertIn('->', key)
-            edge_data = storage['edge_effects'][key]
-            self.assertIn('ate', edge_data)
-            self.assertIn('ci_95', edge_data)
-            self.assertIn('p_value', edge_data)
-            self.assertIn('sig', edge_data)
-            self.assertIn('sig_fdr', edge_data)
+        self.assertIn("edge_effects", storage)
+        for key in storage["edge_effects"]:
+            self.assertIn("->", key)
+            edge_data = storage["edge_effects"][key]
+            self.assertIn("ate", edge_data)
+            self.assertIn("ci_95", edge_data)
+            self.assertIn("p_value", edge_data)
+            self.assertIn("sig", edge_data)
+            self.assertIn("sig_fdr", edge_data)
 
         # Verify causal effects dict
         effects_dict = result.to_causal_effects_dict()
         self.assertEqual(len(effects_dict), 4)
-        self.assertIn('X0->X1', effects_dict)
-        self.assertIn('X2->Y', effects_dict)
+        self.assertIn("X0->X1", effects_dict)
+        self.assertIn("X2->Y", effects_dict)
 
         # Verify summary table doesn't crash
         table = result.summary_table()
-        self.assertIn('ALL-EDGES DML', table)
+        self.assertIn("ALL-EDGES DML", table)
 
         # Verify per-edge result structure
         for er in result.edge_results:
@@ -274,5 +291,5 @@ class TestIntegration(unittest.TestCase):
             self.assertIsInstance(er.is_significant_fdr, bool)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

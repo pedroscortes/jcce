@@ -23,9 +23,10 @@ Usage:
     )
 """
 
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
-from typing import Dict, Optional, Tuple, List
-from dataclasses import dataclass, field
 
 
 @dataclass
@@ -41,7 +42,9 @@ class SensitivityResult:
     rv_alpha: float  # RV at significance level (accounts for SE)
 
     # Bias-adjusted estimates at benchmark confounder strengths
-    benchmarks: Dict[str, Dict[str, float]]  # name -> {r2_Y, r2_T, adj_estimate, adj_ci_lower, adj_ci_upper}
+    benchmarks: Dict[
+        str, Dict[str, float]
+    ]  # name -> {r2_Y, r2_T, adj_estimate, adj_ci_lower, adj_ci_upper}
 
     # Raw partial R² values
     partial_r2_treatment: float  # R²_{Y~T|X}
@@ -53,14 +56,14 @@ class SensitivityResult:
 
     def to_dict(self) -> Dict:
         return {
-            'treatment_name': self.treatment_name,
-            'ate_estimate': self.ate_estimate,
-            'ate_se': self.ate_se,
-            'rv': self.rv,
-            'rv_alpha': self.rv_alpha,
-            'partial_r2_treatment': self.partial_r2_treatment,
-            'benchmarks': self.benchmarks,
-            'is_robust': self.is_robust(),
+            "treatment_name": self.treatment_name,
+            "ate_estimate": self.ate_estimate,
+            "ate_se": self.ate_se,
+            "rv": self.rv,
+            "rv_alpha": self.rv_alpha,
+            "partial_r2_treatment": self.partial_r2_treatment,
+            "benchmarks": self.benchmarks,
+            "is_robust": self.is_robust(),
         }
 
     def summary(self) -> str:
@@ -78,13 +81,15 @@ class SensitivityResult:
                 lines.append(
                     f"    {name}: R²_Y={b['r2_Y']:.3f}, R²_T={b['r2_T']:.3f} "
                     f"-> ATE_adj={b['adj_estimate']:.4f} "
-                    f"[{b['adj_ci_lower']:.4f}, {b['adj_ci_upper']:.4f}]")
+                    f"[{b['adj_ci_lower']:.4f}, {b['adj_ci_upper']:.4f}]"
+                )
         return "\n".join(lines)
 
 
 # ============================================================================
 # Core Computations
 # ============================================================================
+
 
 def partial_r2(Y: np.ndarray, T: np.ndarray, X: np.ndarray) -> float:
     """
@@ -109,13 +114,13 @@ def partial_r2(Y: np.ndarray, T: np.ndarray, X: np.ndarray) -> float:
     X_with_intercept = np.column_stack([np.ones(n), X])
     beta_r = np.linalg.lstsq(X_with_intercept, Y, rcond=None)[0]
     resid_r = Y - X_with_intercept @ beta_r
-    ssr_restricted = np.sum(resid_r ** 2)
+    ssr_restricted = np.sum(resid_r**2)
 
     # Full model: Y ~ X + T
     X_full = np.column_stack([X_with_intercept, T])
     beta_f = np.linalg.lstsq(X_full, Y, rcond=None)[0]
     resid_f = Y - X_full @ beta_f
-    ssr_full = np.sum(resid_f ** 2)
+    ssr_full = np.sum(resid_f**2)
 
     if ssr_restricted < 1e-15:
         return 0.0
@@ -156,18 +161,18 @@ def robustness_value(
     # RV = 0.5 * (sqrt(f^4 + 4*f^2) - f^2)
     # where f = t-statistic = ate/se
     t_stat = abs(ate / se) if se > 1e-15 else 0.0
-    f2 = t_stat ** 2 / dof if dof > 0 else t_stat ** 2
+    f2 = t_stat**2 / dof if dof > 0 else t_stat**2
 
-    rv_0 = 0.5 * (np.sqrt(f2 ** 2 + 4 * f2) - f2) if f2 > 0 else 0.0
+    rv_0 = 0.5 * (np.sqrt(f2**2 + 4 * f2) - f2) if f2 > 0 else 0.0
 
     # RV for significance (Proposition 2, Eq. 6; matches sensemakr R package)
     # f_alpha = max(|t| - t_crit, 0), then f2_alpha = f_alpha^2 / dof
     # Note: (|t| - t_crit)^2 != t^2 - t_crit^2 — the old code used the latter (wrong)
     t_crit = stats.t.ppf(1 - alpha / 2, dof) if dof > 0 else 1.96
     f_alpha = max(t_stat - t_crit, 0.0)
-    f2_alpha = f_alpha ** 2 / dof if dof > 0 else f_alpha ** 2
+    f2_alpha = f_alpha**2 / dof if dof > 0 else f_alpha**2
 
-    rv_alpha = 0.5 * (np.sqrt(f2_alpha ** 2 + 4 * f2_alpha) - f2_alpha) if f2_alpha > 0 else 0.0
+    rv_alpha = 0.5 * (np.sqrt(f2_alpha**2 + 4 * f2_alpha) - f2_alpha) if f2_alpha > 0 else 0.0
 
     return float(rv_0), float(rv_alpha)
 
@@ -225,19 +230,20 @@ def bias_adjusted_estimate(
     adj_ci_upper = adj_estimate + t_crit * adj_se
 
     return {
-        'adj_estimate': float(adj_estimate),
-        'adj_se': float(adj_se),
-        'adj_ci_lower': float(adj_ci_lower),
-        'adj_ci_upper': float(adj_ci_upper),
-        'max_bias': float(max_bias),
-        'r2_Y': float(r2_Y_confounder),
-        'r2_T': float(r2_T_confounder),
+        "adj_estimate": float(adj_estimate),
+        "adj_se": float(adj_se),
+        "adj_ci_lower": float(adj_ci_lower),
+        "adj_ci_upper": float(adj_ci_upper),
+        "max_bias": float(max_bias),
+        "r2_Y": float(r2_Y_confounder),
+        "r2_T": float(r2_T_confounder),
     }
 
 
 # ============================================================================
 # Benchmark Generation
 # ============================================================================
+
 
 def compute_covariate_benchmarks(
     Y: np.ndarray,
@@ -293,8 +299,8 @@ def compute_covariate_benchmarks(
         for k in k_multipliers:
             label = f"{k:.0f}x {feature_names[j]}" if k != 1.0 else feature_names[j]
             benchmarks[label] = {
-                'r2_Y': float(min(r2_Y_j * k, 0.99)),
-                'r2_T': float(min(r2_T_j * k, 0.99)),
+                "r2_Y": float(min(r2_Y_j * k, 0.99)),
+                "r2_T": float(min(r2_T_j * k, 0.99)),
             }
 
     return benchmarks
@@ -303,6 +309,7 @@ def compute_covariate_benchmarks(
 # ============================================================================
 # Main API
 # ============================================================================
+
 
 def cinelli_sensitivity(
     Y: np.ndarray,
@@ -341,7 +348,7 @@ def cinelli_sensitivity(
     ate = float(beta[1])  # Coefficient on T
     residuals = Y - X_design @ beta
     dof = n - X_design.shape[1]
-    mse = np.sum(residuals ** 2) / max(dof, 1)
+    mse = np.sum(residuals**2) / max(dof, 1)
     XtX_inv = np.linalg.pinv(X_design.T @ X_design)
     se = float(np.sqrt(mse * XtX_inv[1, 1]))
 
@@ -355,16 +362,12 @@ def cinelli_sensitivity(
     if custom_benchmarks is not None:
         benchmarks_raw = custom_benchmarks
     else:
-        benchmarks_raw = compute_covariate_benchmarks(
-            Y, T, X, feature_names, benchmark_multipliers
-        )
+        benchmarks_raw = compute_covariate_benchmarks(Y, T, X, feature_names, benchmark_multipliers)
 
     # Compute bias-adjusted estimates for each benchmark
     benchmarks = {}
     for name, bm in benchmarks_raw.items():
-        adj = bias_adjusted_estimate(
-            ate, se, bm['r2_Y'], bm['r2_T'], pr2_T, dof, alpha
-        )
+        adj = bias_adjusted_estimate(ate, se, bm["r2_Y"], bm["r2_T"], pr2_T, dof, alpha)
         benchmarks[name] = adj
 
     return SensitivityResult(

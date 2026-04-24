@@ -14,8 +14,9 @@ Mathematically, for a DAG with adjacency matrix A where A[i,j] != 0 means edge i
 This is the minimal set of variables that makes Y conditionally independent of all other variables.
 """
 
+from typing import List
+
 import jax.numpy as jnp
-from typing import Set, List
 
 
 def extract_markov_blanket(A: jnp.ndarray, target: int, threshold: float = 1e-6) -> jnp.ndarray:
@@ -66,7 +67,9 @@ def extract_markov_blanket(A: jnp.ndarray, target: int, threshold: float = 1e-6)
     return mb_mask
 
 
-def extract_markov_blanket_indices(A: jnp.ndarray, target: int, threshold: float = 1e-6) -> jnp.ndarray:
+def extract_markov_blanket_indices(
+    A: jnp.ndarray, target: int, threshold: float = 1e-6
+) -> jnp.ndarray:
     """
     Extract Markov Blanket indices of target variable from DAG adjacency matrix.
 
@@ -152,11 +155,11 @@ def validate_markov_blanket(A: jnp.ndarray, target: int, threshold: float = 1e-6
     n_vars = A.shape[0]
 
     # Get parents: A[:, target] (column target — who points to target)
-    parents_mask = (jnp.abs(A[:, target]) > threshold)
+    parents_mask = jnp.abs(A[:, target]) > threshold
     parents = jnp.where(parents_mask)[0]
 
     # Get children: A[target, :] (row target — who target points to)
-    children_mask = (jnp.abs(A[target, :]) > threshold)
+    children_mask = jnp.abs(A[target, :]) > threshold
     children = jnp.where(children_mask)[0]
 
     # Get spouses (parents of children, excluding target and existing parents)
@@ -173,12 +176,12 @@ def validate_markov_blanket(A: jnp.ndarray, target: int, threshold: float = 1e-6
     mb_indices = extract_markov_blanket_indices(A, target, threshold)
 
     return {
-        'parents': parents,
-        'children': children,
-        'spouses': spouses,
-        'mb_all': mb_indices,
-        'mb_size': len(mb_indices),
-        'mb_sparsity': 1.0 - len(mb_indices) / n_vars,
+        "parents": parents,
+        "children": children,
+        "spouses": spouses,
+        "mb_all": mb_indices,
+        "mb_size": len(mb_indices),
+        "mb_sparsity": 1.0 - len(mb_indices) / n_vars,
     }
 
 
@@ -186,10 +189,9 @@ def validate_markov_blanket(A: jnp.ndarray, target: int, threshold: float = 1e-6
 # Multi-Target Markov Blanket (for classification with multiple target variables)
 # ============================================================================
 
+
 def extract_multi_target_markov_blanket(
-    A: jnp.ndarray,
-    targets: List[int],
-    threshold: float = 1e-6
+    A: jnp.ndarray, targets: List[int], threshold: float = 1e-6
 ) -> jnp.ndarray:
     """
     Extract unified Markov Blanket for multiple target variables.
@@ -219,11 +221,9 @@ def extract_multi_target_markov_blanket(
 # Utility: Feature selection from Markov Blanket
 # ============================================================================
 
+
 def select_features_by_markov_blanket(
-    X: jnp.ndarray,
-    A: jnp.ndarray,
-    target: int,
-    threshold: float = 1e-6
+    X: jnp.ndarray, A: jnp.ndarray, target: int, threshold: float = 1e-6
 ) -> jnp.ndarray:
     """
     Select features from data matrix using Markov Blanket.

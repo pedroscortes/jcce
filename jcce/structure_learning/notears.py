@@ -62,11 +62,7 @@ def notears_acyclicity_constraint(W: jnp.ndarray) -> float:
     return h
 
 
-def notears_penalty_loss(
-    W: jnp.ndarray,
-    lambda_dag: float,
-    rho: float = 1.0
-) -> float:
+def notears_penalty_loss(W: jnp.ndarray, lambda_dag: float, rho: float = 1.0) -> float:
     """
     Compute NOTEARS augmented Lagrangian penalty term.
 
@@ -81,7 +77,7 @@ def notears_penalty_loss(
         penalty: λ·h(W) + (ρ/2)·h(W)²
     """
     h = notears_acyclicity_constraint(W)
-    penalty = lambda_dag * h + 0.5 * rho * (h ** 2)
+    penalty = lambda_dag * h + 0.5 * rho * (h**2)
     return penalty
 
 
@@ -94,6 +90,7 @@ def is_dag(W: jnp.ndarray, threshold: float = 1e-3) -> bool:
 # =============================================================================
 # Gradient computation (for reference - JAX auto-handles this)
 # =============================================================================
+
 
 def notears_acyclicity_gradient(W: jnp.ndarray) -> jnp.ndarray:
     """
@@ -110,11 +107,12 @@ def notears_acyclicity_gradient(W: jnp.ndarray) -> jnp.ndarray:
 # Augmented Lagrangian optimization schedules
 # =============================================================================
 
+
 def get_augmented_lagrangian_schedule(
     n_epochs: int,
     lambda_init: float = 0.0,
     rho_init: float = 1.0,
-    rho_max: float = 1e+16,
+    rho_max: float = 1e16,
     h_threshold: float = 1e-8,
     gamma: float = 0.25,
 ) -> tuple:
@@ -124,17 +122,18 @@ def get_augmented_lagrangian_schedule(
     In practice λ and ρ are updated dynamically based on h(W).
     """
     return {
-        'lambda_init': lambda_init,
-        'rho_init': rho_init,
-        'rho_max': rho_max,
-        'h_threshold': h_threshold,
-        'gamma': gamma,
+        "lambda_init": lambda_init,
+        "rho_init": rho_init,
+        "rho_max": rho_max,
+        "h_threshold": h_threshold,
+        "gamma": gamma,
     }
 
 
 # =============================================================================
 # Full NOTEARS Training Algorithm (Augmented Lagrangian)
 # =============================================================================
+
 
 def learn_with_notears(
     X: jnp.ndarray,
@@ -200,7 +199,7 @@ def learn_with_notears(
             n_prior_edges = int(jnp.sum(A_prior))
             print(f"  Prior: {n_prior_edges} edges (λ_prior={lambda_prior:.3f})")
 
-    h_prev = float('inf')
+    h_prev = float("inf")
 
     for outer in range(n_outer):
         # Fresh optimizer each outer step (as in original NOTEARS)
@@ -213,16 +212,17 @@ def learn_with_notears(
 
         # Inner optimization loop
         for inner in range(n_inner):
+
             def loss_fn(A_param):
                 # Least-squares loss: (1/2n)||X - X·A||²_F
                 residuals = X - X @ A_param
-                recon_loss = 0.5 * jnp.sum(residuals ** 2) / n_samples
+                recon_loss = 0.5 * jnp.sum(residuals**2) / n_samples
 
                 # Acyclicity constraint
                 h = notears_acyclicity_constraint(A_param)
 
                 # Augmented Lagrangian: λ·h + (ρ/2)·h²
-                al_loss = _lambda_al * h + 0.5 * _rho * (h ** 2)
+                al_loss = _lambda_al * h + 0.5 * _rho * (h**2)
 
                 # Sparsity penalty
                 sparse_loss = alpha_sparse * jnp.sum(jnp.abs(A_param))
@@ -250,8 +250,10 @@ def learn_with_notears(
         if verbose:
             A_max = float(jnp.max(jnp.abs(A)))
             recon = float(0.5 * jnp.sum((X - X @ A) ** 2) / n_samples)
-            print(f"  Outer {outer+1:2d}: h={h_val:.6f}, recon={recon:.4f}, "
-                  f"λ={lambda_al:.2f}, ρ={rho:.1e}, max|A|={A_max:.4f}")
+            print(
+                f"  Outer {outer + 1:2d}: h={h_val:.6f}, recon={recon:.4f}, "
+                f"λ={lambda_al:.2f}, ρ={rho:.1e}, max|A|={A_max:.4f}"
+            )
 
         # Check convergence
         if h_val < h_tol:

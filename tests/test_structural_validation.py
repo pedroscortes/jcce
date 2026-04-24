@@ -7,17 +7,18 @@ Covers:
 3. Self-Compatibility — SCM fitting, sampling, fixed-point checking
 """
 
-import numpy as np
-import pytest
-
-import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
+import sys
+
+import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 
 # =============================================================================
 # 1. SID Tests
 # =============================================================================
+
 
 class TestSID:
     """Test Structural Intervention Distance."""
@@ -25,32 +26,30 @@ class TestSID:
     def test_sid_reexport_exists(self):
         """compute_sid and compute_sid_normalized available from utils.metrics."""
         from jcce.utils.metrics import compute_sid, compute_sid_normalized
+
         assert callable(compute_sid)
         assert callable(compute_sid_normalized)
 
     def test_sid_identical_graphs(self):
         """SID of identical graphs should be 0."""
         from jcce.utils.metrics import compute_sid
-        A = np.array([[0, 1, 0],
-                       [0, 0, 1],
-                       [0, 0, 0]], dtype=float)
+
+        A = np.array([[0, 1, 0], [0, 0, 1], [0, 0, 0]], dtype=float)
         assert compute_sid(A, A) == 0
 
     def test_sid_different_graphs(self):
         """SID of different graphs should be > 0."""
         from jcce.utils.metrics import compute_sid
-        A_true = np.array([[0, 1, 0],
-                            [0, 0, 1],
-                            [0, 0, 0]], dtype=float)
-        A_pred = np.array([[0, 0, 1],
-                            [0, 0, 0],
-                            [0, 0, 0]], dtype=float)
+
+        A_true = np.array([[0, 1, 0], [0, 0, 1], [0, 0, 0]], dtype=float)
+        A_pred = np.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]], dtype=float)
         sid = compute_sid(A_pred, A_true)
         assert sid > 0
 
     def test_sid_normalized_range(self):
         """Normalized SID should be in [0, 1]."""
         from jcce.utils.metrics import compute_sid_normalized
+
         A1 = np.random.randn(5, 5) * 0.3
         A2 = np.random.randn(5, 5) * 0.3
         sid_norm = compute_sid_normalized(A1, A2)
@@ -59,23 +58,31 @@ class TestSID:
     def test_sid_empty_graphs(self):
         """SID of two empty graphs should be 0."""
         from jcce.utils.metrics import compute_sid
+
         A = np.zeros((5, 5))
         assert compute_sid(A, A) == 0
 
     def test_sid_in_c1_script(self):
         """C.1 script includes SID in output."""
-        with open(os.path.join(os.path.dirname(__file__), '..',
-                               'scripts', 'compare_nsga2_vs_optuna.py')) as f:
+        with open(
+            os.path.join(os.path.dirname(__file__), "..", "scripts", "compare_nsga2_vs_optuna.py")
+        ) as f:
             source = f.read()
-        assert 'compute_sid' in source
+        assert "compute_sid" in source
         assert "'best_sid'" in source
 
     def test_sid_in_c9_script(self):
         """C.9 script includes SID in output."""
-        with open(os.path.join(os.path.dirname(__file__), '..',
-                               'scripts', 'experiment_c9_multi_fidelity_ablation.py')) as f:
+        with open(
+            os.path.join(
+                os.path.dirname(__file__),
+                "..",
+                "scripts",
+                "experiment_c9_multi_fidelity_ablation.py",
+            )
+        ) as f:
             source = f.read()
-        assert 'compute_sid' in source
+        assert "compute_sid" in source
         assert "'best_sid'" in source
 
 
@@ -83,22 +90,24 @@ class TestSID:
 # 2. LOVO CV Tests
 # =============================================================================
 
+
 class TestLOVOCV:
     """Test Leave-One-Variable-Out cross-validation."""
 
     def test_module_imports(self):
         """LOVO module imports correctly."""
         from jcce.validation.lovo_cv import (
-            lovo_cv, LovoResult,
-            remove_variable, remove_variable_from_dag,
-            compare_dags,
+            lovo_cv,
+            remove_variable,
         )
+
         assert callable(lovo_cv)
         assert callable(remove_variable)
 
     def test_remove_variable(self):
         """remove_variable drops the correct column."""
         from jcce.validation.lovo_cv import remove_variable
+
         data = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
         result = remove_variable(data, 1)
         expected = np.array([[1, 3], [4, 6], [7, 9]])
@@ -107,9 +116,8 @@ class TestLOVOCV:
     def test_remove_variable_from_dag(self):
         """remove_variable_from_dag removes correct row and column."""
         from jcce.validation.lovo_cv import remove_variable_from_dag
-        A = np.array([[0, 1, 0],
-                       [0, 0, 1],
-                       [0, 0, 0]], dtype=float)
+
+        A = np.array([[0, 1, 0], [0, 0, 1], [0, 0, 0]], dtype=float)
         A_sub = remove_variable_from_dag(A, 1)
         expected = np.array([[0, 0], [0, 0]], dtype=float)
         np.testing.assert_array_equal(A_sub, expected)
@@ -117,9 +125,8 @@ class TestLOVOCV:
     def test_remove_first_variable(self):
         """Removing first variable works correctly."""
         from jcce.validation.lovo_cv import remove_variable_from_dag
-        A = np.array([[0, 1, 0],
-                       [0, 0, 1],
-                       [0, 0, 0]], dtype=float)
+
+        A = np.array([[0, 1, 0], [0, 0, 1], [0, 0, 0]], dtype=float)
         A_sub = remove_variable_from_dag(A, 0)
         expected = np.array([[0, 1], [0, 0]], dtype=float)
         np.testing.assert_array_equal(A_sub, expected)
@@ -127,29 +134,28 @@ class TestLOVOCV:
     def test_compare_dags_identical(self):
         """Identical DAGs should have F1=1.0 and recovered=True."""
         from jcce.validation.lovo_cv import compare_dags
+
         A = np.array([[0, 0.5, 0], [0, 0, 0.8], [0, 0, 0]])
         result = compare_dags(A, A, threshold=0.3)
-        assert result['f1'] == 1.0
-        assert result['shd'] == 0
-        assert result['recovered']
+        assert result["f1"] == 1.0
+        assert result["shd"] == 0
+        assert result["recovered"]
 
     def test_compare_dags_different(self):
         """Different DAGs should have lower F1."""
         from jcce.validation.lovo_cv import compare_dags
+
         A1 = np.array([[0, 0.5, 0], [0, 0, 0.8], [0, 0, 0]])
         A2 = np.array([[0, 0, 0.5], [0, 0, 0], [0, 0, 0]])
         result = compare_dags(A1, A2, threshold=0.3)
-        assert result['f1'] < 1.0
-        assert result['shd'] > 0
+        assert result["f1"] < 1.0
+        assert result["shd"] > 0
 
     def test_lovo_cv_with_identity_learner(self):
         """LOVO with a learner that always returns the sub-DAG → score = 1.0."""
         from jcce.validation.lovo_cv import lovo_cv
 
-        A = np.array([[0, 1, 0, 0],
-                       [0, 0, 1, 0],
-                       [0, 0, 0, 1],
-                       [0, 0, 0, 0]], dtype=float)
+        A = np.array([[0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float)
         data = np.random.randn(100, 4)
 
         # Learner that returns the correct sub-DAG
@@ -177,12 +183,13 @@ class TestLOVOCV:
         )
         d = result.to_dict()
         assert isinstance(d, dict)
-        assert d['stability_score'] == 0.8
+        assert d["stability_score"] == 0.8
 
 
 # =============================================================================
 # 3. Self-Compatibility Tests
 # =============================================================================
+
 
 class TestSelfCompatibility:
     """Test self-compatibility (Faller et al. AISTATS 2024)."""
@@ -190,11 +197,11 @@ class TestSelfCompatibility:
     def test_module_imports(self):
         """Self-compatibility module imports correctly."""
         from jcce.validation.self_compatibility import (
-            self_compatibility_check,
-            SelfCompatibilityResult,
             fit_linear_scm,
             sample_from_fitted_scm,
+            self_compatibility_check,
         )
+
         assert callable(self_compatibility_check)
         assert callable(fit_linear_scm)
         assert callable(sample_from_fitted_scm)
@@ -212,22 +219,18 @@ class TestSelfCompatibility:
         data = np.column_stack([X0, X1, X2])
 
         # A[i,j] != 0 means j -> i
-        A = np.array([[0, 0, 0],
-                       [0.8, 0, 0],
-                       [0, 0.5, 0]], dtype=float)
+        A = np.array([[0, 0, 0], [0.8, 0, 0], [0, 0.5, 0]], dtype=float)
 
         params = fit_linear_scm(data, A, threshold=0.3)
-        assert params['A_fitted'].shape == (3, 3)
+        assert params["A_fitted"].shape == (3, 3)
         # Should recover ~0.8 for edge 0->1
-        assert abs(params['A_fitted'][1, 0] - 0.8) < 0.1
+        assert abs(params["A_fitted"][1, 0] - 0.8) < 0.1
         # Should recover ~0.5 for edge 1->2
-        assert abs(params['A_fitted'][2, 1] - 0.5) < 0.1
+        assert abs(params["A_fitted"][2, 1] - 0.5) < 0.1
 
     def test_sample_from_fitted_scm(self):
         """sample_from_fitted_scm produces data with correct shape."""
-        from jcce.validation.self_compatibility import (
-            fit_linear_scm, sample_from_fitted_scm
-        )
+        from jcce.validation.self_compatibility import fit_linear_scm, sample_from_fitted_scm
 
         rng = np.random.RandomState(42)
         data = rng.randn(100, 4)
@@ -245,16 +248,13 @@ class TestSelfCompatibility:
 
         rng = np.random.RandomState(42)
         data = rng.randn(100, 3)
-        A_learned = np.array([[0, 0, 0],
-                               [0.5, 0, 0],
-                               [0, 0.5, 0]], dtype=float)
+        A_learned = np.array([[0, 0, 0], [0.5, 0, 0], [0, 0.5, 0]], dtype=float)
 
         # Learner always returns A_learned (perfect fixed point)
         def fixed_learner(data_synth):
             return A_learned.copy()
 
-        result = self_compatibility_check(
-            data, A_learned, fixed_learner, n_resamples=3, seed=42)
+        result = self_compatibility_check(data, A_learned, fixed_learner, n_resamples=3, seed=42)
 
         assert result.compatibility_score == 1.0
         assert result.n_compatible == 3
@@ -266,16 +266,13 @@ class TestSelfCompatibility:
 
         rng = np.random.RandomState(42)
         data = rng.randn(100, 3)
-        A_learned = np.array([[0, 0, 0],
-                               [0.5, 0, 0],
-                               [0, 0.5, 0]], dtype=float)
+        A_learned = np.array([[0, 0, 0], [0.5, 0, 0], [0, 0.5, 0]], dtype=float)
 
         # Learner returns random graph
         def random_learner(data_synth):
             return np.random.randn(3, 3) * 0.1
 
-        result = self_compatibility_check(
-            data, A_learned, random_learner, n_resamples=5, seed=42)
+        result = self_compatibility_check(data, A_learned, random_learner, n_resamples=5, seed=42)
 
         # Random learner unlikely to recover structure
         assert result.compatibility_score < 1.0
@@ -316,4 +313,4 @@ class TestSelfCompatibility:
         )
         d = result.to_dict()
         assert isinstance(d, dict)
-        assert d['is_self_compatible'] is True
+        assert d["is_self_compatible"] is True

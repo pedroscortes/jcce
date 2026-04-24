@@ -14,13 +14,13 @@ References:
 - Shi et al. (2019) "Adapting Neural Networks for the Estimation of Treatment Effects"
 """
 
-import numpy as np
-import jax.numpy as jnp
-from sklearn.model_selection import StratifiedKFold, KFold
-from typing import Callable, Dict, List, Tuple, Optional, Union, Any
-from dataclasses import dataclass, field
-from scipy import stats
 import warnings
+from dataclasses import dataclass, field
+from typing import Callable, Dict, List, Optional, Tuple
+
+import numpy as np
+from scipy import stats
+from sklearn.model_selection import KFold, StratifiedKFold
 
 
 @dataclass
@@ -35,32 +35,33 @@ class DMLDiagnostics:
         - Balance: Austin (2009) "Using the SMD to compare covariates"
         - Convergence: Chernozhukov et al. (2018) Assumption 3.1
     """
+
     # Propensity overlap
     propensity_min: float = 0.0
     propensity_max: float = 1.0
     propensity_mean: float = 0.5
-    pct_clipped: float = 0.0         # Fraction clipped by clip_propensity bounds
+    pct_clipped: float = 0.0  # Fraction clipped by clip_propensity bounds
 
     # Covariate balance (standardized mean difference)
-    mean_smd: float = 0.0            # Mean |SMD| across covariates
-    max_smd: float = 0.0             # Max |SMD| across covariates
-    n_imbalanced: int = 0            # Covariates with |SMD| > 0.1
+    mean_smd: float = 0.0  # Mean |SMD| across covariates
+    max_smd: float = 0.0  # Max |SMD| across covariates
+    n_imbalanced: int = 0  # Covariates with |SMD| > 0.1
 
     # Nuisance fit quality (out-of-fold)
-    outcome_r2_mean: float = 0.0     # Mean R² of outcome models across folds
+    outcome_r2_mean: float = 0.0  # Mean R² of outcome models across folds
     propensity_logloss_mean: float = 0.0  # Mean log-loss of propensity across folds
 
     def to_dict(self) -> Dict:
         return {
-            'propensity_min': self.propensity_min,
-            'propensity_max': self.propensity_max,
-            'propensity_mean': self.propensity_mean,
-            'pct_clipped': self.pct_clipped,
-            'mean_smd': self.mean_smd,
-            'max_smd': self.max_smd,
-            'n_imbalanced': self.n_imbalanced,
-            'outcome_r2_mean': self.outcome_r2_mean,
-            'propensity_logloss_mean': self.propensity_logloss_mean,
+            "propensity_min": self.propensity_min,
+            "propensity_max": self.propensity_max,
+            "propensity_mean": self.propensity_mean,
+            "pct_clipped": self.pct_clipped,
+            "mean_smd": self.mean_smd,
+            "max_smd": self.max_smd,
+            "n_imbalanced": self.n_imbalanced,
+            "outcome_r2_mean": self.outcome_r2_mean,
+            "propensity_logloss_mean": self.propensity_logloss_mean,
         }
 
     def summary(self) -> str:
@@ -79,6 +80,7 @@ class DMLDiagnostics:
 @dataclass
 class DMLResult:
     """Result of DML cross-fitting estimation."""
+
     ate_mean: float
     ate_std: float
     ate_per_fold: List[float]
@@ -102,29 +104,30 @@ class DMLResult:
 
     def confidence_interval(self, alpha: float = 0.05) -> Tuple[float, float]:
         """Compute confidence interval for ATE using normal approximation."""
-        z_crit = stats.norm.ppf(1 - alpha/2)
+        z_crit = stats.norm.ppf(1 - alpha / 2)
         margin = z_crit * self.standard_error
         return (self.ate_mean - margin, self.ate_mean + margin)
 
     def to_dict(self) -> Dict:
         """Convert to dictionary for serialization."""
         d = {
-            'ate_mean': self.ate_mean,
-            'ate_std': self.ate_std,
-            'ate_variance': self.variance,
-            'ate_per_fold': self.ate_per_fold,
-            'n_folds': self.n_folds,
-            'treatment_idx': self.treatment_idx,
-            'ci_95': self.confidence_interval(0.05),
+            "ate_mean": self.ate_mean,
+            "ate_std": self.ate_std,
+            "ate_variance": self.variance,
+            "ate_per_fold": self.ate_per_fold,
+            "n_folds": self.n_folds,
+            "treatment_idx": self.treatment_idx,
+            "ci_95": self.confidence_interval(0.05),
         }
         if self.diagnostics is not None:
-            d['diagnostics'] = self.diagnostics.to_dict()
+            d["diagnostics"] = self.diagnostics.to_dict()
         return d
 
 
 @dataclass
 class DMLMultiTreatmentResult:
     """Result of DML cross-fitting for multiple treatments (MB features)."""
+
     results: Dict[int, DMLResult]  # treatment_idx -> DMLResult
     total_variance: float = field(init=False)
     mean_variance: float = field(init=False)
@@ -136,10 +139,10 @@ class DMLMultiTreatmentResult:
 
     def to_dict(self) -> Dict:
         return {
-            'results': {k: v.to_dict() for k, v in self.results.items()},
-            'total_variance': self.total_variance,
-            'mean_variance': self.mean_variance,
-            'n_treatments': len(self.results),
+            "results": {k: v.to_dict() for k, v in self.results.items()},
+            "total_variance": self.total_variance,
+            "mean_variance": self.mean_variance,
+            "n_treatments": len(self.results),
         }
 
 
@@ -233,11 +236,11 @@ class DMLCrossFitter:
             DMLResult with ATE estimate and variance
         """
         # Handle JAX arrays
-        if hasattr(X, 'device_buffer') or str(type(X)).find('jax') >= 0:
+        if hasattr(X, "device_buffer") or str(type(X)).find("jax") >= 0:
             X = np.array(X)
-        if hasattr(T, 'device_buffer') or str(type(T)).find('jax') >= 0:
+        if hasattr(T, "device_buffer") or str(type(T)).find("jax") >= 0:
             T = np.array(T)
-        if hasattr(Y, 'device_buffer') or str(type(Y)).find('jax') >= 0:
+        if hasattr(Y, "device_buffer") or str(type(Y)).find("jax") >= 0:
             Y = np.array(Y)
 
         # Ensure proper shapes
@@ -250,8 +253,8 @@ class DMLCrossFitter:
         all_aipw_scores = np.full(len(Y), np.nan)
 
         # Diagnostic accumulators
-        all_e_raw = []        # Raw propensity scores (before clipping)
-        outcome_r2s = []      # Per-fold outcome R²
+        all_e_raw = []  # Raw propensity scores (before clipping)
+        outcome_r2s = []  # Per-fold outcome R²
         propensity_loglosses = []  # Per-fold propensity log-loss
 
         for repeat in range(self.n_repeats):
@@ -260,18 +263,10 @@ class DMLCrossFitter:
             if self.stratify:
                 # For stratified, we need discrete Y
                 Y_discrete = (Y > np.median(Y)).astype(int) if Y.dtype == float else Y
-                kfold = StratifiedKFold(
-                    n_splits=self.n_splits,
-                    shuffle=True,
-                    random_state=seed
-                )
+                kfold = StratifiedKFold(n_splits=self.n_splits, shuffle=True, random_state=seed)
                 split_iterator = kfold.split(X, Y_discrete)
             else:
-                kfold = KFold(
-                    n_splits=self.n_splits,
-                    shuffle=True,
-                    random_state=seed
-                )
+                kfold = KFold(n_splits=self.n_splits, shuffle=True, random_state=seed)
                 split_iterator = kfold.split(X)
 
             fold_scores = []
@@ -279,9 +274,7 @@ class DMLCrossFitter:
             for fold_idx, (train_idx, val_idx) in enumerate(split_iterator):
                 try:
                     # Train nuisance models on training folds
-                    model = train_nuisance_fn(
-                        X[train_idx], T[train_idx], Y[train_idx]
-                    )
+                    model = train_nuisance_fn(X[train_idx], T[train_idx], Y[train_idx])
 
                     # Predict on validation fold (out-of-sample)
                     e_hat, mu0_hat, mu1_hat = predict_nuisance_fn(model, X[val_idx])
@@ -309,8 +302,7 @@ class DMLCrossFitter:
                     # Propensity log-loss
                     e_safe = np.clip(e_hat, 1e-7, 1 - 1e-7)
                     logloss = -np.mean(
-                        T_binary_val * np.log(e_safe)
-                        + (1 - T_binary_val) * np.log(1 - e_safe)
+                        T_binary_val * np.log(e_safe) + (1 - T_binary_val) * np.log(1 - e_safe)
                     )
                     propensity_loglosses.append(float(logloss))
 
@@ -320,7 +312,8 @@ class DMLCrossFitter:
                     # AIPW score for each sample
                     # ψ = μ₁(X) - μ₀(X) + T(Y - μ₁(X))/e(X) - (1-T)(Y - μ₀(X))/(1-e(X))
                     scores = (
-                        mu1_hat - mu0_hat
+                        mu1_hat
+                        - mu0_hat
                         + T_val * (Y_val - mu1_hat) / e_hat
                         - (1 - T_val) * (Y_val - mu0_hat) / (1 - e_hat)
                     )
@@ -346,10 +339,10 @@ class DMLCrossFitter:
             # All folds failed - return degenerate result
             return DMLResult(
                 ate_mean=0.0,
-                ate_std=float('inf'),
+                ate_std=float("inf"),
                 ate_per_fold=[],
                 n_folds=0,
-                treatment_idx=treatment_idx
+                treatment_idx=treatment_idx,
             )
 
         # Influence-function SE: sqrt(Var(ψ_i) / n)
@@ -361,9 +354,7 @@ class DMLCrossFitter:
             influence_se = float(np.std(ate_estimates))
 
         # Build diagnostics
-        diagnostics = self._compute_diagnostics(
-            X, T, all_e_raw, outcome_r2s, propensity_loglosses
-        )
+        diagnostics = self._compute_diagnostics(X, T, all_e_raw, outcome_r2s, propensity_loglosses)
 
         return DMLResult(
             ate_mean=float(np.mean(ate_estimates)),
@@ -386,9 +377,9 @@ class DMLCrossFitter:
         # Propensity overlap
         if all_e_raw:
             e_all = np.concatenate(all_e_raw)
-            pct_clipped = float(np.mean(
-                (e_all < self.clip_propensity[0]) | (e_all > self.clip_propensity[1])
-            ))
+            pct_clipped = float(
+                np.mean((e_all < self.clip_propensity[0]) | (e_all > self.clip_propensity[1]))
+            )
             prop_min = float(np.min(e_all))
             prop_max = float(np.max(e_all))
             prop_mean = float(np.mean(e_all))
@@ -422,7 +413,9 @@ class DMLCrossFitter:
             max_smd=max_smd,
             n_imbalanced=n_imbalanced,
             outcome_r2_mean=float(np.mean(outcome_r2s)) if outcome_r2s else 0.0,
-            propensity_logloss_mean=float(np.mean(propensity_loglosses)) if propensity_loglosses else 0.0,
+            propensity_logloss_mean=float(np.mean(propensity_loglosses))
+            if propensity_loglosses
+            else 0.0,
         )
 
     def estimate_ate_multi_treatment(
@@ -467,9 +460,12 @@ class DMLCrossFitter:
             X_covariates = X  # Keep all features as covariates
 
             result = self.estimate_ate(
-                X_covariates, T_binary, Y,
-                train_nuisance_fn, predict_nuisance_fn,
-                treatment_idx=t_idx
+                X_covariates,
+                T_binary,
+                Y,
+                train_nuisance_fn,
+                predict_nuisance_fn,
+                treatment_idx=t_idx,
             )
             results[t_idx] = result
 
@@ -482,7 +478,7 @@ class DMLCrossFitter:
         markov_blanket: List[int],
         train_nuisance_fn: Callable,
         predict_nuisance_fn: Callable,
-        aggregation: str = 'sum',
+        aggregation: str = "sum",
     ) -> float:
         """
         Compute the DML-based effect CV variance objective for NSGA-II.
@@ -503,18 +499,17 @@ class DMLCrossFitter:
             Effect CV variance objective value (lower = better)
         """
         if not markov_blanket:
-            return float('inf')  # No MB = bad solution
+            return float("inf")  # No MB = bad solution
 
         result = self.estimate_ate_multi_treatment(
-            X, Y, markov_blanket,
-            train_nuisance_fn, predict_nuisance_fn
+            X, Y, markov_blanket, train_nuisance_fn, predict_nuisance_fn
         )
 
-        if aggregation == 'sum':
+        if aggregation == "sum":
             return result.total_variance
-        elif aggregation == 'mean':
+        elif aggregation == "mean":
             return result.mean_variance
-        elif aggregation == 'max':
+        elif aggregation == "max":
             return max(r.variance for r in result.results.values())
         else:
             raise ValueError(f"Unknown aggregation: {aggregation}")
@@ -547,6 +542,7 @@ def get_progressive_k(generation: int, max_generation: int = 40) -> int:
 # Simple Nuisance Model Implementations (for testing)
 # =============================================================================
 
+
 def create_simple_nuisance_functions():
     """
     Create simple nuisance model functions for testing.
@@ -562,10 +558,14 @@ def create_simple_nuisance_functions():
         # Propensity model: P(T=1|X) with CV-tuned regularization
         # LogisticRegressionCV selects best C via cross-validation,
         # ensuring convergence rate > 1/2 per Chernozhukov (2018) Thm 3.1
-        T_binary = (T_train > np.median(T_train)).astype(int) if len(np.unique(T_train)) > 2 else T_train.astype(int)
+        T_binary = (
+            (T_train > np.median(T_train)).astype(int)
+            if len(np.unique(T_train)) > 2
+            else T_train.astype(int)
+        )
 
         propensity_model = LogisticRegressionCV(
-            max_iter=1000, solver='lbfgs', cv=3, scoring='neg_log_loss'
+            max_iter=1000, solver="lbfgs", cv=3, scoring="neg_log_loss"
         )
         try:
             propensity_model.fit(X_train, T_binary)
@@ -586,10 +586,10 @@ def create_simple_nuisance_functions():
             outcome_model_1.fit(X_train[T_binary], Y_train[T_binary])
 
         return {
-            'propensity': propensity_model,
-            'outcome_0': outcome_model_0,
-            'outcome_1': outcome_model_1,
-            'T_median': np.median(T_train) if len(np.unique(T_train)) > 2 else 0.5
+            "propensity": propensity_model,
+            "outcome_0": outcome_model_0,
+            "outcome_1": outcome_model_1,
+            "T_median": np.median(T_train) if len(np.unique(T_train)) > 2 else 0.5,
         }
 
     def predict_fn(model, X):
@@ -597,9 +597,9 @@ def create_simple_nuisance_functions():
         n = len(X)
 
         # Propensity
-        if model['propensity'] is not None:
+        if model["propensity"] is not None:
             try:
-                e_hat = model['propensity'].predict_proba(X)[:, 1]
+                e_hat = model["propensity"].predict_proba(X)[:, 1]
             except:
                 e_hat = np.full(n, 0.5)
         else:
@@ -607,12 +607,12 @@ def create_simple_nuisance_functions():
 
         # Outcomes
         try:
-            mu0_hat = model['outcome_0'].predict(X)
+            mu0_hat = model["outcome_0"].predict(X)
         except:
             mu0_hat = np.zeros(n)
 
         try:
-            mu1_hat = model['outcome_1'].predict(X)
+            mu1_hat = model["outcome_1"].predict(X)
         except:
             mu1_hat = np.zeros(n)
 
@@ -644,11 +644,17 @@ def create_gbm_nuisance_functions(
     from sklearn.ensemble import GradientBoostingClassifier, GradientBoostingRegressor
 
     def train_fn(X_train, T_train, Y_train):
-        T_binary = (T_train > np.median(T_train)).astype(int) if len(np.unique(T_train)) > 2 else T_train.astype(int)
+        T_binary = (
+            (T_train > np.median(T_train)).astype(int)
+            if len(np.unique(T_train)) > 2
+            else T_train.astype(int)
+        )
 
         propensity_model = GradientBoostingClassifier(
-            n_estimators=n_estimators, max_depth=max_depth,
-            learning_rate=learning_rate, subsample=0.8,
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            subsample=0.8,
             random_state=42,
         )
         try:
@@ -660,13 +666,17 @@ def create_gbm_nuisance_functions(
             propensity_model = None
 
         outcome_model_0 = GradientBoostingRegressor(
-            n_estimators=n_estimators, max_depth=max_depth,
-            learning_rate=learning_rate, subsample=0.8,
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            subsample=0.8,
             random_state=42,
         )
         outcome_model_1 = GradientBoostingRegressor(
-            n_estimators=n_estimators, max_depth=max_depth,
-            learning_rate=learning_rate, subsample=0.8,
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            learning_rate=learning_rate,
+            subsample=0.8,
             random_state=42,
         )
 
@@ -677,30 +687,30 @@ def create_gbm_nuisance_functions(
             outcome_model_1.fit(X_train[T_binary], Y_train[T_binary])
 
         return {
-            'propensity': propensity_model,
-            'outcome_0': outcome_model_0,
-            'outcome_1': outcome_model_1,
-            'T_median': np.median(T_train) if len(np.unique(T_train)) > 2 else 0.5,
+            "propensity": propensity_model,
+            "outcome_0": outcome_model_0,
+            "outcome_1": outcome_model_1,
+            "T_median": np.median(T_train) if len(np.unique(T_train)) > 2 else 0.5,
         }
 
     def predict_fn(model, X):
         n = len(X)
 
-        if model['propensity'] is not None:
+        if model["propensity"] is not None:
             try:
-                e_hat = model['propensity'].predict_proba(X)[:, 1]
+                e_hat = model["propensity"].predict_proba(X)[:, 1]
             except Exception:
                 e_hat = np.full(n, 0.5)
         else:
             e_hat = np.full(n, 0.5)
 
         try:
-            mu0_hat = model['outcome_0'].predict(X)
+            mu0_hat = model["outcome_0"].predict(X)
         except Exception:
             mu0_hat = np.zeros(n)
 
         try:
-            mu1_hat = model['outcome_1'].predict(X)
+            mu1_hat = model["outcome_1"].predict(X)
         except Exception:
             mu1_hat = np.zeros(n)
 
@@ -709,7 +719,7 @@ def create_gbm_nuisance_functions(
     return train_fn, predict_fn
 
 
-def create_nuisance_functions(method: str = 'linear', **kwargs):
+def create_nuisance_functions(method: str = "linear", **kwargs):
     """
     Factory for nuisance model functions.
 
@@ -721,9 +731,9 @@ def create_nuisance_functions(method: str = 'linear', **kwargs):
     Returns:
         train_fn, predict_fn tuple
     """
-    if method == 'linear':
+    if method == "linear":
         return create_simple_nuisance_functions()
-    elif method == 'gbm':
+    elif method == "gbm":
         return create_gbm_nuisance_functions(**kwargs)
     else:
         raise ValueError(f"Unknown nuisance method: {method}. Use 'linear' or 'gbm'.")

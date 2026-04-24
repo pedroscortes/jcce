@@ -8,14 +8,14 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from jcce.models.causal_vae import CausalVAE, causal_vae_elbo_loss
-from jcce.training import (
-    create_causal_vae_train_state,
-    causal_vae_train_step,
-    train_causal_vae,
-)
 from jcce.data.dag_generator import DAGConfig, generate_dag
 from jcce.data.synthetic_dataset import create_simple_dataset
+from jcce.models.causal_vae import CausalVAE, causal_vae_elbo_loss
+from jcce.training import (
+    causal_vae_train_step,
+    create_causal_vae_train_state,
+    train_causal_vae,
+)
 
 
 class TestCausalVAE:
@@ -52,9 +52,9 @@ class TestCausalVAE:
         x_recon, info = causal_vae.apply(variables, x, A, key_forward, training=True)
 
         # With no causal structure, z should equal epsilon
-        assert jnp.allclose(
-            info["z"], info["epsilon"], atol=1e-5
-        ), "With A=0, z should equal epsilon"
+        assert jnp.allclose(info["z"], info["epsilon"], atol=1e-5), (
+            "With A=0, z should equal epsilon"
+        )
 
     def test_causal_vae_with_chain_dag(self):
         """Verify CausalVAE with chain DAG."""
@@ -69,9 +69,9 @@ class TestCausalVAE:
         x_recon, info = causal_vae.apply(variables, x, A, key_forward, training=True)
 
         # With chain structure, z should NOT equal epsilon (causal propagation)
-        assert not jnp.allclose(
-            info["z"], info["epsilon"], atol=1e-2
-        ), "With chain DAG, z should differ from epsilon"
+        assert not jnp.allclose(info["z"], info["epsilon"], atol=1e-2), (
+            "With chain DAG, z should differ from epsilon"
+        )
 
     def test_causal_vae_encode_decode(self):
         """Verify encode and decode methods."""
@@ -146,9 +146,7 @@ class TestCausalVAELoss:
         assert "reconstruction_loss" in metrics
         assert "kl_divergence" in metrics
         assert "total_loss" in metrics
-        assert jnp.allclose(
-            loss, metrics["total_loss"]
-        ), "Loss should match total_loss in metrics"
+        assert jnp.allclose(loss, metrics["total_loss"]), "Loss should match total_loss in metrics"
 
     def test_causal_vae_elbo_loss_perfect_reconstruction(self):
         """Verify loss for perfect reconstruction with standard normal."""
@@ -207,9 +205,7 @@ class TestCausalVAETraining:
     def test_train_causal_vae_reduces_loss(self):
         """Verify training reduces loss over time."""
         # Create synthetic data from known DAG
-        X, A_true = create_simple_dataset(
-            num_nodes=10, n_samples=500, graph_type="chain"
-        )
+        X, A_true = create_simple_dataset(num_nodes=10, n_samples=500, graph_type="chain")
 
         # Create CausalVAE
         model = CausalVAE(latent_dim=10, output_dim=10)
@@ -242,9 +238,7 @@ class TestCausalVAETraining:
         CausalVAE should potentially perform better when given the correct A_true.
         """
         # Create synthetic data from known DAG
-        X, A_true = create_simple_dataset(
-            num_nodes=10, n_samples=1000, graph_type="chain"
-        )
+        X, A_true = create_simple_dataset(num_nodes=10, n_samples=1000, graph_type="chain")
 
         # Train CausalVAE with correct A_true
         causal_model = CausalVAE(latent_dim=10, output_dim=10)

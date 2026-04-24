@@ -5,17 +5,14 @@ This module provides statistical tests to determine if performance differences
 between variants are statistically significant.
 """
 
+import itertools
+from typing import Dict, Tuple
+
 import numpy as np
 from scipy import stats
-from typing import Dict, List, Tuple
-import itertools
 
 
-def paired_t_test(
-    scores_a: np.ndarray,
-    scores_b: np.ndarray,
-    alpha: float = 0.05
-) -> Dict:
+def paired_t_test(scores_a: np.ndarray, scores_b: np.ndarray, alpha: float = 0.05) -> Dict:
     """
     Paired t-test for comparing two models.
 
@@ -50,9 +47,7 @@ def paired_t_test(
 
 
 def wilcoxon_signed_rank_test(
-    scores_a: np.ndarray,
-    scores_b: np.ndarray,
-    alpha: float = 0.05
+    scores_a: np.ndarray, scores_b: np.ndarray, alpha: float = 0.05
 ) -> Dict:
     """
     Wilcoxon signed-rank test (non-parametric alternative to paired t-test).
@@ -84,9 +79,7 @@ def wilcoxon_signed_rank_test(
 
 
 def bootstrap_confidence_interval(
-    scores: np.ndarray,
-    n_bootstrap: int = 10000,
-    confidence: float = 0.95
+    scores: np.ndarray, n_bootstrap: int = 10000, confidence: float = 0.95
 ) -> Tuple[float, float, float]:
     """
     Bootstrap confidence interval for the mean.
@@ -121,10 +114,7 @@ def bootstrap_confidence_interval(
     return float(np.mean(scores)), float(ci_lower), float(ci_upper)
 
 
-def anova_test(
-    scores_dict: Dict[str, np.ndarray],
-    alpha: float = 0.05
-) -> Dict:
+def anova_test(scores_dict: Dict[str, np.ndarray], alpha: float = 0.05) -> Dict:
     """
     One-way ANOVA test for comparing multiple models.
 
@@ -155,9 +145,7 @@ def anova_test(
 
 
 def post_hoc_pairwise_tests(
-    scores_dict: Dict[str, np.ndarray],
-    alpha: float = 0.05,
-    correction: str = "bonferroni"
+    scores_dict: Dict[str, np.ndarray], alpha: float = 0.05, correction: str = "bonferroni"
 ) -> Dict:
     """
     Post-hoc pairwise comparisons with multiple testing correction.
@@ -210,9 +198,7 @@ def post_hoc_pairwise_tests(
         for rank, idx in enumerate(sorted_indices):
             alpha_holm = alpha / (n_comparisons - rank)
             comparison_name = comparisons[idx]
-            pairwise_results[comparison_name]["significant"] = (
-                p_values[idx] < alpha_holm
-            )
+            pairwise_results[comparison_name]["significant"] = p_values[idx] < alpha_holm
             pairwise_results[comparison_name]["alpha_adjusted"] = alpha_holm
 
     results = {
@@ -225,10 +211,7 @@ def post_hoc_pairwise_tests(
     return results
 
 
-def friedman_test(
-    scores_dict: Dict[str, np.ndarray],
-    alpha: float = 0.05
-) -> Dict:
+def friedman_test(scores_dict: Dict[str, np.ndarray], alpha: float = 0.05) -> Dict:
     """
     Friedman test (non-parametric alternative to repeated measures ANOVA).
 
@@ -254,8 +237,7 @@ def friedman_test(
 
     # Compute mean ranks
     ranks = stats.rankdata(scores_matrix, axis=1)
-    mean_ranks = {name: float(np.mean(ranks[:, i]))
-                  for i, name in enumerate(variant_names)}
+    mean_ranks = {name: float(np.mean(ranks[:, i])) for i, name in enumerate(variant_names)}
 
     result = {
         "statistic": float(statistic),
@@ -269,10 +251,7 @@ def friedman_test(
 
 
 def compare_variants_statistical(
-    results: Dict,
-    metric_name: str = "loss",
-    alpha: float = 0.05,
-    n_bootstrap: int = 1000
+    results: Dict, metric_name: str = "loss", alpha: float = 0.05, n_bootstrap: int = 1000
 ) -> Dict:
     """
     Comprehensive statistical comparison of all variants.
@@ -288,9 +267,9 @@ def compare_variants_statistical(
     Returns:
         statistical_results: Dictionary with all statistical test results
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"STATISTICAL COMPARISON: {metric_name.upper()}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     variant_names = list(results.keys())
 
@@ -316,21 +295,19 @@ def compare_variants_statistical(
         print(f"  {variant:15s}: {mean_score:.4f}")
 
     # 1. ANOVA / Friedman test
-    print(f"\n{'-'*60}")
+    print(f"\n{'-' * 60}")
     print("1. One-Way ANOVA Test")
-    print(f"{'-'*60}")
+    print(f"{'-' * 60}")
     anova_result = anova_test(scores_dict, alpha=alpha)
     print(f"F-statistic: {anova_result['statistic']:.4f}")
     print(f"p-value: {anova_result['p_value']:.4f}")
     print(f"Significant difference: {anova_result['significant']}")
 
     # 2. Post-hoc pairwise comparisons
-    print(f"\n{'-'*60}")
+    print(f"\n{'-' * 60}")
     print("2. Post-Hoc Pairwise Comparisons (Bonferroni correction)")
-    print(f"{'-'*60}")
-    pairwise_results = post_hoc_pairwise_tests(
-        scores_dict, alpha=alpha, correction="bonferroni"
-    )
+    print(f"{'-' * 60}")
+    pairwise_results = post_hoc_pairwise_tests(scores_dict, alpha=alpha, correction="bonferroni")
 
     for comparison_name, test_result in pairwise_results["pairwise_comparisons"].items():
         print(f"\n{comparison_name}:")
@@ -340,9 +317,9 @@ def compare_variants_statistical(
         print(f"  Cohen's d: {test_result['cohens_d']:.4f}")
 
     # 3. Bootstrap confidence intervals
-    print(f"\n{'-'*60}")
+    print(f"\n{'-' * 60}")
     print("3. Bootstrap 95% Confidence Intervals")
-    print(f"{'-'*60}")
+    print(f"{'-' * 60}")
     ci_results = {}
     for variant in variant_names:
         mean, ci_lower, ci_upper = bootstrap_confidence_interval(
@@ -362,10 +339,7 @@ def compare_variants_statistical(
     return statistical_results
 
 
-def print_significance_matrix(
-    pairwise_results: Dict,
-    alpha: float = 0.05
-):
+def print_significance_matrix(pairwise_results: Dict, alpha: float = 0.05):
     """
     Print a matrix showing which pairwise comparisons are significant.
 
@@ -384,9 +358,9 @@ def print_significance_matrix(
     variant_names = sorted(list(variant_names))
     n_variants = len(variant_names)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("SIGNIFICANCE MATRIX")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print("Legend: Y = significant difference, N = no significant difference\n")
 
     # Print header

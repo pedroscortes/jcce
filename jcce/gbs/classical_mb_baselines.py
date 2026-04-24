@@ -30,13 +30,12 @@ References:
 import numpy as np
 from scipy import linalg, stats
 
-
 # =============================================================================
 # Conditional Independence Testing
 # =============================================================================
 
-def partial_correlation(X: np.ndarray, i: int, j: int,
-                        cond_set: list[int] | None = None) -> float:
+
+def partial_correlation(X: np.ndarray, i: int, j: int, cond_set: list[int] | None = None) -> float:
     """
     Compute partial correlation between X[:,i] and X[:,j] given X[:,cond_set].
 
@@ -80,9 +79,9 @@ def partial_correlation(X: np.ndarray, i: int, j: int,
     return float(np.clip(pcorr, -1.0, 1.0))
 
 
-def fisher_z_test(X: np.ndarray, i: int, j: int,
-                  cond_set: list[int] | None = None,
-                  alpha: float = 0.05) -> tuple[bool, float]:
+def fisher_z_test(
+    X: np.ndarray, i: int, j: int, cond_set: list[int] | None = None, alpha: float = 0.05
+) -> tuple[bool, float]:
     """
     Fisher's z-test for conditional independence.
 
@@ -113,8 +112,7 @@ def fisher_z_test(X: np.ndarray, i: int, j: int,
     return p_value > alpha, float(p_value)
 
 
-def association_score(X: np.ndarray, i: int, j: int,
-                      cond_set: list[int] | None = None) -> float:
+def association_score(X: np.ndarray, i: int, j: int, cond_set: list[int] | None = None) -> float:
     """
     Association score: |partial_correlation| — used for IAMB ranking.
     Higher = stronger association = more likely MB member.
@@ -125,6 +123,7 @@ def association_score(X: np.ndarray, i: int, j: int,
 # =============================================================================
 # IAMB — Incremental Association Markov Blanket
 # =============================================================================
+
 
 def iamb(
     X: np.ndarray,
@@ -191,6 +190,7 @@ def iamb(
 # =============================================================================
 # Fast-IAMB — Speculative Markov Blanket Discovery
 # =============================================================================
+
 
 def fast_iamb(
     X: np.ndarray,
@@ -259,6 +259,7 @@ def fast_iamb(
 # =============================================================================
 # HITON-MB — HITON Markov Blanket
 # =============================================================================
+
 
 def hiton_pc(
     X: np.ndarray,
@@ -351,8 +352,7 @@ def hiton_mb(
 
         for spouse in potential_spouses:
             # Spouse if dependent on target given PC(target)
-            independent, _ = fisher_z_test(
-                X, target, spouse, list(pc_target), alpha)
+            independent, _ = fisher_z_test(X, target, spouse, list(pc_target), alpha)
             if not independent:
                 mb.add(spouse)
 
@@ -362,6 +362,7 @@ def hiton_mb(
 # =============================================================================
 # Inter-IAMB — Interleaved IAMB
 # =============================================================================
+
 
 def inter_iamb(
     X: np.ndarray,
@@ -415,7 +416,7 @@ def inter_iamb(
 
         # Backward: remove weakest member (interleaved)
         if len(mb) > 1:
-            weakest_score = float('inf')
+            weakest_score = float("inf")
             weakest_var = None
             for x in mb:
                 cond = list(mb - {x})
@@ -443,6 +444,7 @@ def inter_iamb(
 # =============================================================================
 # Data Generation from Known DAGs
 # =============================================================================
+
 
 def generate_linear_sem_data(
     A: np.ndarray,
@@ -540,8 +542,7 @@ def true_markov_blanket(A: np.ndarray, target: int, threshold: float = 0.1) -> s
 def mb_metrics(predicted: set, true_mb: set) -> dict:
     """Compute precision, recall, F1 for MB prediction."""
     if len(predicted) == 0 and len(true_mb) == 0:
-        return {'precision': 1.0, 'recall': 1.0, 'f1': 1.0,
-                'predicted_size': 0, 'true_size': 0}
+        return {"precision": 1.0, "recall": 1.0, "f1": 1.0, "predicted_size": 0, "true_size": 0}
 
     tp = len(predicted & true_mb)
     fp = len(predicted - true_mb)
@@ -552,17 +553,18 @@ def mb_metrics(predicted: set, true_mb: set) -> dict:
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
     return {
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
-        'predicted_size': len(predicted),
-        'true_size': len(true_mb),
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "predicted_size": len(predicted),
+        "true_size": len(true_mb),
     }
 
 
 # =============================================================================
 # Convenience: run all MB algorithms
 # =============================================================================
+
 
 def run_all_mb_algorithms(
     X: np.ndarray,
@@ -575,16 +577,17 @@ def run_all_mb_algorithms(
     Returns dict mapping algorithm name → predicted MB set.
     """
     return {
-        'IAMB': iamb(X, target, alpha),
-        'Fast-IAMB': fast_iamb(X, target, alpha),
-        'Inter-IAMB': inter_iamb(X, target, alpha),
-        'HITON-MB': hiton_mb(X, target, alpha),
+        "IAMB": iamb(X, target, alpha),
+        "Fast-IAMB": fast_iamb(X, target, alpha),
+        "Inter-IAMB": inter_iamb(X, target, alpha),
+        "HITON-MB": hiton_mb(X, target, alpha),
     }
 
 
 # =============================================================================
 # Internal helpers
 # =============================================================================
+
 
 def _topological_sort(A: np.ndarray, threshold: float = 0.1) -> list[int]:
     """Kahn's algorithm for topological sorting."""
@@ -618,5 +621,5 @@ def _combinations(items: list, k: int):
     if k > len(items):
         return
     for i, item in enumerate(items):
-        for rest in _combinations(items[i + 1:], k - 1):
+        for rest in _combinations(items[i + 1 :], k - 1):
             yield (item,) + rest

@@ -8,16 +8,16 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from jcce.models.encoder import Encoder, reparameterize
+from jcce.data.synthetic_dataset import create_simple_dataset
 from jcce.models.decoder import Decoder
+from jcce.models.encoder import Encoder, reparameterize
 from jcce.models.vae import (
     BaselineVAE,
-    reconstruction_loss,
-    kl_divergence,
     elbo_loss,
+    kl_divergence,
+    reconstruction_loss,
 )
 from jcce.training import create_train_state, train_step, train_vae
-from jcce.data.synthetic_dataset import create_simple_dataset
 
 
 class TestEncoder:
@@ -166,9 +166,7 @@ class TestLossFunctions:
         assert "reconstruction_loss" in metrics
         assert "kl_divergence" in metrics
         assert "total_loss" in metrics
-        assert jnp.allclose(
-            loss, metrics["total_loss"]
-        ), "Loss should match total_loss in metrics"
+        assert jnp.allclose(loss, metrics["total_loss"]), "Loss should match total_loss in metrics"
 
 
 class TestBaselineVAE:

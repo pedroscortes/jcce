@@ -7,7 +7,6 @@ Tests EMA updates, cold/warm sampling, fitness gating, and thread safety.
 import threading
 
 import numpy as np
-import pytest
 
 from jcce.structure_learning.adjacency_prior import AdjacencyPrior
 
@@ -88,10 +87,7 @@ class TestAdjacencyPrior:
                 A = rng.random((4, 4))
                 prior.update(A, fitness=0.8)
 
-        threads = [
-            threading.Thread(target=worker, args=(i,))
-            for i in range(n_threads)
-        ]
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(n_threads)]
         for t in threads:
             t.start()
         for t in threads:
@@ -108,9 +104,14 @@ class TestAdjacencyPriorStats:
         prior = AdjacencyPrior(n_total=4)
         stats = prior.get_stats()
         expected_keys = {
-            'n_updates', 'mean_edge_prob', 'std_edge_prob',
-            'min_edge_prob', 'max_edge_prob', 'n_strong_edges', 'n_weak_edges',
+            "n_updates",
+            "mean_edge_prob",
+            "std_edge_prob",
+            "min_edge_prob",
+            "max_edge_prob",
+            "n_strong_edges",
+            "n_weak_edges",
         }
         assert set(stats.keys()) == expected_keys
-        assert stats['n_updates'] == 0
-        assert abs(stats['mean_edge_prob'] - 0.5) < 1e-6
+        assert stats["n_updates"] == 0
+        assert abs(stats["mean_edge_prob"] - 0.5) < 1e-6

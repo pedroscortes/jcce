@@ -6,15 +6,14 @@ classification loss to drop below ln(2) = 0.6931 during training.
 
 import jax
 import jax.numpy as jnp
-from jax import random, value_and_grad
 import optax
-import pytest
+from jax import random, value_and_grad
 
-from jcce.structure_learning.processor_adapters import ELMAdapter
 from jcce.structure_learning.jcce_learner import (
-    extract_trainable_params, merge_trained_params,
-    dag_constraint
+    extract_trainable_params,
+    merge_trained_params,
 )
+from jcce.structure_learning.processor_adapters import ELMAdapter
 
 
 def _make_data(key, n_vars=11, n_samples=300):
@@ -33,7 +32,7 @@ def _train_loop(X, Y, n_vars, use_uncertainty_weighting, n_steps=150):
     key = random.PRNGKey(123)
     k1, k2 = random.split(key)
 
-    processor = ELMAdapter(hidden_dim=32, n_hidden_nodes=64, activation='tanh', key=k1)
+    processor = ELMAdapter(hidden_dim=32, n_hidden_nodes=64, activation="tanh", key=k1)
     orig_params = [processor.init_params(n_vars) for _ in range(n_total)]
     trainable = extract_trainable_params(orig_params)
 
@@ -42,18 +41,18 @@ def _train_loop(X, Y, n_vars, use_uncertainty_weighting, n_steps=150):
     A_direct = A_direct.at[Y_idx, :].set(0.0)
 
     params = {
-        'A_direct': A_direct,
-        'processor_params': trainable,
+        "A_direct": A_direct,
+        "processor_params": trainable,
     }
     if use_uncertainty_weighting:
-        params['log_var_recon'] = jnp.array(0.0)
+        params["log_var_recon"] = jnp.array(0.0)
 
     w_recon, w_class = 1.0, 0.5
     lambda_1 = 0.02
 
     def loss_fn(params):
-        A_curr = params['A_direct']
-        proc_merged = merge_trained_params(orig_params, params['processor_params'])
+        A_curr = params["A_direct"]
+        proc_merged = merge_trained_params(orig_params, params["processor_params"])
         n_v = n_vars
 
         # Reconstruction
@@ -72,7 +71,7 @@ def _train_loop(X, Y, n_vars, use_uncertainty_weighting, n_steps=150):
         class_loss = -jnp.mean(Y * jnp.log(Y_pred + eps) + (1 - Y) * jnp.log(1 - Y_pred + eps))
 
         if use_uncertainty_weighting:
-            log_var_r = params['log_var_recon']
+            log_var_r = params["log_var_recon"]
             prec = jnp.exp(-log_var_r)
             w_struct = w_recon * (0.5 * prec * recon_loss + 0.5 * log_var_r)
         else:
@@ -93,11 +92,11 @@ def _train_loop(X, Y, n_vars, use_uncertainty_weighting, n_steps=150):
 
         # Freeze log_var_recon gradient (matching the fix)
         if use_uncertainty_weighting:
-            grads = {**grads, 'log_var_recon': jnp.zeros_like(grads['log_var_recon'])}
+            grads = {**grads, "log_var_recon": jnp.zeros_like(grads["log_var_recon"])}
 
         updates, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
-        params['A_direct'] = params['A_direct'].at[Y_idx, :].set(0.0)
+        params["A_direct"] = params["A_direct"].at[Y_idx, :].set(0.0)
 
         class_history.append(float(class_loss))
 
@@ -105,14 +104,14 @@ def _train_loop(X, Y, n_vars, use_uncertainty_weighting, n_steps=150):
 
 
 class TestClassPlateauFix:
-
     def test_without_uw_classification_improves(self):
         """Without uncertainty weighting, classification loss drops well below ln(2)."""
         X, Y = _make_data(random.PRNGKey(42))
         history = _train_loop(X, Y, n_vars=11, use_uncertainty_weighting=False)
 
-        assert history[-1] < 0.55, \
+        assert history[-1] < 0.55, (
             f"Classification should improve without UW, got {history[-1]:.4f}"
+        )
 
     def test_with_frozen_uw_classification_improves(self):
         """With frozen log_var_recon (gradient zeroed), classification also improves."""
@@ -121,8 +120,9 @@ class TestClassPlateauFix:
 
         # Since gradient is zeroed, log_var_r stays at 0, precision=1,
         # and the formula is equivalent to no UW (just with 0.5 multiplier)
-        assert history[-1] < 0.60, \
+        assert history[-1] < 0.60, (
             f"Classification should improve with frozen UW, got {history[-1]:.4f}"
+        )
 
     def test_classification_decreases_monotonically(self):
         """Classification loss should generally trend downward."""
@@ -133,8 +133,9 @@ class TestClassPlateauFix:
         mid = len(history) // 2
         first_half = sum(history[:mid]) / mid
         second_half = sum(history[mid:]) / (len(history) - mid)
-        assert second_half < first_half, \
+        assert second_half < first_half, (
             f"Classification should improve over time: first={first_half:.4f}, second={second_half:.4f}"
+        )
 
     def test_fix_matches_no_uw_baseline(self):
         """Frozen UW should produce similar results to no UW."""
@@ -145,8 +146,9 @@ class TestClassPlateauFix:
         # Both should reach similar final classification loss
         # (not identical because the 0.5 multiplier changes the effective weight)
         diff = abs(history_no_uw[-1] - history_frozen[-1])
-        assert diff < 0.15, \
+        assert diff < 0.15, (
             f"Frozen UW and no UW should be similar: {history_no_uw[-1]:.4f} vs {history_frozen[-1]:.4f}"
+        )
 
     def test_classification_below_random_chance(self):
         """Classification should get below random chance (ln(2)=0.6931)."""
@@ -155,5 +157,6 @@ class TestClassPlateauFix:
 
         # Should break below ln(2) within 50 steps
         broke_through = any(h < 0.6931 for h in history[:50])
-        assert broke_through, \
+        assert broke_through, (
             f"Classification should break through ln(2) within 50 steps, min={min(history[:50]):.4f}"
+        )

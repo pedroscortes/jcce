@@ -12,12 +12,11 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-
 # Log-space bounds for HP distance normalization (from PROCESSOR_SEARCH_SPACE)
 _HP_LOG_RANGES = {
-    'lambda_1': (np.log(0.005), np.log(0.5)),
-    'lambda_2': (np.log(0.001), np.log(1.0)),
-    'lr': (np.log(0.0001), np.log(0.01)),
+    "lambda_1": (np.log(0.005), np.log(0.5)),
+    "lambda_2": (np.log(0.001), np.log(1.0)),
+    "lr": (np.log(0.0001), np.log(0.01)),
 }
 
 
@@ -36,8 +35,8 @@ def hyperparameter_distance(config_a: Dict[str, Any], config_b: Dict[str, Any]) 
     Returns:
         Normalized L2 distance, or inf if processor types differ
     """
-    if config_a.get('processor_type') != config_b.get('processor_type'):
-        return float('inf')
+    if config_a.get("processor_type") != config_b.get("processor_type"):
+        return float("inf")
 
     sq_sum = 0.0
     for key, (lo, hi) in _HP_LOG_RANGES.items():
@@ -78,7 +77,7 @@ def find_spr_candidate(
     best_dist = max_distance
 
     for trial_num, artifacts in artifact_store.items():
-        stored_config = artifacts.get('config')
+        stored_config = artifacts.get("config")
         if stored_config is None:
             continue
         dist = hyperparameter_distance(config, stored_config)
@@ -168,14 +167,14 @@ def spr_processor_params(
     for p in old_proc_params:
         new_p = dict(p)  # shallow copy
 
-        if 'flat_params' in new_p:
-            flat = np.asarray(new_p['flat_params'], dtype=np.float32)
+        if "flat_params" in new_p:
+            flat = np.asarray(new_p["flat_params"], dtype=np.float32)
             noise = rng.normal(
                 0.0,
                 lecun_std * noise_scale_multiplier,
                 size=flat.shape,
             ).astype(np.float32)
-            new_p['flat_params'] = lambda_theta * flat + noise
+            new_p["flat_params"] = lambda_theta * flat + noise
 
         new_params.append(new_p)
 

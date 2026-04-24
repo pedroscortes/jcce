@@ -6,7 +6,6 @@ on the X-only submatrix, freeing X→Y edges from acyclicity pressure.
 
 import jax
 import jax.numpy as jnp
-import pytest
 
 from jcce.structure_learning.jcce_learner import dag_constraint
 
@@ -39,8 +38,9 @@ class TestYAsSinkDAGConstraint:
         h_with_y_edges = self._compute_h_with_sink(A_with_y, Y_idx=3)
 
         # DAG constraint should be IDENTICAL — X→Y edges are excluded
-        assert jnp.allclose(h_without_y_edges, h_with_y_edges, atol=1e-6), \
+        assert jnp.allclose(h_without_y_edges, h_with_y_edges, atol=1e-6), (
             f"X→Y edges affected DAG constraint: {h_without_y_edges:.6f} vs {h_with_y_edges:.6f}"
+        )
 
     def test_no_sink_includes_y_column(self):
         """Without enforce_outcome_sink, X→Y edges DO affect DAG constraint."""
@@ -83,15 +83,15 @@ class TestYAsSinkDAGConstraint:
         h = self._compute_h_with_sink(A, Y_idx=1)
 
         # Should match DAG constraint on [X0, X2, X3] subgraph only
-        A_x = jnp.array([[0.0, 0.5, 0.0],
-                         [0.0, 0.0, 0.5],
-                         [0.0, 0.0, 0.0]])
+        A_x = jnp.array([[0.0, 0.5, 0.0], [0.0, 0.0, 0.5], [0.0, 0.0, 0.0]])
         h_expected = dag_constraint(A_x)
-        assert jnp.allclose(h, h_expected, atol=1e-5), \
+        assert jnp.allclose(h, h_expected, atol=1e-5), (
             f"Y_idx=1 submatrix mismatch: {h:.6f} vs {h_expected:.6f}"
+        )
 
     def test_gradient_flows_to_x_to_y_edges(self):
         """Gradient of DAG loss should be ZERO for X→Y edges when Y is sink."""
+
         def dag_loss_sink(A):
             n_total = A.shape[0]
             Y_idx = 3
@@ -110,14 +110,16 @@ class TestYAsSinkDAGConstraint:
         grad_full = jax.grad(dag_loss_full)(A)
 
         # With sink: gradient for X→Y edges (column 3) should be zero
-        assert jnp.allclose(grad_sink[:, 3], 0.0, atol=1e-7), \
+        assert jnp.allclose(grad_sink[:, 3], 0.0, atol=1e-7), (
             f"X→Y gradient not zero with sink: {grad_sink[:, 3]}"
+        )
 
         # Without sink: gradient for X→Y edges may be nonzero
         # (even without cycles, DAGMA has numerical gradient)
 
     def test_gradient_nonzero_for_x_to_x_edges(self):
         """Gradient should still flow for X→X edges."""
+
         def dag_loss_sink(A):
             n_total = A.shape[0]
             Y_idx = 3
@@ -139,6 +141,7 @@ class TestYAsSinkDAGConstraint:
 
     def test_jit_compatible(self):
         """The submatrix extraction should work under JIT."""
+
         @jax.jit
         def h_jit(A):
             Y_idx = 3

@@ -15,8 +15,9 @@ Usage:
     )
 """
 
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
-from typing import List, Dict, Optional, Tuple
 
 from jcce.utils.metrics import EDGE_THRESHOLD_DEFAULT
 
@@ -25,7 +26,7 @@ def compute_edge_stability(
     solutions: List[Dict],
     n_vars: int,
     threshold: float = EDGE_THRESHOLD_DEFAULT,
-    key: str = 'structure_A_est',
+    key: str = "structure_A_est",
 ) -> np.ndarray:
     """
     Compute edge frequency across Pareto solutions.
@@ -50,7 +51,7 @@ def compute_edge_stability(
     count = 0
 
     for sol in solutions:
-        A = sol.get('metrics', {}).get(key)
+        A = sol.get("metrics", {}).get(key)
         if A is None:
             continue
         A = np.array(A)
@@ -68,7 +69,7 @@ def compute_edge_stability_multi_threshold(
     solutions: List[Dict],
     n_vars: int,
     thresholds: Tuple[float, ...] = (0.1, 0.3, 0.5),
-    key: str = 'structure_A_est',
+    key: str = "structure_A_est",
 ) -> Dict[float, np.ndarray]:
     """
     Compute edge stability at multiple thresholds.
@@ -82,10 +83,7 @@ def compute_edge_stability_multi_threshold(
     Returns:
         Dict mapping threshold -> stability matrix.
     """
-    return {
-        t: compute_edge_stability(solutions, n_vars, threshold=t, key=key)
-        for t in thresholds
-    }
+    return {t: compute_edge_stability(solutions, n_vars, threshold=t, key=key) for t in thresholds}
 
 
 def get_stable_edges(
@@ -150,14 +148,14 @@ def compare_stability_to_ground_truth(
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
     return {
-        'precision': float(precision),
-        'recall': float(recall),
-        'f1': float(f1),
-        'tp': int(tp),
-        'fp': int(fp),
-        'fn': int(fn),
-        'n_stable': int(np.sum(predicted)),
-        'n_true': int(np.sum(true_binary)),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        "tp": int(tp),
+        "fp": int(fp),
+        "fn": int(fn),
+        "n_stable": int(np.sum(predicted)),
+        "n_true": int(np.sum(true_binary)),
     }
 
 
@@ -167,7 +165,7 @@ def stability_sensitivity_analysis(
     thresholds: Tuple[float, ...] = (0.05, 0.1, 0.2, 0.3, 0.5),
     frequencies: Tuple[float, ...] = (0.5, 0.6, 0.7, 0.8, 0.9, 1.0),
     true_graph: Optional[np.ndarray] = None,
-    key: str = 'structure_A_est',
+    key: str = "structure_A_est",
 ) -> Dict[str, object]:
     """
     Sensitivity analysis: how threshold and frequency cutoffs affect results.
@@ -197,18 +195,18 @@ def stability_sensitivity_analysis(
 
             if true_graph is not None:
                 metrics = compare_stability_to_ground_truth(stab, true_graph, min_frequency=f)
-                precision_mat[ti, fi] = metrics['precision']
-                recall_mat[ti, fi] = metrics['recall']
-                f1_mat[ti, fi] = metrics['f1']
+                precision_mat[ti, fi] = metrics["precision"]
+                recall_mat[ti, fi] = metrics["recall"]
+                f1_mat[ti, fi] = metrics["f1"]
 
     result = {
-        'thresholds': list(thresholds),
-        'frequencies': list(frequencies),
-        'n_stable_edges': n_stable,
+        "thresholds": list(thresholds),
+        "frequencies": list(frequencies),
+        "n_stable_edges": n_stable,
     }
     if true_graph is not None:
-        result['precision'] = precision_mat
-        result['recall'] = recall_mat
-        result['f1'] = f1_mat
+        result["precision"] = precision_mat
+        result["recall"] = recall_mat
+        result["f1"] = f1_mat
 
     return result

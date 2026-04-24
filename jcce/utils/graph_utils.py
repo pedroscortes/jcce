@@ -10,7 +10,9 @@ import networkx as nx
 import numpy as np
 
 
-def topological_sort(A: jnp.ndarray, threshold: float = 0.0, fallback_if_cyclic: bool = True) -> jnp.ndarray:
+def topological_sort(
+    A: jnp.ndarray, threshold: float = 0.0, fallback_if_cyclic: bool = True
+) -> jnp.ndarray:
     """
     Compute a topological ordering of DAG A.
 
@@ -55,9 +57,9 @@ def topological_sort(A: jnp.ndarray, threshold: float = 0.0, fallback_if_cyclic:
     except (nx.NetworkXError, nx.NetworkXUnfeasible):
         if fallback_if_cyclic:
             # Graph has cycles - use simple ordering as fallback
-            print(f"[WARN] WARNING: Graph contains cycles, using fallback ordering [0,1,2,...]")
-            print(f"   This may happen when structure learning hasn't converged.")
-            print(f"   Consider: Increase iterations or use threshold > 0")
+            print("[WARN] WARNING: Graph contains cycles, using fallback ordering [0,1,2,...]")
+            print("   This may happen when structure learning hasn't converged.")
+            print("   Consider: Increase iterations or use threshold > 0")
             return jnp.arange(A.shape[0])
         else:
             raise ValueError("Graph contains a cycle - not a DAG!")

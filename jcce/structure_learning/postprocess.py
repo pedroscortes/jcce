@@ -24,14 +24,15 @@ Methods:
     - 'adaptive':   find natural gap in sorted weight distribution (recommended)
 """
 
-import numpy as np
-import jax.numpy as jnp
 from typing import Optional
+
+import jax.numpy as jnp
+import numpy as np
 
 
 def postprocess_dag(
     A: jnp.ndarray,
-    method: str = 'adaptive',
+    method: str = "adaptive",
     threshold: float = 0.3,
     keep_fraction: float = 0.3,
     ensure_dag: bool = True,
@@ -76,10 +77,10 @@ def postprocess_dag(
         return jnp.zeros((d, d), dtype=jnp.float32)
 
     # --- Step 3: Compute threshold based on method ---
-    if method == 'fixed':
+    if method == "fixed":
         cutoff = threshold
 
-    elif method == 'percentile':
+    elif method == "percentile":
         # keep_fraction=0.3 means keep top 30% => threshold at 70th percentile
         all_abs = np.abs(A_np).flatten()
         # only consider non-zero entries for percentile computation
@@ -89,19 +90,19 @@ def postprocess_dag(
         else:
             cutoff = float(np.percentile(nonzero_abs, (1.0 - keep_fraction) * 100))
 
-    elif method == 'adaptive':
+    elif method == "adaptive":
         cutoff = _adaptive_threshold(A_np, verbose=verbose)
 
     else:
-        raise ValueError(
-            f"Unknown method '{method}'. Use 'fixed', 'percentile', or 'adaptive'."
-        )
+        raise ValueError(f"Unknown method '{method}'. Use 'fixed', 'percentile', or 'adaptive'.")
 
     if verbose:
         print(f"postprocess_dag: method='{method}', cutoff={cutoff:.6f}")
-        print(f"  weight stats: min={weights.min():.6f}, "
-              f"median={np.median(weights):.6f}, max={weights.max():.6f}, "
-              f"n_nonzero={len(weights)}")
+        print(
+            f"  weight stats: min={weights.min():.6f}, "
+            f"median={np.median(weights):.6f}, max={weights.max():.6f}, "
+            f"n_nonzero={len(weights)}"
+        )
 
     # --- Step 4: Apply threshold ---
     A_binary = (np.abs(A_np) > cutoff).astype(np.float64)
@@ -125,8 +126,10 @@ def postprocess_dag(
                 A_binary[protected_idx, i] = 1.0
         n_protected = int(A_binary[protected_idx, :].sum() + A_binary[:, protected_idx].sum())
         if verbose:
-            print(f"  Y-protection (idx={protected_idx}): "
-                  f"{n_protected} edges preserved (threshold={Y_PROTECT_THRESH})")
+            print(
+                f"  Y-protection (idx={protected_idx}): "
+                f"{n_protected} edges preserved (threshold={Y_PROTECT_THRESH})"
+            )
 
     n_edges_before = int(A_binary.sum())
 
@@ -135,8 +138,7 @@ def postprocess_dag(
         # Keep original weights for tie-breaking during cycle removal
         A_weighted = A_binary * np.abs(A_np)
         protected_nodes = {protected_idx} if protected_idx is not None else None
-        A_weighted = _remove_cycles(A_weighted, protected_nodes=protected_nodes,
-                                     verbose=verbose)
+        A_weighted = _remove_cycles(A_weighted, protected_nodes=protected_nodes, verbose=verbose)
         A_binary = (np.abs(A_weighted) > 0).astype(np.float64)
 
     n_edges_after = int(A_binary.sum())
@@ -144,10 +146,14 @@ def postprocess_dag(
     if verbose:
         print(f"  edges after threshold: {n_edges_before}")
         if ensure_dag and n_edges_before != n_edges_after:
-            print(f"  edges after cycle removal: {n_edges_after} "
-                  f"(removed {n_edges_before - n_edges_after})")
-        print(f"  final DAG density: {n_edges_after}/{d*(d-1)} "
-              f"= {n_edges_after / max(d*(d-1), 1):.3f}")
+            print(
+                f"  edges after cycle removal: {n_edges_after} "
+                f"(removed {n_edges_before - n_edges_after})"
+            )
+        print(
+            f"  final DAG density: {n_edges_after}/{d * (d - 1)} "
+            f"= {n_edges_after / max(d * (d - 1), 1):.3f}"
+        )
 
     return jnp.array(A_binary, dtype=jnp.float32)
 
@@ -184,41 +190,41 @@ def diagnose_weights(A: jnp.ndarray) -> dict:
 
     if len(nonzero) == 0:
         return {
-            'n_vars': d,
-            'n_nonzero': 0,
-            'max_possible_edges': d * (d - 1),
-            'weights_min': 0.0,
-            'weights_max': 0.0,
-            'weights_mean': 0.0,
-            'weights_median': 0.0,
-            'weights_std': 0.0,
-            'suggested_fixed': 0.0,
-            'adaptive_cutoff': 0.0,
-            'gap_ratio': 0.0,
+            "n_vars": d,
+            "n_nonzero": 0,
+            "max_possible_edges": d * (d - 1),
+            "weights_min": 0.0,
+            "weights_max": 0.0,
+            "weights_mean": 0.0,
+            "weights_median": 0.0,
+            "weights_std": 0.0,
+            "suggested_fixed": 0.0,
+            "adaptive_cutoff": 0.0,
+            "gap_ratio": 0.0,
         }
 
     sorted_w = np.sort(nonzero)
     gaps = np.diff(sorted_w)
     max_gap_idx = int(np.argmax(gaps)) if len(gaps) > 0 else 0
     max_gap = float(gaps[max_gap_idx]) if len(gaps) > 0 else 0.0
-    adaptive_cutoff = float(
-        (sorted_w[max_gap_idx] + sorted_w[max_gap_idx + 1]) / 2
-    ) if len(gaps) > 0 else 0.0
+    adaptive_cutoff = (
+        float((sorted_w[max_gap_idx] + sorted_w[max_gap_idx + 1]) / 2) if len(gaps) > 0 else 0.0
+    )
 
     median_w = float(np.median(nonzero))
 
     return {
-        'n_vars': d,
-        'n_nonzero': len(nonzero),
-        'max_possible_edges': d * (d - 1),
-        'weights_min': float(nonzero.min()),
-        'weights_max': float(nonzero.max()),
-        'weights_mean': float(nonzero.mean()),
-        'weights_median': median_w,
-        'weights_std': float(nonzero.std()),
-        'suggested_fixed': float(nonzero.mean() + nonzero.std()),
-        'adaptive_cutoff': adaptive_cutoff,
-        'gap_ratio': max_gap / median_w if median_w > 1e-12 else 0.0,
+        "n_vars": d,
+        "n_nonzero": len(nonzero),
+        "max_possible_edges": d * (d - 1),
+        "weights_min": float(nonzero.min()),
+        "weights_max": float(nonzero.max()),
+        "weights_mean": float(nonzero.mean()),
+        "weights_median": median_w,
+        "weights_std": float(nonzero.std()),
+        "suggested_fixed": float(nonzero.mean() + nonzero.std()),
+        "adaptive_cutoff": adaptive_cutoff,
+        "gap_ratio": max_gap / median_w if median_w > 1e-12 else 0.0,
     }
 
 
@@ -227,13 +233,17 @@ def print_diagnosis(A: jnp.ndarray):
     info = diagnose_weights(A)
     print(f"Weight Diagnosis ({info['n_vars']} variables)")
     print(f"  Non-zero entries: {info['n_nonzero']} / {info['max_possible_edges']}")
-    print(f"  |weights|: min={info['weights_min']:.6f}, "
-          f"median={info['weights_median']:.6f}, "
-          f"max={info['weights_max']:.6f}, "
-          f"std={info['weights_std']:.6f}")
-    print(f"  Gap ratio: {info['gap_ratio']:.2f} "
-          f"({'clear separation' if info['gap_ratio'] > 2 else 'no clear separation'})")
-    print(f"  Suggested thresholds:")
+    print(
+        f"  |weights|: min={info['weights_min']:.6f}, "
+        f"median={info['weights_median']:.6f}, "
+        f"max={info['weights_max']:.6f}, "
+        f"std={info['weights_std']:.6f}"
+    )
+    print(
+        f"  Gap ratio: {info['gap_ratio']:.2f} "
+        f"({'clear separation' if info['gap_ratio'] > 2 else 'no clear separation'})"
+    )
+    print("  Suggested thresholds:")
     print(f"    adaptive: {info['adaptive_cutoff']:.6f}")
     print(f"    fixed (mean+std): {info['suggested_fixed']:.6f}")
 
@@ -241,6 +251,7 @@ def print_diagnosis(A: jnp.ndarray):
 # =============================================================================
 # Internal: Adaptive threshold via largest-gap detection
 # =============================================================================
+
 
 def _adaptive_threshold(A_np: np.ndarray, verbose: bool = False) -> float:
     """
@@ -286,19 +297,20 @@ def _adaptive_threshold(A_np: np.ndarray, verbose: bool = False) -> float:
     if verbose:
         n_below = max_gap_idx + 1
         n_above = len(sorted_w) - n_below
-        print(f"  adaptive: largest gap = {max_gap:.6f} "
-              f"at position {max_gap_idx}/{len(sorted_w)-1}")
-        print(f"  adaptive: gap_ratio = {gap_ratio:.2f} "
-              f"(median_gap={median_gap:.6f})")
-        print(f"  adaptive: {n_below} weights below cutoff, "
-              f"{n_above} weights above")
+        print(
+            f"  adaptive: largest gap = {max_gap:.6f} at position {max_gap_idx}/{len(sorted_w) - 1}"
+        )
+        print(f"  adaptive: gap_ratio = {gap_ratio:.2f} (median_gap={median_gap:.6f})")
+        print(f"  adaptive: {n_below} weights below cutoff, {n_above} weights above")
 
     # If no clear separation, fall back to median
     if gap_ratio < 1.5:
         fallback = float(np.median(nonzero))
         if verbose:
-            print(f"  adaptive: gap_ratio < 1.5, weak separation -> "
-                  f"falling back to median={fallback:.6f}")
+            print(
+                f"  adaptive: gap_ratio < 1.5, weak separation -> "
+                f"falling back to median={fallback:.6f}"
+            )
         return fallback
 
     return float(cutoff)
@@ -307,6 +319,7 @@ def _adaptive_threshold(A_np: np.ndarray, verbose: bool = False) -> float:
 # =============================================================================
 # Internal: Cycle removal via weakest-back-edge deletion
 # =============================================================================
+
 
 def _remove_cycles(
     A_weighted: np.ndarray,
@@ -362,7 +375,7 @@ def _remove_cycles(
         cycle_nodes = set(range(d)) - set(order)
 
         # --- Find weakest edge among cycle nodes, skipping protected ---
-        weakest_weight = float('inf')
+        weakest_weight = float("inf")
         weakest_edge = None
 
         for i in cycle_nodes:
@@ -394,11 +407,12 @@ def _remove_cycles(
 # Convenience: learn + postprocess in one call
 # =============================================================================
 
+
 def learn_and_postprocess(
     X: jnp.ndarray,
     key,
-    algorithm: str = 'dagma',
-    postprocess_method: str = 'adaptive',
+    algorithm: str = "dagma",
+    postprocess_method: str = "adaptive",
     threshold: float = 0.3,
     keep_fraction: float = 0.3,
     verbose: bool = True,
@@ -430,43 +444,47 @@ def learn_and_postprocess(
     # Algorithms that return binary matrices (no postprocessing needed)
     # FCI returns a PAG (int matrix with marks 0-3), not a binary DAG.
     # It needs pag_to_dag() conversion, not thresholding.
-    binary_algorithms = {'pc', 'ges', 'directlingam'}
-    pag_algorithms = {'fci'}
+    binary_algorithms = {"pc", "ges", "directlingam"}
+    pag_algorithms = {"fci"}
 
-    if algorithm == 'dagma':
+    if algorithm == "dagma":
         from jcce.structure_learning.dagma import learn_with_dagma
+
         A_raw = learn_with_dagma(X, key, verbose=verbose, **learn_kwargs)
 
-    elif algorithm == 'notears':
+    elif algorithm == "notears":
         from jcce.structure_learning.notears import learn_with_notears
+
         A_raw = learn_with_notears(X, key, verbose=verbose, **learn_kwargs)
 
-    elif algorithm in ('golem', 'golem_ev'):
+    elif algorithm in ("golem", "golem_ev"):
         from jcce.structure_learning.golem import learn_with_golem
-        A_raw = learn_with_golem(
-            X, key, variant='ev', verbose=verbose, **learn_kwargs
-        )
 
-    elif algorithm == 'golem_nv':
+        A_raw = learn_with_golem(X, key, variant="ev", verbose=verbose, **learn_kwargs)
+
+    elif algorithm == "golem_nv":
         from jcce.structure_learning.golem import learn_with_golem
-        A_raw = learn_with_golem(
-            X, key, variant='nv', verbose=verbose, **learn_kwargs
-        )
 
-    elif algorithm == 'pc':
+        A_raw = learn_with_golem(X, key, variant="nv", verbose=verbose, **learn_kwargs)
+
+    elif algorithm == "pc":
         from jcce.structure_learning.pc import learn_with_pc
+
         A_raw = learn_with_pc(X, key, verbose=verbose, **learn_kwargs)
 
-    elif algorithm == 'ges':
+    elif algorithm == "ges":
         from jcce.structure_learning.ges import learn_with_ges
+
         A_raw = learn_with_ges(X, key, verbose=verbose, **learn_kwargs)
 
-    elif algorithm == 'directlingam':
+    elif algorithm == "directlingam":
         from jcce.structure_learning.directlingam import learn_with_directlingam
+
         A_raw = learn_with_directlingam(X, key, verbose=verbose, **learn_kwargs)
 
-    elif algorithm == 'fci':
+    elif algorithm == "fci":
         from jcce.structure_learning.fci import learn_with_fci, pag_to_dag
+
         A_raw = learn_with_fci(X, key, verbose=verbose, **learn_kwargs)
 
     else:
@@ -478,6 +496,7 @@ def learn_and_postprocess(
     # PAG algorithms: convert PAG -> DAG (not thresholding)
     if algorithm in pag_algorithms:
         from jcce.structure_learning.fci import pag_to_dag
+
         A_dag = pag_to_dag(A_raw)
         if verbose:
             n_edges = int(jnp.sum(A_dag > 0))

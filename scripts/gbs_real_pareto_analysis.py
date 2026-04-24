@@ -22,9 +22,8 @@ import time
 
 import numpy as np
 from scipy import stats
-from scipy.spatial.distance import squareform
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from jcce.gbs.gbs_utils import (
     dequantized_kernel_matrix,
@@ -45,23 +44,25 @@ from jcce.gbs.pareto_uncertainty import (
 
 def load_pareto_dags(pkl_path):
     """Load Pareto-optimal adjacency matrices from B6.pkl."""
-    with open(pkl_path, 'rb') as f:
+    with open(pkl_path, "rb") as f:
         data = pickle.load(f)
 
-    sols = data['pareto_solutions']
+    sols = data["pareto_solutions"]
     dags = []
     metadata = []
 
     for sol in sols:
-        A = np.array(sol['A_weights'])  # continuous weights
+        A = np.array(sol["A_weights"])  # continuous weights
         dags.append(A)
-        metadata.append({
-            'processor': sol.get('processor_type', '?'),
-            'bacc': sol.get('balanced_accuracy', 0),
-            'n_edges': sol.get('n_edges', 0),
-            'h_A': sol.get('h_A', 0),
-            'mb': sol.get('markov_blanket', []),
-        })
+        metadata.append(
+            {
+                "processor": sol.get("processor_type", "?"),
+                "bacc": sol.get("balanced_accuracy", 0),
+                "n_edges": sol.get("n_edges", 0),
+                "h_A": sol.get("h_A", 0),
+                "mb": sol.get("markov_blanket", []),
+            }
+        )
 
     return dags, metadata, data
 
@@ -85,18 +86,21 @@ def compute_classical_distances(dags, threshold=None):
     for i in range(n):
         for j in range(i + 1, n):
             # Use min threshold of the pair so edges present in either DAG are counted
-            t = threshold if threshold is not None else min(adaptive_threshold(dags[i]),
-                                                            adaptive_threshold(dags[j]))
+            t = (
+                threshold
+                if threshold is not None
+                else min(adaptive_threshold(dags[i]), adaptive_threshold(dags[j]))
+            )
             D_shd[i, j] = D_shd[j, i] = shd(dags[i], dags[j], t)
             D_frob[i, j] = D_frob[j, i] = frobenius_distance(dags[i], dags[j])
             D_jaccard[i, j] = D_jaccard[j, i] = jaccard_edge_distance(dags[i], dags[j], t)
             D_spectral[i, j] = D_spectral[j, i] = spectral_distance(dags[i], dags[j])
 
     return {
-        'SHD': D_shd,
-        'Frobenius': D_frob,
-        'Jaccard': D_jaccard,
-        'Spectral': D_spectral,
+        "SHD": D_shd,
+        "Frobenius": D_frob,
+        "Jaccard": D_jaccard,
+        "Spectral": D_spectral,
     }
 
 
@@ -132,12 +136,12 @@ def mantel_correlation(D1, D2):
     """Mantel test: Pearson correlation between upper-triangular distance vectors."""
     n = D1.shape[0]
     if n < 3:
-        return float('nan'), 1.0  # Need at least 3 solutions for pairwise correlation
+        return float("nan"), 1.0  # Need at least 3 solutions for pairwise correlation
     idx = np.triu_indices(n, k=1)
     v1 = D1[idx]
     v2 = D2[idx]
     if len(v1) < 2 or np.std(v1) < 1e-12 or np.std(v2) < 1e-12:
-        return float('nan'), 1.0  # Degenerate case
+        return float("nan"), 1.0  # Degenerate case
     r, p = stats.pearsonr(v1, v2)
     return r, p
 
@@ -155,20 +159,20 @@ def analyze_dataset(dataset_name, pkl_path):
 
     print(f"\nDataset: {dataset_name}")
     print(f"Pareto solutions: {n}")
-    print(f"Dimensions: {d}×{d} (d={d-1} features + Y)")
+    print(f"Dimensions: {d}×{d} (d={d - 1} features + Y)")
     procs = {}
     for m in meta:
-        procs[m['processor']] = procs.get(m['processor'], 0) + 1
+        procs[m["processor"]] = procs.get(m["processor"], 0) + 1
     print(f"Processors: {procs}")
-    baccs = [m['bacc'] for m in meta]
+    baccs = [m["bacc"] for m in meta]
     print(f"BAcc range: {min(baccs):.3f} – {max(baccs):.3f}")
-    edges = [m['n_edges'] for m in meta]
+    edges = [m["n_edges"] for m in meta]
     print(f"Edge range: {min(edges)} – {max(edges)}")
 
     # =========================================================================
     # 1. Classical distance matrices
     # =========================================================================
-    print(f"\n--- Classical Distances ---")
+    print("\n--- Classical Distances ---")
     t0 = time.time()
     classical = compute_classical_distances(dags)
     print(f"  Computed in {time.time() - t0:.2f}s")
@@ -176,13 +180,15 @@ def analyze_dataset(dataset_name, pkl_path):
     for name, D in classical.items():
         idx = np.triu_indices(n, k=1)
         vals = D[idx]
-        print(f"  {name:12s}: mean={vals.mean():.3f}, std={vals.std():.3f}, "
-              f"min={vals.min():.3f}, max={vals.max():.3f}")
+        print(
+            f"  {name:12s}: mean={vals.mean():.3f}, std={vals.std():.3f}, "
+            f"min={vals.min():.3f}, max={vals.max():.3f}"
+        )
 
     # =========================================================================
     # 2. GBS dequantized kernel matrices (orders 1, 2, 3)
     # =========================================================================
-    print(f"\n--- GBS Dequantized Kernel ---")
+    print("\n--- GBS Dequantized Kernel ---")
     gbs_distances = {}
 
     # Encode DAGs to GBS graph matrices (symmetrize + spectral normalize)
@@ -194,19 +200,21 @@ def analyze_dataset(dataset_name, pkl_path):
         elapsed = time.time() - t0
 
         D_gbs = kernel_to_distance(K)
-        gbs_distances[f'GBS-o{order}'] = D_gbs
+        gbs_distances[f"GBS-o{order}"] = D_gbs
 
         idx = np.triu_indices(n, k=1)
         k_vals = K[idx]
         d_vals = D_gbs[idx]
-        print(f"  Order {order}: kernel mean={k_vals.mean():.4f}, "
-              f"dist mean={d_vals.mean():.4f}, dist std={d_vals.std():.4f}  "
-              f"({elapsed:.2f}s)")
+        print(
+            f"  Order {order}: kernel mean={k_vals.mean():.4f}, "
+            f"dist mean={d_vals.mean():.4f}, dist std={d_vals.std():.4f}  "
+            f"({elapsed:.2f}s)"
+        )
 
     # =========================================================================
     # 3. Hellinger uncertainty metrics
     # =========================================================================
-    print(f"\n--- Hellinger Uncertainty (GBS-derived) ---")
+    print("\n--- Hellinger Uncertainty (GBS-derived) ---")
     for order in [2, 3]:
         t0 = time.time()
         H = dequantized_hellinger_matrix(dags, max_order=order)
@@ -223,7 +231,7 @@ def analyze_dataset(dataset_name, pkl_path):
 
     # Full report at order 3
     report = pareto_uncertainty_report(dags, max_order=3)
-    print(f"\n  Full report (order 3):")
+    print("\n  Full report (order 3):")
     print(f"    n_dags:     {report['n_dags']}")
     print(f"    dimension:  {report['d']}")
     print(f"    diameter:   {report['diameter']:.4f}")
@@ -233,36 +241,36 @@ def analyze_dataset(dataset_name, pkl_path):
     # =========================================================================
     # 4. Cross-kernel correlations (Mantel-like)
     # =========================================================================
-    print(f"\n--- Cross-Kernel Correlations ---")
+    print("\n--- Cross-Kernel Correlations ---")
     all_distances = {**classical, **gbs_distances}
 
     # Add Hellinger as a distance
     H3 = dequantized_hellinger_matrix(dags, max_order=3)
-    all_distances['Hellinger'] = H3
+    all_distances["Hellinger"] = H3
 
     names = list(all_distances.keys())
-    print(f"  {'':15s}", end='')
+    print(f"  {'':15s}", end="")
     for name in names:
-        print(f"{name:>12s}", end='')
+        print(f"{name:>12s}", end="")
     print()
 
     corr_matrix = np.zeros((len(names), len(names)))
     for i, n1 in enumerate(names):
-        print(f"  {n1:15s}", end='')
+        print(f"  {n1:15s}", end="")
         for j, n2 in enumerate(names):
             r, p = mantel_correlation(all_distances[n1], all_distances[n2])
             corr_matrix[i, j] = r
             if i == j:
-                print(f"{'1.000':>12s}", end='')
+                print(f"{'1.000':>12s}", end="")
             else:
-                sig = '*' if p < 0.01 else ' '
-                print(f"{r:>11.3f}{sig}", end='')
+                sig = "*" if p < 0.01 else " "
+                print(f"{r:>11.3f}{sig}", end="")
         print()
 
     # =========================================================================
     # 5. Edge stability
     # =========================================================================
-    print(f"\n--- Edge Stability (Pareto Front) ---")
+    print("\n--- Edge Stability (Pareto Front) ---")
     freq = compute_edge_stability(dags)  # adaptive threshold per DAG
 
     # Stability thresholds
@@ -278,7 +286,7 @@ def analyze_dataset(dataset_name, pkl_path):
                 edge_list.append((i, j, freq[i, j]))
     edge_list.sort(key=lambda x: -x[2])
 
-    print(f"\n  Top 10 most stable edges:")
+    print("\n  Top 10 most stable edges:")
     print(f"  {'From':>6s} → {'To':>4s}  {'Freq':>6s}")
     for i, j, f in edge_list[:10]:
         print(f"  {i:>6d} → {j:>4d}  {f:>6.2f}")
@@ -286,21 +294,21 @@ def analyze_dataset(dataset_name, pkl_path):
     # =========================================================================
     # 6. Processor-specific analysis
     # =========================================================================
-    unique_procs = list(set(m['processor'] for m in meta))
+    unique_procs = list(set(m["processor"] for m in meta))
     if len(unique_procs) > 1:
-        print(f"\n--- Processor-Specific Analysis ---")
+        print("\n--- Processor-Specific Analysis ---")
         # Mean within-processor vs between-processor distance (GBS order 3)
-        D = gbs_distances['GBS-o3']
+        D = gbs_distances["GBS-o3"]
         within = []
         between = []
         for i in range(n):
             for j in range(i + 1, n):
-                if meta[i]['processor'] == meta[j]['processor']:
+                if meta[i]["processor"] == meta[j]["processor"]:
                     within.append(D[i, j])
                 else:
                     between.append(D[i, j])
         if within and between:
-            print(f"  GBS-o3 distance:")
+            print("  GBS-o3 distance:")
             print(f"    Within-processor:  {np.mean(within):.4f} ± {np.std(within):.4f}")
             print(f"    Between-processor: {np.mean(between):.4f} ± {np.std(between):.4f}")
             ratio = np.mean(between) / (np.mean(within) + 1e-10)
@@ -308,14 +316,14 @@ def analyze_dataset(dataset_name, pkl_path):
 
         # Per-processor stats
         for proc in unique_procs:
-            idx = [i for i, m in enumerate(meta) if m['processor'] == proc]
-            proc_baccs = [meta[i]['bacc'] for i in idx]
-            proc_edges = [meta[i]['n_edges'] for i in idx]
+            idx = [i for i, m in enumerate(meta) if m["processor"] == proc]
+            proc_baccs = [meta[i]["bacc"] for i in idx]
+            proc_edges = [meta[i]["n_edges"] for i in idx]
             print(f"\n  {proc} ({len(idx)} solutions):")
             print(f"    BAcc: {np.mean(proc_baccs):.3f} ± {np.std(proc_baccs):.3f}")
             print(f"    Edges: {np.mean(proc_edges):.1f} ± {np.std(proc_edges):.1f}")
     else:
-        print(f"\n--- Processor Analysis ---")
+        print("\n--- Processor Analysis ---")
         print(f"  Single processor ({unique_procs[0]}) — no between-processor comparison")
 
     # =========================================================================
@@ -327,8 +335,8 @@ def analyze_dataset(dataset_name, pkl_path):
 
     # Structural diversity interpretation
     H3_report = pareto_uncertainty_report(dags, max_order=3)
-    diam = H3_report['diameter']
-    disp = H3_report['mean_dispersion']
+    diam = H3_report["diameter"]
+    disp = H3_report["mean_dispersion"]
 
     if diam < 0.3:
         diversity = "LOW — Pareto front is structurally homogeneous"
@@ -341,25 +349,25 @@ def analyze_dataset(dataset_name, pkl_path):
     print(f"  Hellinger diameter: {diam:.4f}, dispersion: {disp:.4f}")
 
     # GBS vs classical agreement
-    r_gbs_shd, _ = mantel_correlation(gbs_distances['GBS-o3'], classical['SHD'])
-    r_hell_shd, _ = mantel_correlation(H3, classical['SHD'])
+    r_gbs_shd, _ = mantel_correlation(gbs_distances["GBS-o3"], classical["SHD"])
+    r_hell_shd, _ = mantel_correlation(H3, classical["SHD"])
     print(f"  GBS-SHD correlation: r={r_gbs_shd:.3f}")
     print(f"  Hellinger-SHD correlation: r={r_hell_shd:.3f}")
 
     if abs(r_gbs_shd) < 0.5:
-        print(f"  → GBS captures structural info BEYOND edge counting (low SHD correlation)")
+        print("  → GBS captures structural info BEYOND edge counting (low SHD correlation)")
     else:
-        print(f"  → GBS correlates with SHD (similar structural signal)")
+        print("  → GBS correlates with SHD (similar structural signal)")
 
     return {
-        'dataset': dataset_name,
-        'n_solutions': n,
-        'dimension': d,
-        'classical_distances': classical,
-        'gbs_distances': gbs_distances,
-        'hellinger_report': H3_report,
-        'edge_stability': freq,
-        'metadata': meta,
+        "dataset": dataset_name,
+        "n_solutions": n,
+        "dimension": d,
+        "classical_distances": classical,
+        "gbs_distances": gbs_distances,
+        "hellinger_report": H3_report,
+        "edge_stability": freq,
+        "metadata": meta,
     }
 
 
@@ -372,13 +380,24 @@ def main():
     results = {}
 
     import os
-    dataset_names = ['lucas', 'heart_disease', 'breast_cancer', 'asia', 'diabetes',
-                     'sachs', 'child', 'insurance', 'neuropathic_pain', 'alarm']
+
+    dataset_names = [
+        "lucas",
+        "heart_disease",
+        "breast_cancer",
+        "asia",
+        "diabetes",
+        "sachs",
+        "child",
+        "insurance",
+        "neuropathic_pain",
+        "alarm",
+    ]
     for dataset in dataset_names:
         # Try NSGA2 (ablation) first, then Optuna
-        path = f'results/ablation_v16/{dataset}/B6.pkl'
+        path = f"results/ablation_v16/{dataset}/B6.pkl"
         if not os.path.exists(path):
-            path = f'results/optuna_v16/{dataset}/optuna_seed42.pkl'
+            path = f"results/optuna_v16/{dataset}/optuna_seed42.pkl"
         if not os.path.exists(path):
             print(f"\n  SKIP {dataset}: no pkl found")
             continue
@@ -391,28 +410,32 @@ def main():
     print("CROSS-DATASET COMPARISON")
     print(f"{'=' * 80}")
 
-    print(f"\n{'Dataset':15s} {'d':>3s} {'#Sol':>5s} {'BAcc':>12s} {'Edges':>12s} "
-          f"{'H-diam':>8s} {'H-disp':>8s} {'H-cov':>8s} {'Processors':>15s}")
+    print(
+        f"\n{'Dataset':15s} {'d':>3s} {'#Sol':>5s} {'BAcc':>12s} {'Edges':>12s} "
+        f"{'H-diam':>8s} {'H-disp':>8s} {'H-cov':>8s} {'Processors':>15s}"
+    )
     print("-" * 95)
 
     for name, r in results.items():
-        meta = r['metadata']
-        baccs = [m['bacc'] for m in meta]
-        edges = [m['n_edges'] for m in meta]
-        procs = set(m['processor'] for m in meta)
-        hr = r['hellinger_report']
-        print(f"{name:15s} {r['dimension']:>3d} {r['n_solutions']:>5d} "
-              f"{np.mean(baccs):.3f}±{np.std(baccs):.3f} "
-              f"{np.mean(edges):>5.1f}±{np.std(edges):<5.1f} "
-              f"{hr['diameter']:>8.4f} {hr['mean_dispersion']:>8.4f} {hr['coverage']:>8.4f} "
-              f"{','.join(sorted(procs)):>15s}")
+        meta = r["metadata"]
+        baccs = [m["bacc"] for m in meta]
+        edges = [m["n_edges"] for m in meta]
+        procs = set(m["processor"] for m in meta)
+        hr = r["hellinger_report"]
+        print(
+            f"{name:15s} {r['dimension']:>3d} {r['n_solutions']:>5d} "
+            f"{np.mean(baccs):.3f}±{np.std(baccs):.3f} "
+            f"{np.mean(edges):>5.1f}±{np.std(edges):<5.1f} "
+            f"{hr['diameter']:>8.4f} {hr['mean_dispersion']:>8.4f} {hr['coverage']:>8.4f} "
+            f"{','.join(sorted(procs)):>15s}"
+        )
 
     # Save results
-    output_path = 'results/gbs_real_pareto_analysis.pkl'
-    with open(output_path, 'wb') as f:
+    output_path = "results/gbs_real_pareto_analysis.pkl"
+    with open(output_path, "wb") as f:
         pickle.dump(results, f)
     print(f"\nResults saved to: {output_path}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

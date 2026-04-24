@@ -11,34 +11,32 @@ Replaces NSGA-II with TPESampler:
 Output format matches run_nsga2() for downstream compatibility.
 """
 
-import gc
 import ctypes
-import time
+import gc
 import logging
 import threading
+import time
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import numpy as np
-import jax
 import jax.numpy as jnp
-from jax import random
-
+import numpy as np
 import optuna
+from jax import random
 from optuna.samplers import TPESampler
 
+from jcce.structure_learning.adjacency_prior import AdjacencyPrior
 from jcce.structure_learning.jcce_learner import (
     create_processor,
-    learn_structure,
     extract_markov_blanket,
+    learn_structure,
 )
-from jcce.structure_learning.warm_start_cache import ImprovedWarmStartCache
-from jcce.structure_learning.adjacency_prior import AdjacencyPrior
 from jcce.structure_learning.spr_transfer import (
     find_spr_candidate,
     spr_adjacency,
     spr_processor_params,
 )
+from jcce.structure_learning.warm_start_cache import ImprovedWarmStartCache
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +47,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 # ============================================================================
 # Manual Multi-Fidelity Pruning
 # ============================================================================
+
 
 class PruningTracker:
     """
@@ -92,39 +91,39 @@ class PruningTracker:
 # Search Space Constants
 # ============================================================================
 
-PROCESSOR_TYPES = ['elm', 'gnn', 'mlp', 'transformer', 'mamba']
+PROCESSOR_TYPES = ["elm", "gnn", "mlp", "transformer", "mamba"]
 
 PROCESSOR_SEARCH_SPACE = {
-    'elm': {
-        'hidden_dim': [64, 128],
-        'n_hidden_nodes': [64, 128],
-        'activation': ['relu', 'tanh'],
+    "elm": {
+        "hidden_dim": [64, 128],
+        "n_hidden_nodes": [64, 128],
+        "activation": ["relu", "tanh"],
     },
-    'gnn': {
-        'hidden_dim': [64, 128],
-        'n_layers': [2, 3],
-        'gnn_type': ['gcn', 'gat'],
+    "gnn": {
+        "hidden_dim": [64, 128],
+        "n_layers": [2, 3],
+        "gnn_type": ["gcn", "gat"],
     },
-    'mlp': {
-        'hidden_dim': [64, 128],
-        'n_layers': [2, 3],
-        'activation': ['relu', 'tanh'],
+    "mlp": {
+        "hidden_dim": [64, 128],
+        "n_layers": [2, 3],
+        "activation": ["relu", "tanh"],
     },
-    'transformer': {
-        'd_model': [64, 128],
-        'n_heads': [2, 4],
+    "transformer": {
+        "d_model": [64, 128],
+        "n_heads": [2, 4],
     },
-    'mamba': {
-        'd_model': [64, 128],
-        'd_state': [8, 16],
+    "mamba": {
+        "d_model": [64, 128],
+        "d_state": [8, 16],
     },
 }
 
 # Fixed params not included in search (low sensitivity or single valid value)
 FIXED_PROCESSOR_PARAMS = {
-    'transformer': {'n_layers': 2, 'd_ff': 256},
-    'mamba': {'d_conv': 4, 'expand': 2},
-    'gnn': {'sage_aggregation': 'mean'},
+    "transformer": {"n_layers": 2, "d_ff": 256},
+    "mamba": {"d_conv": 4, "expand": 2},
+    "gnn": {"sage_aggregation": "mean"},
 }
 
 # Effect estimation search values (categorical, matching NSGA-II ranges)
@@ -163,7 +162,10 @@ def get_trial_artifacts(trial_number: int) -> Optional[Dict[str, Any]]:
 # Search Space Suggestion
 # ============================================================================
 
-def suggest_hyperparams(trial: optuna.Trial, use_v7: bool = True, n_vars: int = 12) -> Dict[str, Any]:
+
+def suggest_hyperparams(
+    trial: optuna.Trial, use_v7: bool = True, n_vars: int = 12
+) -> Dict[str, Any]:
     """
     Suggest hyperparameters for an Optuna trial.
 
@@ -180,7 +182,7 @@ def suggest_hyperparams(trial: optuna.Trial, use_v7: bool = True, n_vars: int = 
         Config dict compatible with GOLEM training
     """
     # Processor type
-    processor_type = trial.suggest_categorical('processor_type', PROCESSOR_TYPES)
+    processor_type = trial.suggest_categorical("processor_type", PROCESSOR_TYPES)
 
     # GOLEM hyperparams (continuous log-uniform instead of discrete indices)
     # Scale lambda_1 upper bound with d²: possible edges grow as d(d-1), so the
@@ -188,16 +190,16 @@ def suggest_hyperparams(trial: optuna.Trial, use_v7: bool = True, n_vars: int = 
     # Coefficient 2.0 gives the optimizer room for strong sparsity at high d.
     # d=12 → 2.0, d=30 → 12.5, d=50 → 34.7, d=100 → 138.9
     lambda_1_upper = 2.0 * max(1.0, (n_vars / 12.0) ** 2)
-    lambda_1 = trial.suggest_float('lambda_1', 0.001, lambda_1_upper, log=True)
-    lambda_2 = trial.suggest_float('lambda_2', 0.001, 1.0, log=True)
-    lr = trial.suggest_float('lr', 0.0001, 0.01, log=True)
-    lambda_class = trial.suggest_categorical('lambda_class', [0.1, 0.5, 1.0, 2.0, 5.0])
+    lambda_1 = trial.suggest_float("lambda_1", 0.001, lambda_1_upper, log=True)
+    lambda_2 = trial.suggest_float("lambda_2", 0.001, 1.0, log=True)
+    lr = trial.suggest_float("lr", 0.0001, 0.01, log=True)
+    lambda_class = trial.suggest_categorical("lambda_class", [0.1, 0.5, 1.0, 2.0, 5.0])
 
     # Conditional processor-specific params
     processor_config = {}
     space = PROCESSOR_SEARCH_SPACE[processor_type]
     for param_name, values in space.items():
-        key = f'{processor_type}_{param_name}'
+        key = f"{processor_type}_{param_name}"
         if isinstance(values[0], str):
             processor_config[param_name] = trial.suggest_categorical(key, values)
         else:
@@ -208,39 +210,35 @@ def suggest_hyperparams(trial: optuna.Trial, use_v7: bool = True, n_vars: int = 
         processor_config.update(FIXED_PROCESSOR_PARAMS[processor_type])
 
     config = {
-        'processor_type': processor_type,
-        'processor_config': processor_config,
-        'lambda_1': lambda_1,
-        'lambda_2': lambda_2,
-        'lambda_class': lambda_class,
-        'lr': lr,
+        "processor_type": processor_type,
+        "processor_config": processor_config,
+        "lambda_1": lambda_1,
+        "lambda_2": lambda_2,
+        "lambda_class": lambda_class,
+        "lr": lr,
     }
 
     # Effect estimation params
     if use_v7:
-        config['effect_hidden_dim'] = trial.suggest_categorical(
-            'effect_hidden_dim', V7_EFFECT_HIDDEN_DIMS
+        config["effect_hidden_dim"] = trial.suggest_categorical(
+            "effect_hidden_dim", V7_EFFECT_HIDDEN_DIMS
         )
-        config['effect_embed_dim'] = trial.suggest_categorical(
-            'effect_embed_dim', V7_EFFECT_EMBED_DIMS
+        config["effect_embed_dim"] = trial.suggest_categorical(
+            "effect_embed_dim", V7_EFFECT_EMBED_DIMS
         )
-        config['lambda_effect'] = trial.suggest_categorical(
-            'lambda_effect', V7_LAMBDA_EFFECTS
+        config["lambda_effect"] = trial.suggest_categorical("lambda_effect", V7_LAMBDA_EFFECTS)
+        config["effect_warmup_iter"] = trial.suggest_categorical(
+            "effect_warmup_iter", V7_EFFECT_WARMUP_ITERS
         )
-        config['effect_warmup_iter'] = trial.suggest_categorical(
-            'effect_warmup_iter', V7_EFFECT_WARMUP_ITERS
+        config["lambda_confound_sparse"] = trial.suggest_categorical(
+            "lambda_confound_sparse", V7_LAMBDA_CONFOUND_SPARSE
         )
-        config['lambda_confound_sparse'] = trial.suggest_categorical(
-            'lambda_confound_sparse', V7_LAMBDA_CONFOUND_SPARSE
+        config["lambda_bow_v7"] = trial.suggest_categorical("lambda_bow_v7", V7_LAMBDA_BOW)
+        config["effect_refinement_iters"] = trial.suggest_categorical(
+            "effect_refinement_iters", V7_EFFECT_REFINEMENT_ITERS
         )
-        config['lambda_bow_v7'] = trial.suggest_categorical(
-            'lambda_bow_v7', V7_LAMBDA_BOW
-        )
-        config['effect_refinement_iters'] = trial.suggest_categorical(
-            'effect_refinement_iters', V7_EFFECT_REFINEMENT_ITERS
-        )
-        config['n_latent_confounders'] = trial.suggest_categorical(
-            'n_latent_confounders', V7_N_LATENT_CONFOUNDERS
+        config["n_latent_confounders"] = trial.suggest_categorical(
+            "n_latent_confounders", V7_N_LATENT_CONFOUNDERS
         )
 
     return config
@@ -250,6 +248,7 @@ def suggest_hyperparams(trial: optuna.Trial, use_v7: bool = True, n_vars: int = 
 # Constraints
 # ============================================================================
 
+
 def constraints_func(trial: optuna.trial.FrozenTrial) -> List[float]:
     """
     Constraint function for TPESampler.
@@ -258,7 +257,8 @@ def constraints_func(trial: optuna.trial.FrozenTrial) -> List[float]:
     h_A must be < 0.1 for a valid DAG.
     """
     import math
-    h_A = trial.user_attrs.get('h_A', 1.0)
+
+    h_A = trial.user_attrs.get("h_A", 1.0)
     # NaN from diverged training → treat as infeasible (large positive value)
     if math.isnan(h_A):
         h_A = 10.0
@@ -268,6 +268,7 @@ def constraints_func(trial: optuna.trial.FrozenTrial) -> List[float]:
 # ============================================================================
 # Memory Cleanup
 # ============================================================================
+
 
 def _memory_cleanup():
     """Lightweight memory cleanup between trials."""
@@ -285,6 +286,7 @@ def _memory_cleanup():
 # Objective Factory
 # ============================================================================
 
+
 def create_optuna_objective(
     X: jnp.ndarray,
     Y: jnp.ndarray,
@@ -292,7 +294,7 @@ def create_optuna_objective(
     max_iter: int = 300,
     use_v7: bool = True,
     Y_continuous: Optional[jnp.ndarray] = None,
-    task: str = 'classification',
+    task: str = "classification",
     golem_overrides: Optional[Dict[str, Any]] = None,
     warm_start_cache: Optional[ImprovedWarmStartCache] = None,
     jax_key_seed: int = 0,
@@ -351,16 +353,20 @@ def create_optuna_objective(
 
         # 1. Suggest hyperparams (pass n_vars for dimension-aware lambda_1 scaling)
         _suggest = suggest_fn or suggest_hyperparams
-        config = _suggest(trial, use_v7=use_v7, n_vars=n_vars) if _suggest is suggest_hyperparams else _suggest(trial, use_v7=use_v7)
+        config = (
+            _suggest(trial, use_v7=use_v7, n_vars=n_vars)
+            if _suggest is suggest_hyperparams
+            else _suggest(trial, use_v7=use_v7)
+        )
 
         # 2. Create processor
         key = random.PRNGKey(jax_key_seed + trial.number)
         key, proc_key = random.split(key)
         processor = create_processor(
-            config['processor_type'],
+            config["processor_type"],
             key=proc_key,
             n_features=n_vars,
-            **config['processor_config'],
+            **config["processor_config"],
         )
 
         # 3. Warm-start: SPR > adjacency_prior > warm_start_cache > None
@@ -370,23 +376,23 @@ def create_optuna_objective(
 
         # Priority 1: SPR transfer from close same-processor trial
         if enable_spr and len(_trial_artifacts) > 0:
-            spr_trial = find_spr_candidate(
-                config, _trial_artifacts, max_distance=spr_max_distance
-            )
+            spr_trial = find_spr_candidate(config, _trial_artifacts, max_distance=spr_max_distance)
             if spr_trial is not None:
                 donor = _trial_artifacts[spr_trial]
-                donor_A = donor.get('A_weights', donor.get('A_est'))
+                donor_A = donor.get("A_weights", donor.get("A_est"))
                 if donor_A is not None:
                     rng = np.random.default_rng(jax_key_seed + trial.number)
-                    A_init = jnp.array(spr_adjacency(
-                        np.array(donor_A),
-                        lambda_A=spr_lambda_A,
-                        noise_scale=0.1,
-                        rng=rng,
-                    ))
+                    A_init = jnp.array(
+                        spr_adjacency(
+                            np.array(donor_A),
+                            lambda_A=spr_lambda_A,
+                            noise_scale=0.1,
+                            rng=rng,
+                        )
+                    )
                     spr_hit = True
                     # Transfer processor params if available
-                    donor_proc = donor.get('proc_params')
+                    donor_proc = donor.get("proc_params")
                     if donor_proc is not None:
                         proc_params_init = spr_processor_params(
                             donor_proc,
@@ -409,7 +415,7 @@ def create_optuna_objective(
             if A_init is not None:
                 A_init = jnp.array(A_init)
 
-        trial.set_user_attr('spr_hit', spr_hit)
+        trial.set_user_attr("spr_hit", spr_hit)
 
         # 4. Build iteration callback for manual pruning
         # Note: trial.report()/should_prune() are NOT supported for multi-objective
@@ -418,15 +424,13 @@ def create_optuna_objective(
             if iter_num in _pruning_rungs and pruning_tracker is not None:
                 # Don't prune during Phase 1 (structure-only):
                 # BAcc=0.50 is expected when classification hasn't started.
-                if metrics.get('curriculum_phase', 0) < 2:
+                if metrics.get("curriculum_phase", 0) < 2:
                     return
-                acc = metrics['balanced_accuracy']
+                acc = metrics["balanced_accuracy"]
                 pruning_tracker.report(acc, iter_num)
                 if pruning_tracker.should_prune(acc, iter_num):
                     raise optuna.TrialPruned(
-                        f"Pruned at iter {iter_num}: "
-                        f"acc={acc:.3f}, "
-                        f"h_A={metrics['h_A']:.4f}"
+                        f"Pruned at iter {iter_num}: acc={acc:.3f}, h_A={metrics['h_A']:.4f}"
                     )
 
         # 5. Prepare Y
@@ -437,75 +441,78 @@ def create_optuna_objective(
             key, train_key = random.split(key)
 
             golem_kwargs = {
-                'data': X,
-                'Y': Y_for_v7,
-                'Y_idx': Y_idx,
-                'processor': processor,
-                'key': train_key,
-                'processor_type': config['processor_type'],
-                'lambda_1': config['lambda_1'],
-                'lambda_2_init': config['lambda_2'],
-                'lambda_class': config['lambda_class'],
-                'lr': config['lr'],
-                'max_iter': max_iter,
-                'patience': 25,
-                'verbose': 2 if verbose else 0,
-                'A_init': A_init,
-                'proc_params_init': proc_params_init,
-                'task': task,
-                'iteration_callback': iteration_callback,
+                "data": X,
+                "Y": Y_for_v7,
+                "Y_idx": Y_idx,
+                "processor": processor,
+                "key": train_key,
+                "processor_type": config["processor_type"],
+                "lambda_1": config["lambda_1"],
+                "lambda_2_init": config["lambda_2"],
+                "lambda_class": config["lambda_class"],
+                "lr": config["lr"],
+                "max_iter": max_iter,
+                "patience": 25,
+                "verbose": 2 if verbose else 0,
+                "A_init": A_init,
+                "proc_params_init": proc_params_init,
+                "task": task,
+                "iteration_callback": iteration_callback,
                 # PC constraint only makes sense for actual PC algorithm output.
                 # Warm-start cache/SPR/adjacency prior provide "soft suggestions"
                 # that should NOT be locked in with a structural penalty.
-                'use_pc_constraint': False,
+                "use_pc_constraint": False,
                 # Overrides
-                'use_adaptive_curriculum': golem_overrides.get('use_adaptive_curriculum', True),
-                'curriculum_phase_splits': golem_overrides.get('curriculum_phase_splits', (0.4, 0.8)),
-                'lambda_ident': golem_overrides.get('lambda_ident', 0.01),
-                'use_amortized_effects': golem_overrides.get('use_amortized_effects', True),
-                'use_dragonnet': golem_overrides.get('use_dragonnet', True),
-                'use_structural_dml': golem_overrides.get('use_structural_dml', False),
-                'use_pcgrad': golem_overrides.get('use_pcgrad', False),
-                'enforce_outcome_sink': golem_overrides.get('enforce_outcome_sink', True),
-                'freeze_A': golem_overrides.get('freeze_A', False),
+                "use_adaptive_curriculum": golem_overrides.get("use_adaptive_curriculum", True),
+                "curriculum_phase_splits": golem_overrides.get(
+                    "curriculum_phase_splits", (0.4, 0.8)
+                ),
+                "lambda_ident": golem_overrides.get("lambda_ident", 0.01),
+                "use_amortized_effects": golem_overrides.get("use_amortized_effects", True),
+                "use_dragonnet": golem_overrides.get("use_dragonnet", True),
+                "use_structural_dml": golem_overrides.get("use_structural_dml", False),
+                "use_pcgrad": golem_overrides.get("use_pcgrad", False),
+                "enforce_outcome_sink": golem_overrides.get("enforce_outcome_sink", True),
+                "freeze_A": golem_overrides.get("freeze_A", False),
             }
 
             if use_v7:
-                golem_kwargs.update({
-                    'effect_hidden_dim': config.get('effect_hidden_dim', 64),
-                    'effect_embed_dim': config.get('effect_embed_dim', 16),
-                    'lambda_effect': golem_overrides.get(
-                        'lambda_effect', config.get('lambda_effect', 10.0)
-                    ),
-                    'effect_warmup_iter': config.get('effect_warmup_iter', 20),
-                    'lambda_confound_sparse': config.get('lambda_confound_sparse', 0.05),
-                    'lambda_bow': golem_overrides.get(
-                        'lambda_bow', config.get('lambda_bow_v7', 0.3)
-                    ),
-                    'Y_continuous': Y_continuous,
-                    'effect_refinement_iters': config.get('effect_refinement_iters', 50),
-                    'n_latent_confounders': config.get('n_latent_confounders', 5),
-                })
+                golem_kwargs.update(
+                    {
+                        "effect_hidden_dim": config.get("effect_hidden_dim", 64),
+                        "effect_embed_dim": config.get("effect_embed_dim", 16),
+                        "lambda_effect": golem_overrides.get(
+                            "lambda_effect", config.get("lambda_effect", 10.0)
+                        ),
+                        "effect_warmup_iter": config.get("effect_warmup_iter", 20),
+                        "lambda_confound_sparse": config.get("lambda_confound_sparse", 0.05),
+                        "lambda_bow": golem_overrides.get(
+                            "lambda_bow", config.get("lambda_bow_v7", 0.3)
+                        ),
+                        "Y_continuous": Y_continuous,
+                        "effect_refinement_iters": config.get("effect_refinement_iters", 50),
+                        "n_latent_confounders": config.get("n_latent_confounders", 5),
+                    }
+                )
 
-            A_est, processor_trained, processor_params, metrics = \
-                learn_structure(**golem_kwargs)
+            A_est, processor_trained, processor_params, metrics = learn_structure(**golem_kwargs)
 
         except optuna.TrialPruned:
             raise  # Re-raise pruning
         except Exception as e:
             logger.warning(f"Trial {trial.number} failed: {e}")
-            trial.set_user_attr('error', str(e))
-            trial.set_user_attr('h_A', 1.0)
+            trial.set_user_attr("error", str(e))
+            trial.set_user_attr("h_A", 1.0)
             _memory_cleanup()
             return 0.0, 0.0
 
         # 7. Extract metrics
-        h_A = float(metrics.get('final_h_A', 1.0))
-        balanced_accuracy = float(metrics.get('balanced_accuracy', 0.0))
-        n_edges = int(metrics.get('n_edges', 0))
+        h_A = float(metrics.get("final_h_A", 1.0))
+        balanced_accuracy = float(metrics.get("balanced_accuracy", 0.0))
+        n_edges = int(metrics.get("n_edges", 0))
 
         # Extract Markov blanket
-        mb_from_metrics = metrics.get('markov_blanket', [])
+        mb_from_metrics = metrics.get("markov_blanket", [])
         if mb_from_metrics:
             mb_indices = [idx for idx in mb_from_metrics if idx != Y_idx]
         else:
@@ -524,104 +531,96 @@ def create_optuna_objective(
         mb_sparsity = 1.0 - min(edge_weight_to_Y / n_features, 1.0)
 
         # 8. Store scalar metrics as user_attrs
-        trial.set_user_attr('h_A', h_A)
-        trial.set_user_attr('balanced_accuracy', balanced_accuracy)
-        trial.set_user_attr('mb_sparsity', mb_sparsity)
-        trial.set_user_attr('mb_size', mb_size)
-        trial.set_user_attr('mb_indices', mb_indices)
-        trial.set_user_attr('n_edges', n_edges)
-        trial.set_user_attr('processor_type', config['processor_type'])
-        trial.set_user_attr('classification_accuracy',
-                            float(metrics.get('classification_accuracy', 0.0)))
-        trial.set_user_attr('classification_f1',
-                            float(metrics.get('f1_score', 0.0)))
-        trial.set_user_attr('classification_precision',
-                            float(metrics.get('precision', 0.0)))
-        trial.set_user_attr('classification_recall',
-                            float(metrics.get('recall', 0.0)))
-        trial.set_user_attr('classification_roc_auc',
-                            float(metrics.get('auc_roc', 0.0)))
-        trial.set_user_attr('iterations',
-                            int(metrics.get('iterations', max_iter)))
-        trial.set_user_attr('early_stopped',
-                            bool(metrics.get('early_stopped', False)))
-        trial.set_user_attr('recon_loss',
-                            float(metrics.get('final_recon_loss', 0.0)))
-        trial.set_user_attr('class_loss',
-                            float(metrics.get('final_class_loss', 0.0)))
-        trial.set_user_attr('trial_time', time.time() - trial_start)
+        trial.set_user_attr("h_A", h_A)
+        trial.set_user_attr("balanced_accuracy", balanced_accuracy)
+        trial.set_user_attr("mb_sparsity", mb_sparsity)
+        trial.set_user_attr("mb_size", mb_size)
+        trial.set_user_attr("mb_indices", mb_indices)
+        trial.set_user_attr("n_edges", n_edges)
+        trial.set_user_attr("processor_type", config["processor_type"])
+        trial.set_user_attr(
+            "classification_accuracy", float(metrics.get("classification_accuracy", 0.0))
+        )
+        trial.set_user_attr("classification_f1", float(metrics.get("f1_score", 0.0)))
+        trial.set_user_attr("classification_precision", float(metrics.get("precision", 0.0)))
+        trial.set_user_attr("classification_recall", float(metrics.get("recall", 0.0)))
+        trial.set_user_attr("classification_roc_auc", float(metrics.get("auc_roc", 0.0)))
+        trial.set_user_attr("iterations", int(metrics.get("iterations", max_iter)))
+        trial.set_user_attr("early_stopped", bool(metrics.get("early_stopped", False)))
+        trial.set_user_attr("recon_loss", float(metrics.get("final_recon_loss", 0.0)))
+        trial.set_user_attr("class_loss", float(metrics.get("final_class_loss", 0.0)))
+        trial.set_user_attr("trial_time", time.time() - trial_start)
 
         if use_v7:
-            trial.set_user_attr('effect_loss',
-                                float(metrics.get('effect_loss', 1.0)))
-            trial.set_user_attr('bow_loss',
-                                float(metrics.get('bow_loss', 0.0)))
-            trial.set_user_attr('n_confound_edges',
-                                int(metrics.get('n_confound_edges', 0)))
+            trial.set_user_attr("effect_loss", float(metrics.get("effect_loss", 1.0)))
+            trial.set_user_attr("bow_loss", float(metrics.get("bow_loss", 0.0)))
+            trial.set_user_attr("n_confound_edges", int(metrics.get("n_confound_edges", 0)))
 
         # Gradient diagnostics and bow-free checks (Session 39)
         try:
-            gd = metrics.get('gradient_diagnostics', [])
+            gd = metrics.get("gradient_diagnostics", [])
             if gd:
                 # Ensure all values are pure Python types (not JAX/numpy scalars)
                 gd_clean = [
-                    {k: float(v) if isinstance(v, (float, int)) else int(v)
-                     for k, v in entry.items()}
+                    {
+                        k: float(v) if isinstance(v, (float, int)) else int(v)
+                        for k, v in entry.items()
+                    }
                     for entry in gd
                 ]
-                trial.set_user_attr('gradient_diagnostics', gd_clean)
-            if 'bow_free_violations' in metrics:
-                trial.set_user_attr('bow_free_violations', int(metrics['bow_free_violations']))
-            if 'residuals_non_gaussian' in metrics:
-                trial.set_user_attr('residuals_non_gaussian', bool(metrics['residuals_non_gaussian']))
-            if 'residual_normality_pvals' in metrics:
-                trial.set_user_attr('residual_normality_pvals',
-                                    [float(p) for p in metrics['residual_normality_pvals']])
+                trial.set_user_attr("gradient_diagnostics", gd_clean)
+            if "bow_free_violations" in metrics:
+                trial.set_user_attr("bow_free_violations", int(metrics["bow_free_violations"]))
+            if "residuals_non_gaussian" in metrics:
+                trial.set_user_attr(
+                    "residuals_non_gaussian", bool(metrics["residuals_non_gaussian"])
+                )
+            if "residual_normality_pvals" in metrics:
+                trial.set_user_attr(
+                    "residual_normality_pvals",
+                    [float(p) for p in metrics["residual_normality_pvals"]],
+                )
         except Exception as _diag_err:
             logger.warning(f"Trial {trial.number}: diagnostic forwarding failed: {_diag_err}")
 
         # 9. Store large arrays in module-level artifact store
         artifacts = {
-            'A_est': np.array(A_est),
-            'config': config,
-            'markov_blanket': mb_indices,
+            "A_est": np.array(A_est),
+            "config": config,
+            "markov_blanket": mb_indices,
         }
 
         # D.2: Store processor params + continuous A for SPR transfer
-        artifacts['proc_params'] = [
-            {k: np.array(v) if hasattr(v, 'shape') else v
-             for k, v in p.items()}
+        artifacts["proc_params"] = [
+            {k: np.array(v) if hasattr(v, "shape") else v for k, v in p.items()}
             for p in processor_params
         ]
-        if 'A_weights' in metrics:
-            artifacts['A_weights'] = np.array(metrics['A_weights'])
+        if "A_weights" in metrics:
+            artifacts["A_weights"] = np.array(metrics["A_weights"])
 
         if use_v7:
-            if 'A_confound' in metrics:
-                artifacts['A_confound'] = np.array(metrics['A_confound'])
-            if 'A_confound_weights' in metrics:
-                artifacts['A_confound_weights'] = np.array(
-                    metrics['A_confound_weights']
-                )
-            artifacts['causal_effects'] = metrics.get('causal_effects', {})
+            if "A_confound" in metrics:
+                artifacts["A_confound"] = np.array(metrics["A_confound"])
+            if "A_confound_weights" in metrics:
+                artifacts["A_confound_weights"] = np.array(metrics["A_confound_weights"])
+            artifacts["causal_effects"] = metrics.get("causal_effects", {})
             # Low-rank confound model extras
-            if 'B_confound' in metrics:
-                artifacts['B_confound'] = np.array(metrics['B_confound'])
-                artifacts['log_var_confound'] = metrics['log_var_confound']
-                artifacts['n_latent_confounders'] = metrics['n_latent_confounders']
+            if "B_confound" in metrics:
+                artifacts["B_confound"] = np.array(metrics["B_confound"])
+                artifacts["log_var_confound"] = metrics["log_var_confound"]
+                artifacts["n_latent_confounders"] = metrics["n_latent_confounders"]
 
         # Structure recovery metrics if ground truth available
         if true_graph is not None:
             try:
                 from jcce.training.metrics import evaluate_structure_recovery
+
                 A_est_X = np.array(A_est)[:n_vars, :n_vars]
                 true_graph_np = np.array(true_graph)
                 if A_est_X.shape == true_graph_np.shape:
-                    sr = evaluate_structure_recovery(
-                        A_est_X, true_graph_np, compute_sid=True
-                    )
+                    sr = evaluate_structure_recovery(A_est_X, true_graph_np, compute_sid=True)
                     for k, v in sr.items():
-                        trial.set_user_attr(f'structure_{k}', float(v))
+                        trial.set_user_attr(f"structure_{k}", float(v))
             except Exception:
                 pass
 
@@ -635,13 +634,13 @@ def create_optuna_objective(
                 A_matrix=np.array(A_est),
                 fitness=fitness,
                 generation=0,
-                processor_type=config['processor_type'],
+                processor_type=config["processor_type"],
             )
 
         # D.1: Update adjacency prior with feasible solutions
         if adjacency_prior is not None and h_A < 0.1:
             fitness = 0.7 * balanced_accuracy + 0.3 * mb_sparsity
-            A_continuous = np.array(metrics.get('A_weights', A_est))
+            A_continuous = np.array(metrics.get("A_weights", A_est))
             adjacency_prior.update(A_continuous, fitness)
 
         # 11. Mark completed for pruning tracker
@@ -667,6 +666,7 @@ def create_optuna_objective(
 # ============================================================================
 # Pareto Extraction
 # ============================================================================
+
 
 def extract_pareto_solutions(
     study: optuna.Study,
@@ -694,7 +694,7 @@ def extract_pareto_solutions(
         if trial.state != optuna.trial.TrialState.COMPLETE:
             continue
 
-        h_A = trial.user_attrs.get('h_A', 1.0)
+        h_A = trial.user_attrs.get("h_A", 1.0)
         if h_A >= h_A_threshold:
             continue
 
@@ -706,116 +706,120 @@ def extract_pareto_solutions(
         if artifacts is None:
             continue
 
-        config = artifacts['config']
-        mb_indices = artifacts['markov_blanket']
+        config = artifacts["config"]
+        mb_indices = artifacts["markov_blanket"]
 
         # Build metrics dict matching evaluate_genome_unified() output
         metrics = {
-            'fitness': 0.7 * balanced_accuracy + 0.3 * mb_sparsity,
-            'classification_accuracy': trial.user_attrs.get(
-                'classification_accuracy', balanced_accuracy
+            "fitness": 0.7 * balanced_accuracy + 0.3 * mb_sparsity,
+            "classification_accuracy": trial.user_attrs.get(
+                "classification_accuracy", balanced_accuracy
             ),
-            'classification_precision': trial.user_attrs.get(
-                'classification_precision', 0.0
-            ),
-            'classification_recall': trial.user_attrs.get(
-                'classification_recall', 0.0
-            ),
-            'classification_f1': trial.user_attrs.get(
-                'classification_f1', 0.0
-            ),
-            'classification_balanced_accuracy': balanced_accuracy,
-            'classification_roc_auc': trial.user_attrs.get(
-                'classification_roc_auc', 0.0
-            ),
-            'mb_sparsity': mb_sparsity,
-            'mb_size': len(mb_indices),
-            'mb_indices': mb_indices,
-            'markov_blanket': mb_indices,
-            'structure_n_edges': trial.user_attrs.get('n_edges', 0),
-            'structure_h_A': h_A,
-            'structure_A_est': artifacts['A_est'],
-            'v4_recon_loss': trial.user_attrs.get('recon_loss', 0.0),
-            'v4_class_loss': trial.user_attrs.get('class_loss', 0.0),
-            'v4_iterations': trial.user_attrs.get('iterations', 0),
-            'v4_early_stopped': trial.user_attrs.get('early_stopped', False),
-            'processor_type': config['processor_type'],
-            'processor_config': config['processor_config'],
-            'lambda_1': config['lambda_1'],
-            'lambda_2': config['lambda_2'],
-            'lambda_class': config['lambda_class'],
-            'lr': config['lr'],
+            "classification_precision": trial.user_attrs.get("classification_precision", 0.0),
+            "classification_recall": trial.user_attrs.get("classification_recall", 0.0),
+            "classification_f1": trial.user_attrs.get("classification_f1", 0.0),
+            "classification_balanced_accuracy": balanced_accuracy,
+            "classification_roc_auc": trial.user_attrs.get("classification_roc_auc", 0.0),
+            "mb_sparsity": mb_sparsity,
+            "mb_size": len(mb_indices),
+            "mb_indices": mb_indices,
+            "markov_blanket": mb_indices,
+            "structure_n_edges": trial.user_attrs.get("n_edges", 0),
+            "structure_h_A": h_A,
+            "structure_A_est": artifacts["A_est"],
+            "v4_recon_loss": trial.user_attrs.get("recon_loss", 0.0),
+            "v4_class_loss": trial.user_attrs.get("class_loss", 0.0),
+            "v4_iterations": trial.user_attrs.get("iterations", 0),
+            "v4_early_stopped": trial.user_attrs.get("early_stopped", False),
+            "processor_type": config["processor_type"],
+            "processor_config": config["processor_config"],
+            "lambda_1": config["lambda_1"],
+            "lambda_2": config["lambda_2"],
+            "lambda_class": config["lambda_class"],
+            "lr": config["lr"],
         }
 
         if use_v7:
-            metrics['effect_loss'] = trial.user_attrs.get('effect_loss', 1.0)
-            metrics['causal_effects'] = artifacts.get('causal_effects', {})
-            metrics['n_confound_edges'] = trial.user_attrs.get(
-                'n_confound_edges', 0
-            )
-            metrics['bow_loss'] = trial.user_attrs.get('bow_loss', 0.0)
-            if 'A_confound' in artifacts:
-                metrics['A_confound'] = artifacts['A_confound']
-            if 'A_weights' in artifacts:
-                metrics['A_weights'] = artifacts['A_weights']
-            if 'A_confound_weights' in artifacts:
-                metrics['A_confound_weights'] = artifacts['A_confound_weights']
-            metrics['effect_hidden_dim'] = config.get('effect_hidden_dim', 64)
-            metrics['lambda_effect'] = config.get('lambda_effect', 10.0)
-            metrics['effect_embed_dim'] = config.get('effect_embed_dim', 16)
-            metrics['effect_warmup_iter'] = config.get('effect_warmup_iter', 20)
-            metrics['lambda_confound_sparse'] = config.get(
-                'lambda_confound_sparse', 0.05
-            )
-            metrics['lambda_bow'] = config.get('lambda_bow_v7', 0.3)
+            metrics["effect_loss"] = trial.user_attrs.get("effect_loss", 1.0)
+            metrics["causal_effects"] = artifacts.get("causal_effects", {})
+            metrics["n_confound_edges"] = trial.user_attrs.get("n_confound_edges", 0)
+            metrics["bow_loss"] = trial.user_attrs.get("bow_loss", 0.0)
+            if "A_confound" in artifacts:
+                metrics["A_confound"] = artifacts["A_confound"]
+            if "A_weights" in artifacts:
+                metrics["A_weights"] = artifacts["A_weights"]
+            if "A_confound_weights" in artifacts:
+                metrics["A_confound_weights"] = artifacts["A_confound_weights"]
+            metrics["effect_hidden_dim"] = config.get("effect_hidden_dim", 64)
+            metrics["lambda_effect"] = config.get("lambda_effect", 10.0)
+            metrics["effect_embed_dim"] = config.get("effect_embed_dim", 16)
+            metrics["effect_warmup_iter"] = config.get("effect_warmup_iter", 20)
+            metrics["lambda_confound_sparse"] = config.get("lambda_confound_sparse", 0.05)
+            metrics["lambda_bow"] = config.get("lambda_bow_v7", 0.3)
 
         # Processor params (needed for CF evaluation)
-        if 'proc_params' in artifacts:
-            metrics['_processor_params'] = artifacts['proc_params']
+        if "proc_params" in artifacts:
+            metrics["_processor_params"] = artifacts["proc_params"]
 
         # Gradient diagnostics and bow-free checks
-        for diag_key in ['gradient_diagnostics', 'bow_free_violations',
-                         'residuals_non_gaussian', 'residual_normality_pvals']:
+        for diag_key in [
+            "gradient_diagnostics",
+            "bow_free_violations",
+            "residuals_non_gaussian",
+            "residual_normality_pvals",
+        ]:
             if diag_key in trial.user_attrs:
                 metrics[diag_key] = trial.user_attrs[diag_key]
 
         # Structure recovery metrics
-        for sr_key in ['structure_edge_f1', 'structure_edge_precision',
-                       'structure_edge_recall', 'structure_shd',
-                       'structure_sid', 'structure_sid_normalized',
-                       'structure_tp', 'structure_fp', 'structure_fn']:
+        for sr_key in [
+            "structure_edge_f1",
+            "structure_edge_precision",
+            "structure_edge_recall",
+            "structure_shd",
+            "structure_sid",
+            "structure_sid_normalized",
+            "structure_tp",
+            "structure_fp",
+            "structure_fn",
+        ]:
             if sr_key in trial.user_attrs:
                 metrics[sr_key] = trial.user_attrs[sr_key]
 
-        enhanced_solutions.append({
-            'genome': np.array(list(trial.params.values())),
-            'objectives': np.array([balanced_accuracy, mb_sparsity]),
-            'metrics': metrics,
-        })
+        enhanced_solutions.append(
+            {
+                "genome": np.array(list(trial.params.values())),
+                "objectives": np.array([balanced_accuracy, mb_sparsity]),
+                "metrics": metrics,
+            }
+        )
 
-        effect_loss = trial.user_attrs.get('effect_loss', 0.0)
-        pareto_front.append((
-            balanced_accuracy,
-            mb_sparsity,
-            h_A,
-            effect_loss,
-            0.0,  # mb_f1 placeholder (requires true_mb)
-        ))
+        effect_loss = trial.user_attrs.get("effect_loss", 0.0)
+        pareto_front.append(
+            (
+                balanced_accuracy,
+                mb_sparsity,
+                h_A,
+                effect_loss,
+                0.0,  # mb_f1 placeholder (requires true_mb)
+            )
+        )
 
     # If Pareto front is too small (< 5 solutions), supplement with feasible
     # non-dominated-adjacent solutions from ALL completed trials. This addresses
     # the issue where 2-objective Pareto gives very few solutions while NSGA-II
     # returns ~pop_size diverse solutions.
     if len(enhanced_solutions) < 5:
-        _existing_trial_nums = {t.number for t in study.best_trials
-                                if t.state == optuna.trial.TrialState.COMPLETE}
+        _existing_trial_nums = {
+            t.number for t in study.best_trials if t.state == optuna.trial.TrialState.COMPLETE
+        }
         _candidates = []
         for trial in study.trials:
             if trial.state != optuna.trial.TrialState.COMPLETE:
                 continue
             if trial.number in _existing_trial_nums:
                 continue
-            h_A = trial.user_attrs.get('h_A', 1.0)
+            h_A = trial.user_attrs.get("h_A", 1.0)
             if h_A >= h_A_threshold:
                 continue
             artifacts = get_trial_artifacts(trial.number)
@@ -831,58 +835,62 @@ def extract_pareto_solutions(
         _candidates.sort(key=lambda x: x[2], reverse=True)
         _n_needed = min(10 - len(enhanced_solutions), len(_candidates))
         for trial, artifacts, _score in _candidates[:_n_needed]:
-            config = artifacts['config']
-            mb_indices = artifacts['markov_blanket']
+            config = artifacts["config"]
+            mb_indices = artifacts["markov_blanket"]
             balanced_accuracy = trial.values[0]
             mb_sparsity = trial.values[1]
-            h_A = trial.user_attrs.get('h_A', 1.0)
+            h_A = trial.user_attrs.get("h_A", 1.0)
 
             metrics = {
-                'fitness': _score,
-                'classification_accuracy': trial.user_attrs.get('classification_accuracy', balanced_accuracy),
-                'classification_precision': trial.user_attrs.get('classification_precision', 0.0),
-                'classification_recall': trial.user_attrs.get('classification_recall', 0.0),
-                'classification_f1': trial.user_attrs.get('classification_f1', 0.0),
-                'classification_balanced_accuracy': balanced_accuracy,
-                'classification_roc_auc': trial.user_attrs.get('classification_roc_auc', 0.0),
-                'mb_sparsity': mb_sparsity,
-                'mb_size': len(mb_indices),
-                'mb_indices': mb_indices,
-                'markov_blanket': mb_indices,
-                'structure_n_edges': trial.user_attrs.get('n_edges', 0),
-                'structure_h_A': h_A,
-                'structure_A_est': artifacts['A_est'],
-                'v4_recon_loss': trial.user_attrs.get('recon_loss', 0.0),
-                'v4_class_loss': trial.user_attrs.get('class_loss', 0.0),
-                'v4_iterations': trial.user_attrs.get('iterations', 0),
-                'v4_early_stopped': trial.user_attrs.get('early_stopped', False),
-                'processor_type': config['processor_type'],
-                'processor_config': config['processor_config'],
-                'lambda_1': config['lambda_1'],
-                'lambda_2': config['lambda_2'],
-                'lambda_class': config['lambda_class'],
-                'lr': config['lr'],
+                "fitness": _score,
+                "classification_accuracy": trial.user_attrs.get(
+                    "classification_accuracy", balanced_accuracy
+                ),
+                "classification_precision": trial.user_attrs.get("classification_precision", 0.0),
+                "classification_recall": trial.user_attrs.get("classification_recall", 0.0),
+                "classification_f1": trial.user_attrs.get("classification_f1", 0.0),
+                "classification_balanced_accuracy": balanced_accuracy,
+                "classification_roc_auc": trial.user_attrs.get("classification_roc_auc", 0.0),
+                "mb_sparsity": mb_sparsity,
+                "mb_size": len(mb_indices),
+                "mb_indices": mb_indices,
+                "markov_blanket": mb_indices,
+                "structure_n_edges": trial.user_attrs.get("n_edges", 0),
+                "structure_h_A": h_A,
+                "structure_A_est": artifacts["A_est"],
+                "v4_recon_loss": trial.user_attrs.get("recon_loss", 0.0),
+                "v4_class_loss": trial.user_attrs.get("class_loss", 0.0),
+                "v4_iterations": trial.user_attrs.get("iterations", 0),
+                "v4_early_stopped": trial.user_attrs.get("early_stopped", False),
+                "processor_type": config["processor_type"],
+                "processor_config": config["processor_config"],
+                "lambda_1": config["lambda_1"],
+                "lambda_2": config["lambda_2"],
+                "lambda_class": config["lambda_class"],
+                "lr": config["lr"],
             }
             if use_v7:
-                metrics['effect_loss'] = trial.user_attrs.get('effect_loss', 1.0)
-                metrics['causal_effects'] = artifacts.get('causal_effects', {})
-                metrics['n_confound_edges'] = trial.user_attrs.get('n_confound_edges', 0)
-                metrics['bow_loss'] = trial.user_attrs.get('bow_loss', 0.0)
-                if 'A_confound' in artifacts:
-                    metrics['A_confound'] = artifacts['A_confound']
-                if 'A_weights' in artifacts:
-                    metrics['A_weights'] = artifacts['A_weights']
-                if 'A_confound_weights' in artifacts:
-                    metrics['A_confound_weights'] = artifacts['A_confound_weights']
-                if 'proc_params' in artifacts:
-                    metrics['_processor_params'] = artifacts['proc_params']
+                metrics["effect_loss"] = trial.user_attrs.get("effect_loss", 1.0)
+                metrics["causal_effects"] = artifacts.get("causal_effects", {})
+                metrics["n_confound_edges"] = trial.user_attrs.get("n_confound_edges", 0)
+                metrics["bow_loss"] = trial.user_attrs.get("bow_loss", 0.0)
+                if "A_confound" in artifacts:
+                    metrics["A_confound"] = artifacts["A_confound"]
+                if "A_weights" in artifacts:
+                    metrics["A_weights"] = artifacts["A_weights"]
+                if "A_confound_weights" in artifacts:
+                    metrics["A_confound_weights"] = artifacts["A_confound_weights"]
+                if "proc_params" in artifacts:
+                    metrics["_processor_params"] = artifacts["proc_params"]
 
-            enhanced_solutions.append({
-                'genome': np.array(list(trial.params.values())),
-                'objectives': np.array([balanced_accuracy, mb_sparsity]),
-                'metrics': metrics,
-            })
-            effect_loss = trial.user_attrs.get('effect_loss', 0.0)
+            enhanced_solutions.append(
+                {
+                    "genome": np.array(list(trial.params.values())),
+                    "objectives": np.array([balanced_accuracy, mb_sparsity]),
+                    "metrics": metrics,
+                }
+            )
+            effect_loss = trial.user_attrs.get("effect_loss", 0.0)
             pareto_front.append((balanced_accuracy, mb_sparsity, h_A, effect_loss, 0.0))
 
     return enhanced_solutions, pareto_front
@@ -891,6 +899,7 @@ def extract_pareto_solutions(
 # ============================================================================
 # D.3: Seed Enqueuing
 # ============================================================================
+
 
 def _enqueue_best_as_seeds(study: optuna.Study, n_seeds: int = 3) -> None:
     """
@@ -904,9 +913,10 @@ def _enqueue_best_as_seeds(study: optuna.Study, n_seeds: int = 3) -> None:
         n_seeds: Number of top trials to enqueue
     """
     feasible = [
-        t for t in study.trials
+        t
+        for t in study.trials
         if t.state == optuna.trial.TrialState.COMPLETE
-        and t.user_attrs.get('h_A', 1.0) < 0.1
+        and t.user_attrs.get("h_A", 1.0) < 0.1
         and t.values is not None
     ]
     if not feasible:
@@ -923,6 +933,7 @@ def _enqueue_best_as_seeds(study: optuna.Study, n_seeds: int = 3) -> None:
 # Main Entry Point
 # ============================================================================
 
+
 def run_optuna_search(
     X: jnp.ndarray,
     Y: jnp.ndarray,
@@ -931,7 +942,7 @@ def run_optuna_search(
     max_iter: int = 300,
     use_v7: bool = True,
     Y_continuous: Optional[jnp.ndarray] = None,
-    task: str = 'classification',
+    task: str = "classification",
     golem_overrides: Optional[Dict[str, Any]] = None,
     jax_key_seed: int = 0,
     verbose: bool = True,
@@ -976,8 +987,9 @@ def run_optuna_search(
             use_v7, true_mb, study, n_trials_completed, n_trials_pruned
     """
     if verbose:
-        print(f"Optuna search: {n_trials} trials, max_iter={max_iter}, "
-              f"use_v7={use_v7}, task={task}")
+        print(
+            f"Optuna search: {n_trials} trials, max_iter={max_iter}, use_v7={use_v7}, task={task}"
+        )
         print(f"Data: X={X.shape}, n_vars={n_vars}")
         print(f"Processors: {', '.join(PROCESSOR_TYPES)}")
 
@@ -1001,10 +1013,10 @@ def run_optuna_search(
 
     # Create study (no built-in pruner — multi-objective doesn't support trial.report)
     study = optuna.create_study(
-        directions=['maximize', 'maximize'],
+        directions=["maximize", "maximize"],
         sampler=sampler,
         storage=storage,
-        study_name=study_name or f'jcce_optuna_{jax_key_seed}',
+        study_name=study_name or f"jcce_optuna_{jax_key_seed}",
         load_if_exists=True,
     )
 
@@ -1045,30 +1057,27 @@ def run_optuna_search(
     study.optimize(objective, n_trials=n_trials)
 
     # Count trial states
-    n_completed = len([t for t in study.trials
-                       if t.state == optuna.trial.TrialState.COMPLETE])
-    n_pruned = len([t for t in study.trials
-                    if t.state == optuna.trial.TrialState.PRUNED])
-    n_failed = len([t for t in study.trials
-                    if t.state == optuna.trial.TrialState.FAIL])
+    n_completed = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
+    n_pruned = len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])
+    n_failed = len([t for t in study.trials if t.state == optuna.trial.TrialState.FAIL])
 
     if verbose:
-        print(f"\nOptuna search complete:")
+        print("\nOptuna search complete:")
         print(f"  Completed: {n_completed}, Pruned: {n_pruned}, Failed: {n_failed}")
 
     # Extract Pareto solutions
-    enhanced_solutions, pareto_front = extract_pareto_solutions(
-        study, use_v7=use_v7
-    )
+    enhanced_solutions, pareto_front = extract_pareto_solutions(study, use_v7=use_v7)
 
     if verbose:
         print(f"  Pareto solutions: {len(enhanced_solutions)} (feasible, h_A < 0.1)")
         for i, sol in enumerate(enhanced_solutions):
-            m = sol['metrics']
-            print(f"    [{i}] {m['processor_type']}: "
-                  f"bacc={m['classification_balanced_accuracy']:.3f} "
-                  f"sparsity={m['mb_sparsity']:.3f} "
-                  f"h_A={m['structure_h_A']:.4f}")
+            m = sol["metrics"]
+            print(
+                f"    [{i}] {m['processor_type']}: "
+                f"bacc={m['classification_balanced_accuracy']:.3f} "
+                f"sparsity={m['mb_sparsity']:.3f} "
+                f"h_A={m['structure_h_A']:.4f}"
+            )
 
     # Build evaluation cache (trial_number -> metrics)
     evaluation_cache = {}
@@ -1079,17 +1088,17 @@ def run_optuna_search(
             if artifacts is not None:
                 evaluation_cache[cache_key] = {
                     **trial.user_attrs,
-                    'trial_number': trial.number,
+                    "trial_number": trial.number,
                 }
 
     return {
-        'pareto_front': pareto_front,
-        'enhanced_solutions': enhanced_solutions,
-        'evaluation_cache': evaluation_cache,
-        'use_v7': use_v7,
-        'true_mb': true_mb,
-        'study': study,
-        'n_trials_completed': n_completed,
-        'n_trials_pruned': n_pruned,
-        'n_trials_failed': n_failed,
+        "pareto_front": pareto_front,
+        "enhanced_solutions": enhanced_solutions,
+        "evaluation_cache": evaluation_cache,
+        "use_v7": use_v7,
+        "true_mb": true_mb,
+        "study": study,
+        "n_trials_completed": n_completed,
+        "n_trials_pruned": n_pruned,
+        "n_trials_failed": n_failed,
     }

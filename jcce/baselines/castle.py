@@ -19,11 +19,12 @@ Reference:
 Verified against: https://github.com/trentkyono/CASTLE
 """
 
+from typing import Dict, Tuple
+
 import jax
 import jax.numpy as jnp
 import jax.random as random
 import numpy as np
-from typing import Dict, Tuple
 
 
 def _init_castle_params(
@@ -62,38 +63,38 @@ def _init_castle_params(
     b_output = jnp.zeros((d1, 1))
 
     return {
-        'W_input': W_input,
-        'W_hidden': W_hidden,
-        'b_hidden': b_hidden,
-        'W_output': W_output,
-        'b_output': b_output,
-        'mask': mask,
+        "W_input": W_input,
+        "W_hidden": W_hidden,
+        "b_hidden": b_hidden,
+        "W_output": W_output,
+        "b_output": b_output,
+        "mask": mask,
     }
 
 
 def _castle_forward(params: Dict, X_tilde: jnp.ndarray) -> jnp.ndarray:
     """Forward pass through all d+1 sub-networks."""
-    W_input = params['W_input'] * params['mask']
+    W_input = params["W_input"] * params["mask"]
 
     # All sub-networks in parallel: (n, d1) @ (d1, d1, h) → (d1, n, h)
-    H = jnp.einsum('nj,kjh->knh', X_tilde, W_input)
+    H = jnp.einsum("nj,kjh->knh", X_tilde, W_input)
     H = jax.nn.relu(H)
 
     # 1 shared hidden layer
-    H = jnp.einsum('knh,hg->kng', H, params['W_hidden']) + params['b_hidden'][None, None, :]
+    H = jnp.einsum("knh,hg->kng", H, params["W_hidden"]) + params["b_hidden"][None, None, :]
     H = jax.nn.relu(H)
 
     # Per-variable output: (d1, n, h) @ (d1, h, 1) → (d1, n)
-    out = jnp.einsum('knh,kho->kno', H, params['W_output'])
-    out = out + params['b_output'][:, None, :]
+    out = jnp.einsum("knh,kho->kno", H, params["W_output"])
+    out = out + params["b_output"][:, None, :]
     X_hat = out.squeeze(-1).T  # (n, d1)
     return X_hat
 
 
 def _adjacency_from_params(params: Dict) -> jnp.ndarray:
     """Extract adjacency: M[k,j] = ||W_input[k,j,:]||_2 (group lasso norm)."""
-    W_input = params['W_input'] * params['mask']
-    M = jnp.sqrt(jnp.sum(W_input ** 2, axis=-1) + 1e-8)
+    W_input = params["W_input"] * params["mask"]
+    M = jnp.sqrt(jnp.sum(W_input**2, axis=-1) + 1e-8)
     return M
 
 
@@ -122,7 +123,7 @@ def _group_lasso(W_input: jnp.ndarray) -> float:
     For each sub-net k and input var j: ||W_input[k,j,:]||_2
     Then sum all these norms.
     """
-    row_norms = jnp.sqrt(jnp.sum(W_input ** 2, axis=-1) + 1e-8)  # (d1, d1)
+    row_norms = jnp.sqrt(jnp.sum(W_input**2, axis=-1) + 1e-8)  # (d1, d1)
     return jnp.sum(row_norms)
 
 
@@ -154,15 +155,23 @@ def _castle_loss(
     h = _acyclicity_constraint(M)
 
     # Group lasso sparsity
-    W_input = params['W_input'] * params['mask']
+    W_input = params["W_input"] * params["mask"]
     sparsity = _group_lasso(W_input)
 
     # Total (matching original code exactly)
-    total = recon_loss + 0.5 * rho * h ** 2 + alpha * h + reg_beta * sparsity + reg_lambda * rho * pred_loss
+    total = (
+        recon_loss
+        + 0.5 * rho * h**2
+        + alpha * h
+        + reg_beta * sparsity
+        + reg_lambda * rho * pred_loss
+    )
 
     aux = {
-        'pred_loss': pred_loss, 'recon_loss': recon_loss,
-        'h_A': h, 'sparsity': sparsity,
+        "pred_loss": pred_loss,
+        "recon_loss": recon_loss,
+        "h_A": h,
+        "sparsity": sparsity,
     }
     return total, aux
 
@@ -189,24 +198,29 @@ def _castle_loss_classification(
 
     # Classification loss (BCE on Y)
     Y_logit = jnp.clip(X_hat[:, 0], -6, 6)
-    pred_loss = -jnp.mean(
-        Y * jax.nn.log_sigmoid(Y_logit) +
-        (1 - Y) * jax.nn.log_sigmoid(-Y_logit)
-    )
+    pred_loss = -jnp.mean(Y * jax.nn.log_sigmoid(Y_logit) + (1 - Y) * jax.nn.log_sigmoid(-Y_logit))
 
     # Acyclicity
     M = _adjacency_from_params(params)
     h = _acyclicity_constraint(M)
 
     # Group lasso sparsity
-    W_input = params['W_input'] * params['mask']
+    W_input = params["W_input"] * params["mask"]
     sparsity = _group_lasso(W_input)
 
-    total = recon_loss + 0.5 * rho * h ** 2 + alpha * h + reg_beta * sparsity + reg_lambda * rho * pred_loss
+    total = (
+        recon_loss
+        + 0.5 * rho * h**2
+        + alpha * h
+        + reg_beta * sparsity
+        + reg_lambda * rho * pred_loss
+    )
 
     aux = {
-        'pred_loss': pred_loss, 'recon_loss': recon_loss,
-        'h_A': h, 'sparsity': sparsity,
+        "pred_loss": pred_loss,
+        "recon_loss": recon_loss,
+        "h_A": h,
+        "sparsity": sparsity,
     }
     return total, aux
 
@@ -215,7 +229,7 @@ def train_castle(
     X: np.ndarray,
     Y: np.ndarray,
     key: random.PRNGKey = None,
-    task: str = 'classification',
+    task: str = "classification",
     hidden_dim: int = None,
     lr: float = 1e-3,
     n_epochs: int = 200,
@@ -252,20 +266,18 @@ def train_castle(
     # Initialize — separate mask from trainable params
     key, init_key = random.split(key)
     all_params = _init_castle_params(init_key, d, hidden_dim)
-    mask = all_params.pop('mask')
+    mask = all_params.pop("mask")
 
     # Loss function with mask as closure
-    base_loss_fn = _castle_loss_classification if task == 'classification' else _castle_loss
+    base_loss_fn = _castle_loss_classification if task == "classification" else _castle_loss
 
     def loss_fn(params, X_batch, Y_batch):
-        full_params = {**params, 'mask': mask}
+        full_params = {**params, "mask": mask}
         return base_loss_fn(full_params, X_batch, Y_batch, rho, alpha, reg_beta, reg_lambda)
 
     @jax.jit
     def train_step(params, X_batch, Y_batch):
-        (loss, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-            params, X_batch, Y_batch
-        )
+        (loss, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, X_batch, Y_batch)
         return loss, aux, grads
 
     params = all_params
@@ -274,7 +286,7 @@ def train_castle(
     m_state = jax.tree.map(jnp.zeros_like, params)
     v_state = jax.tree.map(jnp.zeros_like, params)
 
-    best_loss = float('inf')
+    best_loss = float("inf")
     patience_counter = 0
     best_params = params
 
@@ -294,14 +306,16 @@ def train_castle(
         # Adam update
         t = epoch + 1
         m_state = jax.tree.map(lambda mi, g: 0.9 * mi + 0.1 * g, m_state, grads)
-        v_state = jax.tree.map(lambda vi, g: 0.999 * vi + 0.001 * g ** 2, v_state, grads)
-        m_hat = jax.tree.map(lambda mi: mi / (1 - 0.9 ** t), m_state)
-        v_hat = jax.tree.map(lambda vi: vi / (1 - 0.999 ** t), v_state)
+        v_state = jax.tree.map(lambda vi, g: 0.999 * vi + 0.001 * g**2, v_state, grads)
+        m_hat = jax.tree.map(lambda mi: mi / (1 - 0.9**t), m_state)
+        v_hat = jax.tree.map(lambda vi: vi / (1 - 0.999**t), v_state)
         params = jax.tree.map(
             lambda p, mh, vh: p - lr * mh / (jnp.sqrt(vh) + 1e-8),
-            params, m_hat, v_hat,
+            params,
+            m_hat,
+            v_hat,
         )
-        params['W_input'] = params['W_input'] * mask
+        params["W_input"] = params["W_input"] * mask
 
         loss_val = float(loss)
 
@@ -313,10 +327,12 @@ def train_castle(
             patience_counter += 1
 
         if verbose >= 2 and epoch % 50 == 0:
-            print(f"  CASTLE epoch {epoch}: loss={loss_val:.4f} "
-                  f"pred={float(aux['pred_loss']):.4f} "
-                  f"recon={float(aux['recon_loss']):.4f} "
-                  f"h(A)={float(aux['h_A']):.4f}")
+            print(
+                f"  CASTLE epoch {epoch}: loss={loss_val:.4f} "
+                f"pred={float(aux['pred_loss']):.4f} "
+                f"recon={float(aux['recon_loss']):.4f} "
+                f"h(A)={float(aux['h_A']):.4f}"
+            )
 
         if patience_counter >= patience:
             if verbose >= 1:
@@ -324,7 +340,7 @@ def train_castle(
             break
 
     # Extract results
-    full_params = {**best_params, 'mask': mask}
+    full_params = {**best_params, "mask": mask}
     M = _adjacency_from_params(full_params)
     h_final = float(_acyclicity_constraint(M))
 
@@ -338,38 +354,41 @@ def train_castle(
     # Always compute classification metrics (paper uses MSE + evaluates AUROC)
     from scipy.special import expit
     from sklearn.metrics import balanced_accuracy_score, f1_score, roc_auc_score
-    if task == 'classification':
+
+    if task == "classification":
         Y_prob = expit(Y_logit)
     else:
         # Regression output: clip to [0,1] range, treat as probability
         Y_prob = np.clip(Y_logit, 0, 1)
     Y_pred = (Y_prob > 0.5).astype(int)
 
-    metrics = {'h_A': h_final, 'n_epochs': epoch + 1, 'best_loss': best_loss}
-    metrics['balanced_accuracy'] = float(balanced_accuracy_score(Y_flat, Y_pred))
-    metrics['f1'] = float(f1_score(Y_flat, Y_pred, zero_division=0))
+    metrics = {"h_A": h_final, "n_epochs": epoch + 1, "best_loss": best_loss}
+    metrics["balanced_accuracy"] = float(balanced_accuracy_score(Y_flat, Y_pred))
+    metrics["f1"] = float(f1_score(Y_flat, Y_pred, zero_division=0))
     try:
-        metrics['roc_auc'] = float(roc_auc_score(Y_flat, Y_prob))
+        metrics["roc_auc"] = float(roc_auc_score(Y_flat, Y_prob))
     except ValueError:
-        metrics['roc_auc'] = 0.0
+        metrics["roc_auc"] = 0.0
 
     # Markov Blanket: edges to Y from features
     edges_to_Y = A_full[0, 1:]
     mb_threshold = 0.1
     mb_indices = np.where(edges_to_Y > mb_threshold)[0].tolist()
-    metrics['mb_indices'] = mb_indices
-    metrics['mb_size'] = len(mb_indices)
+    metrics["mb_indices"] = mb_indices
+    metrics["mb_size"] = len(mb_indices)
 
     if verbose >= 1:
-        print(f"  CASTLE done: h(A)={h_final:.4f}, "
-              f"BAcc={metrics.get('balanced_accuracy', 0):.3f}, "
-              f"MB={len(mb_indices)} vars, epochs={epoch + 1}")
+        print(
+            f"  CASTLE done: h(A)={h_final:.4f}, "
+            f"BAcc={metrics.get('balanced_accuracy', 0):.3f}, "
+            f"MB={len(mb_indices)} vars, epochs={epoch + 1}"
+        )
 
     return {
-        'A_est': A_features,
-        'A_full': A_full,
-        'Y_pred': Y_pred,
-        'Y_prob': Y_prob,
-        'metrics': metrics,
-        'params': full_params,
+        "A_est": A_features,
+        "A_full": A_full,
+        "Y_pred": Y_pred,
+        "Y_prob": Y_prob,
+        "metrics": metrics,
+        "params": full_params,
     }

@@ -25,17 +25,17 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from jcce.gbs.gbs_utils import (
     dequantized_cooccurrence,
     encode_dag_to_gbs,
 )
 
-
 # =============================================================================
 # Ground-truth MB extraction
 # =============================================================================
+
 
 def true_markov_blanket(A: np.ndarray, target: int, threshold: float = 0.1) -> set:
     """
@@ -71,6 +71,7 @@ def true_markov_blanket(A: np.ndarray, target: int, threshold: float = 0.1) -> s
 # =============================================================================
 # Co-occurrence methods
 # =============================================================================
+
 
 def gbs_cooccurrence_method(A: np.ndarray, scale: float = 0.9) -> np.ndarray:
     """
@@ -200,6 +201,7 @@ def partial_corr_cooccurrence(
     cov = np.cov(X, rowvar=False)
     cov += np.eye(d) * 1e-6
     from scipy import linalg
+
     prec = linalg.inv(cov)
 
     diag = np.sqrt(np.abs(np.diag(prec)))
@@ -222,9 +224,11 @@ def _topological_sort(A: np.ndarray, threshold: float = 0.1) -> list:
 
     while remaining:
         # Find nodes with no incoming edges from remaining nodes
-        ready = [n for n in remaining if all(
-            A_bin[p, n] == 0 or p not in remaining for p in range(d) if p != n
-        )]
+        ready = [
+            n
+            for n in remaining
+            if all(A_bin[p, n] == 0 or p not in remaining for p in range(d) if p != n)
+        ]
         if not ready:
             # Cycle or numerical issue — just add remaining in order
             order.extend(sorted(remaining))
@@ -241,10 +245,11 @@ def _topological_sort(A: np.ndarray, threshold: float = 0.1) -> list:
 # MB prediction from co-occurrence
 # =============================================================================
 
+
 def predict_mb_from_cooccurrence(
     C: np.ndarray,
     target: int,
-    threshold: str | float = 'auto',
+    threshold: str | float = "auto",
     max_mb_size: int | None = None,
 ) -> set:
     """
@@ -265,13 +270,13 @@ def predict_mb_from_cooccurrence(
     scores = C[target, :].copy()
     scores[target] = 0  # exclude self
 
-    if threshold == 'auto':
+    if threshold == "auto":
         nonzero = scores[scores > 0]
         if len(nonzero) == 0:
             return set()
         thresh = np.mean(nonzero) + np.std(nonzero)
         predicted = set(np.where(scores > thresh)[0])
-    elif threshold == 'top_k':
+    elif threshold == "top_k":
         if max_mb_size is None:
             max_mb_size = max(3, d // 3)
         top_indices = np.argsort(scores)[::-1][:max_mb_size]
@@ -290,8 +295,7 @@ def compute_mb_metrics(predicted: set, true_mb: set) -> dict:
         dict with 'precision', 'recall', 'f1', 'predicted_size', 'true_size'.
     """
     if len(predicted) == 0 and len(true_mb) == 0:
-        return {'precision': 1.0, 'recall': 1.0, 'f1': 1.0,
-                'predicted_size': 0, 'true_size': 0}
+        return {"precision": 1.0, "recall": 1.0, "f1": 1.0, "predicted_size": 0, "true_size": 0}
 
     tp = len(predicted & true_mb)
     fp = len(predicted - true_mb)
@@ -302,17 +306,18 @@ def compute_mb_metrics(predicted: set, true_mb: set) -> dict:
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
     return {
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
-        'predicted_size': len(predicted),
-        'true_size': len(true_mb),
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "predicted_size": len(predicted),
+        "true_size": len(true_mb),
     }
 
 
 # =============================================================================
 # Synthetic DAG generators
 # =============================================================================
+
 
 def make_chain_dag(d: int, rng=None) -> np.ndarray:
     """Chain: 0→1→2→...→d-1"""
@@ -375,6 +380,7 @@ def make_random_dag(d: int, edge_prob: float = 0.3, rng=None) -> np.ndarray:
 # Main experiment
 # =============================================================================
 
+
 def run_ablation_for_dag(
     A: np.ndarray,
     dag_name: str,
@@ -411,26 +417,25 @@ def run_ablation_for_dag(
     t0 = time.time()
     C_gbs = gbs_cooccurrence_method(A)
     t_gbs = time.time() - t0
-    methods['GBS-deq'] = (C_gbs, t_gbs)
+    methods["GBS-deq"] = (C_gbs, t_gbs)
 
     t0 = time.time()
     C_unif = uniform_subgraph_cooccurrence(A, seed=seed)
     t_unif = time.time() - t0
-    methods['Uniform'] = (C_unif, t_unif)
+    methods["Uniform"] = (C_unif, t_unif)
 
     t0 = time.time()
     C_deg = degree_weighted_cooccurrence(A, seed=seed)
     t_deg = time.time() - t0
-    methods['Degree-wtd'] = (C_deg, t_deg)
+    methods["Degree-wtd"] = (C_deg, t_deg)
 
     t0 = time.time()
     C_pcorr = partial_corr_cooccurrence(A, seed=seed)
     t_pcorr = time.time() - t0
-    methods['Partial-corr'] = (C_pcorr, t_pcorr)
+    methods["Partial-corr"] = (C_pcorr, t_pcorr)
 
     # Evaluate each method on each target
-    results = {name: {'precision': [], 'recall': [], 'f1': []}
-               for name in methods}
+    results = {name: {"precision": [], "recall": [], "f1": []} for name in methods}
 
     for target in targets:
         true_mb = true_markov_blanket(A, target)
@@ -440,26 +445,28 @@ def run_ablation_for_dag(
         for name, (C, _) in methods.items():
             # Use top-k threshold with true MB size as guide
             pred = predict_mb_from_cooccurrence(
-                C, target, threshold='top_k',
+                C,
+                target,
+                threshold="top_k",
                 max_mb_size=max(len(true_mb) + 2, d // 3),
             )
             metrics = compute_mb_metrics(pred, true_mb)
-            results[name]['precision'].append(metrics['precision'])
-            results[name]['recall'].append(metrics['recall'])
-            results[name]['f1'].append(metrics['f1'])
+            results[name]["precision"].append(metrics["precision"])
+            results[name]["recall"].append(metrics["recall"])
+            results[name]["f1"].append(metrics["f1"])
 
     # Print per-method averages
     print(f"    {'Method':<15} {'Prec':>7} {'Recall':>7} {'F1':>7} {'Time':>8}")
-    print(f"    {'-'*47}")
+    print(f"    {'-' * 47}")
     summary = {}
     for name in methods:
-        if results[name]['f1']:
-            avg_p = np.mean(results[name]['precision'])
-            avg_r = np.mean(results[name]['recall'])
-            avg_f1 = np.mean(results[name]['f1'])
+        if results[name]["f1"]:
+            avg_p = np.mean(results[name]["precision"])
+            avg_r = np.mean(results[name]["recall"])
+            avg_f1 = np.mean(results[name]["f1"])
             _, t = methods[name]
             print(f"    {name:<15} {avg_p:>7.3f} {avg_r:>7.3f} {avg_f1:>7.3f} {t:>7.3f}s")
-            summary[name] = {'precision': avg_p, 'recall': avg_r, 'f1': avg_f1, 'time': t}
+            summary[name] = {"precision": avg_p, "recall": avg_r, "f1": avg_f1, "time": t}
 
     return summary
 
@@ -477,25 +484,27 @@ def main():
     # Test on multiple DAG structures and dimensions
     test_configs = [
         # (name, dimension, generator, num_instances)
-        ('Chain-8', 8, make_chain_dag, 5),
-        ('Fork-8', 8, make_fork_dag, 5),
-        ('Collider-8', 8, make_collider_dag, 5),
-        ('Random-8', 8, lambda d, rng=None: make_random_dag(d, 0.3, rng), 5),
-        ('Chain-11', 11, make_chain_dag, 5),
-        ('Fork-11', 11, make_fork_dag, 5),
-        ('Collider-11', 11, make_collider_dag, 5),
-        ('Random-11', 11, lambda d, rng=None: make_random_dag(d, 0.3, rng), 5),
-        ('Random-13', 13, lambda d, rng=None: make_random_dag(d, 0.25, rng), 3),
-        ('Random-20', 20, lambda d, rng=None: make_random_dag(d, 0.15, rng), 3),
+        ("Chain-8", 8, make_chain_dag, 5),
+        ("Fork-8", 8, make_fork_dag, 5),
+        ("Collider-8", 8, make_collider_dag, 5),
+        ("Random-8", 8, lambda d, rng=None: make_random_dag(d, 0.3, rng), 5),
+        ("Chain-11", 11, make_chain_dag, 5),
+        ("Fork-11", 11, make_fork_dag, 5),
+        ("Collider-11", 11, make_collider_dag, 5),
+        ("Random-11", 11, lambda d, rng=None: make_random_dag(d, 0.3, rng), 5),
+        ("Random-13", 13, lambda d, rng=None: make_random_dag(d, 0.25, rng), 3),
+        ("Random-20", 20, lambda d, rng=None: make_random_dag(d, 0.15, rng), 3),
     ]
 
     for config_name, d, gen_fn, n_instances in test_configs:
-        print(f"\n{'─'*70}")
+        print(f"\n{'─' * 70}")
         print(f"  Configuration: {config_name}")
-        print(f"{'─'*70}")
+        print(f"{'─' * 70}")
 
-        config_results = {name: {'precision': [], 'recall': [], 'f1': [], 'time': []}
-                         for name in ['GBS-deq', 'Uniform', 'Degree-wtd', 'Partial-corr']}
+        config_results = {
+            name: {"precision": [], "recall": [], "f1": [], "time": []}
+            for name in ["GBS-deq", "Uniform", "Degree-wtd", "Partial-corr"]
+        }
 
         for inst in range(n_instances):
             seed = 42 + inst * 100
@@ -505,36 +514,36 @@ def main():
             summary = run_ablation_for_dag(A, f"{config_name}_inst{inst}", seed=seed)
             if summary:
                 for name, metrics in summary.items():
-                    config_results[name]['precision'].append(metrics['precision'])
-                    config_results[name]['recall'].append(metrics['recall'])
-                    config_results[name]['f1'].append(metrics['f1'])
-                    config_results[name]['time'].append(metrics['time'])
+                    config_results[name]["precision"].append(metrics["precision"])
+                    config_results[name]["recall"].append(metrics["recall"])
+                    config_results[name]["f1"].append(metrics["f1"])
+                    config_results[name]["time"].append(metrics["time"])
 
         all_results[config_name] = config_results
 
     # ==========================================================================
     # Summary table
     # ==========================================================================
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  SUMMARY: Hafnian Ablation Results")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
-    method_names = ['GBS-deq', 'Uniform', 'Degree-wtd', 'Partial-corr']
+    method_names = ["GBS-deq", "Uniform", "Degree-wtd", "Partial-corr"]
 
-    print(f"\n{'Config':<15}", end='')
+    print(f"\n{'Config':<15}", end="")
     for name in method_names:
-        print(f" | {name:>12}", end='')
+        print(f" | {name:>12}", end="")
     print()
-    print(f"{'':15}", end='')
+    print(f"{'':15}", end="")
     for _ in method_names:
-        print(f" | {'F1':>12}", end='')
+        print(f" | {'F1':>12}", end="")
     print()
     print("-" * (15 + len(method_names) * 16))
 
     for config_name in all_results:
         row = f"{config_name:<15}"
         for name in method_names:
-            f1_vals = all_results[config_name][name]['f1']
+            f1_vals = all_results[config_name][name]["f1"]
             if f1_vals:
                 row += f" | {np.mean(f1_vals):>12.3f}"
             else:
@@ -547,7 +556,7 @@ def main():
     for name in method_names:
         all_f1 = []
         for config_name in all_results:
-            all_f1.extend(all_results[config_name][name]['f1'])
+            all_f1.extend(all_results[config_name][name]["f1"])
         if all_f1:
             row += f" | {np.mean(all_f1):>12.3f}"
         else:
@@ -555,17 +564,17 @@ def main():
     print(row)
 
     # Detailed breakdown: which structures does GBS win on?
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  GBS vs Uniform: Per-Structure Comparison")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"{'Config':<15} {'GBS F1':>8} {'Unif F1':>8} {'Delta':>8} {'Winner':>10}")
     print("-" * 55)
 
     gbs_wins = 0
     total = 0
     for config_name in all_results:
-        gbs_f1 = all_results[config_name]['GBS-deq']['f1']
-        unif_f1 = all_results[config_name]['Uniform']['f1']
+        gbs_f1 = all_results[config_name]["GBS-deq"]["f1"]
+        unif_f1 = all_results[config_name]["Uniform"]["f1"]
         if gbs_f1 and unif_f1:
             g = np.mean(gbs_f1)
             u = np.mean(unif_f1)
@@ -579,15 +588,15 @@ def main():
     print(f"\nGBS wins on {gbs_wins}/{total} configurations")
 
     # GO/NO-GO decision
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  GO/NO-GO: Hafnian Ablation Decision")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     all_gbs_f1 = []
     all_unif_f1 = []
     for config_name in all_results:
-        all_gbs_f1.extend(all_results[config_name]['GBS-deq']['f1'])
-        all_unif_f1.extend(all_results[config_name]['Uniform']['f1'])
+        all_gbs_f1.extend(all_results[config_name]["GBS-deq"]["f1"])
+        all_unif_f1.extend(all_results[config_name]["Uniform"]["f1"])
 
     if all_gbs_f1 and all_unif_f1:
         gbs_mean = np.mean(all_gbs_f1)
@@ -612,5 +621,5 @@ def main():
             print("  → Focus on Application A (kernel) and D (Hellinger)")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

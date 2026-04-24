@@ -27,16 +27,16 @@ This implementation uses:
     - JAX for numerical computation
 """
 
-import jax
-import jax.numpy as jnp
-from jax import random, jit, vmap
-from typing import Optional, Tuple, List
-import numpy as np
+from typing import List, Optional
 
+import jax.numpy as jnp
+import numpy as np
+from jax import random
 
 # ============================================================================
 # BIC Score Computation
 # ============================================================================
+
 
 def compute_local_bic(
     data: np.ndarray,
@@ -104,6 +104,7 @@ def bic_score_dag(
 # ============================================================================
 # DAG / CPDAG Utilities
 # ============================================================================
+
 
 def is_dag_numpy(A: np.ndarray) -> bool:
     """Check if adjacency matrix represents a DAG using topological sort."""
@@ -186,8 +187,7 @@ def dag_to_cpdag(A: np.ndarray) -> np.ndarray:
                     for c in range(n):
                         if c == a or c == b:
                             continue
-                        if (compelled[a, c] and A[a, c] != 0 and
-                                compelled[c, b] and A[c, b] != 0):
+                        if compelled[a, c] and A[a, c] != 0 and compelled[c, b] and A[c, b] != 0:
                             compelled[a, b] = True
                             changed = True
 
@@ -245,6 +245,7 @@ def cpdag_to_dag(cpdag: np.ndarray) -> np.ndarray:
 # GES Algorithm
 # ============================================================================
 
+
 def learn_with_ges(
     data: jnp.ndarray,
     key: random.PRNGKey,
@@ -286,9 +287,9 @@ def learn_with_ges(
     n_samples, n_vars = data_np.shape
 
     if verbose:
-        print(f"\n{'='*60}")
-        print(f"GES ALGORITHM (CPDAG-based)")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("GES ALGORITHM (CPDAG-based)")
+        print(f"{'=' * 60}")
         print(f"Data: {n_samples} samples, {n_vars} variables")
 
     # Start with empty DAG / CPDAG
@@ -303,9 +304,9 @@ def learn_with_ges(
 
     if verbose:
         print(f"\nInitial BIC: {current_bic:.2f}")
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("FORWARD PHASE: Adding edges")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
     # ========== Forward Phase ==========
     for iteration in range(max_iter):
@@ -346,16 +347,16 @@ def learn_with_ges(
                 i, j = best_edge
                 n_edges = int(np.sum(np.abs(cpdag) > 0)) // 2 + int(np.sum(cpdag == 1))
                 # Count properly: directed=1 per pair, undirected=1 per pair
-                print(f"  Iter {iteration+1}: Added {i}->{j}, BIC={current_bic:.2f}")
+                print(f"  Iter {iteration + 1}: Added {i}->{j}, BIC={current_bic:.2f}")
         else:
             if verbose:
-                print(f"  Forward phase converged at iteration {iteration+1}")
+                print(f"  Forward phase converged at iteration {iteration + 1}")
             break
 
     if verbose:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("BACKWARD PHASE: Removing edges")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
     # ========== Backward Phase ==========
     for iteration in range(max_iter):
@@ -389,10 +390,10 @@ def learn_with_ges(
 
             if verbose:
                 i, j = best_edge_remove
-                print(f"  Iter {iteration+1}: Removed {i}->{j}, BIC={current_bic:.2f}")
+                print(f"  Iter {iteration + 1}: Removed {i}->{j}, BIC={current_bic:.2f}")
         else:
             if verbose:
-                print(f"  Backward phase converged at iteration {iteration+1}")
+                print(f"  Backward phase converged at iteration {iteration + 1}")
             break
 
     # Convert final CPDAG to DAG
@@ -400,8 +401,8 @@ def learn_with_ges(
 
     if verbose:
         n_edges = int(np.sum(A_final))
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"GES FINAL: {n_edges} edges, BIC={current_bic:.2f}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     return jnp.array(A_final.astype(np.float32))

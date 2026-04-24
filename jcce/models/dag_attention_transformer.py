@@ -11,10 +11,11 @@ Key differences from standard TransformerProcessor:
 This is a NEW processor variant — the original TransformerProcessor is unchanged.
 """
 
+from typing import Optional, Tuple
+
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from typing import Optional, Tuple
 
 
 class DAGAttentionLayer(nn.Module):
@@ -46,9 +47,9 @@ class DAGAttentionLayer(nn.Module):
         batch_size, n_vars, _ = x.shape
 
         # QKV projections
-        Q = nn.Dense(self.d_model, name='q_proj')(x)  # (B, N, D)
-        K = nn.Dense(self.d_model, name='k_proj')(x)
-        V = nn.Dense(self.d_model, name='v_proj')(x)
+        Q = nn.Dense(self.d_model, name="q_proj")(x)  # (B, N, D)
+        K = nn.Dense(self.d_model, name="k_proj")(x)
+        V = nn.Dense(self.d_model, name="v_proj")(x)
 
         # Reshape for multi-head: (B, N, D) -> (B, H, N, D/H)
         Q = Q.reshape(batch_size, n_vars, self.n_heads, d_head).transpose(0, 2, 1, 3)
@@ -75,19 +76,19 @@ class DAGAttentionLayer(nn.Module):
         attn_out = attn_out.transpose(0, 2, 1, 3).reshape(batch_size, n_vars, self.d_model)
 
         # Output projection
-        attn_out = nn.Dense(self.d_model, name='out_proj')(attn_out)
+        attn_out = nn.Dense(self.d_model, name="out_proj")(attn_out)
 
         # Residual + LayerNorm
-        x = nn.LayerNorm(name='ln1')(x + attn_out)
+        x = nn.LayerNorm(name="ln1")(x + attn_out)
 
         # Feed-forward
-        ff_out = nn.Dense(self.d_ff, name='ff1')(x)
+        ff_out = nn.Dense(self.d_ff, name="ff1")(x)
         ff_out = nn.gelu(ff_out)
         if training:
             ff_out = nn.Dropout(rate=self.dropout_rate, deterministic=False)(ff_out)
-        ff_out = nn.Dense(self.d_model, name='ff2')(ff_out)
+        ff_out = nn.Dense(self.d_model, name="ff2")(ff_out)
 
-        x = nn.LayerNorm(name='ln2')(x + ff_out)
+        x = nn.LayerNorm(name="ln2")(x + ff_out)
 
         return x, attn_weights
 
@@ -140,13 +141,11 @@ class DAGAttentionTransformer(nn.Module):
 
         # Project to d_model: (B, N) -> (B, N, D)
         x = z[..., None]
-        x = nn.Dense(self.d_model, name='input_projection')(x)
+        x = nn.Dense(self.d_model, name="input_projection")(x)
 
         # Learned positional encoding
         pos_embed = self.param(
-            'pos_embed',
-            nn.initializers.normal(stddev=0.02),
-            (1, n_vars, self.d_model)
+            "pos_embed", nn.initializers.normal(stddev=0.02), (1, n_vars, self.d_model)
         )
         x = x + pos_embed
 
@@ -170,7 +169,7 @@ class DAGAttentionTransformer(nn.Module):
                 n_heads=self.n_heads,
                 d_ff=self.d_ff,
                 dropout_rate=self.dropout_rate,
-                name=f'layer_{i}',
+                name=f"layer_{i}",
             )
             x, attn_w = layer(x, dag_mask=dag_mask, training=training)
             all_attn_weights.append(attn_w)
@@ -212,9 +211,7 @@ class DAGAttentionTransformer(nn.Module):
             avg_attn = attn_w.mean(axis=(0, 1))
 
             # KL(avg_attn || target) — only where target > 0
-            kl = jnp.sum(
-                avg_attn * jnp.log((avg_attn + 1e-8) / (target + 1e-8))
-            )
+            kl = jnp.sum(avg_attn * jnp.log((avg_attn + 1e-8) / (target + 1e-8)))
             total_loss += kl
 
         return total_loss / len(attn_weights_list)

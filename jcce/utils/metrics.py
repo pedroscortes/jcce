@@ -37,9 +37,7 @@ def threshold_adjacency(A: jnp.ndarray, threshold: float = 0.3) -> jnp.ndarray:
 
 
 def compute_structure_metrics(
-    A_pred: jnp.ndarray,
-    A_true: jnp.ndarray,
-    threshold: float = 0.3
+    A_pred: jnp.ndarray, A_true: jnp.ndarray, threshold: float = 0.3
 ) -> dict:
     """
     Compute structure recovery metrics.
@@ -81,16 +79,16 @@ def compute_structure_metrics(
     fpr = FP / (FP + TN) if (FP + TN) > 0 else 0.0
 
     return {
-        'f1': float(f1),
-        'precision': float(precision),
-        'recall': float(recall),
-        'shd': int(shd),
-        'tpr': float(tpr),
-        'fpr': float(fpr),
-        'tp': int(TP),
-        'fp': int(FP),
-        'fn': int(FN),
-        'tn': int(TN),
+        "f1": float(f1),
+        "precision": float(precision),
+        "recall": float(recall),
+        "shd": int(shd),
+        "tpr": float(tpr),
+        "fpr": float(fpr),
+        "tp": int(TP),
+        "fp": int(FP),
+        "fn": int(FN),
+        "tn": int(TN),
     }
 
 
@@ -134,15 +132,17 @@ def compute_sid(A_pred, A_true, threshold=0.3) -> int:
         SID (non-negative integer). Lower is better.
     """
     from jcce.training.metrics import structural_intervention_distance
-    return structural_intervention_distance(
-        np.array(A_pred), np.array(A_true), threshold=threshold)
+
+    return structural_intervention_distance(np.array(A_pred), np.array(A_true), threshold=threshold)
 
 
 def compute_sid_normalized(A_pred, A_true, threshold=0.3) -> float:
     """Normalized SID in [0, 1]. Lower is better."""
     from jcce.training.metrics import structural_intervention_distance_normalized
+
     return structural_intervention_distance_normalized(
-        np.array(A_pred), np.array(A_true), threshold=threshold)
+        np.array(A_pred), np.array(A_true), threshold=threshold
+    )
 
 
 def compute_varsortability(X, A_true, threshold=1e-6) -> float:

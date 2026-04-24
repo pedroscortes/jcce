@@ -16,13 +16,14 @@ Usage:
     )
 """
 
+from typing import Dict, List, Optional
+
 import numpy as np
-from typing import List, Dict, Optional
 
 
 def extract_pareto_dags(
     solutions: List[Dict],
-    key: str = 'structure_A_est',
+    key: str = "structure_A_est",
 ) -> List[np.ndarray]:
     """
     Extract adjacency matrices from enhanced_solutions.
@@ -36,7 +37,7 @@ def extract_pareto_dags(
     """
     dags = []
     for sol in solutions:
-        A = sol.get('metrics', {}).get(key)
+        A = sol.get("metrics", {}).get(key)
         if A is not None:
             dags.append(np.array(A))
     return dags
@@ -44,7 +45,7 @@ def extract_pareto_dags(
 
 def pareto_hellinger_report(
     solutions: List[Dict],
-    key: str = 'structure_A_est',
+    key: str = "structure_A_est",
     scale: float = 0.9,
     max_order: int = 2,
     n_mean: Optional[float] = None,
@@ -71,12 +72,12 @@ def pareto_hellinger_report(
 
     if len(dags) < 2:
         return {
-            'diameter': 0.0,
-            'mean_dispersion': 0.0,
-            'coverage': 1 if dags else 0,
-            'hellinger_matrix': np.zeros((len(dags), len(dags))),
-            'n_dags': len(dags),
-            'feature_dim': 0,
+            "diameter": 0.0,
+            "mean_dispersion": 0.0,
+            "coverage": 1 if dags else 0,
+            "hellinger_matrix": np.zeros((len(dags), len(dags))),
+            "n_dags": len(dags),
+            "feature_dim": 0,
         }
 
     report = pareto_uncertainty_report(
@@ -91,7 +92,7 @@ def pareto_hellinger_report(
 
 def hellinger_structural_correlation(
     solutions: List[Dict],
-    key: str = 'structure_A_est',
+    key: str = "structure_A_est",
     scale: float = 0.9,
     max_order: int = 2,
 ) -> Dict[str, float]:
@@ -110,15 +111,16 @@ def hellinger_structural_correlation(
     Returns:
         Dict with 'pearson_r', 'spearman_r', 'n_pairs'.
     """
-    from jcce.gbs.pareto_uncertainty import dequantized_hellinger_matrix
-    from jcce.gbs.gbs_utils import shd
     from scipy.stats import pearsonr, spearmanr
+
+    from jcce.gbs.gbs_utils import shd
+    from jcce.gbs.pareto_uncertainty import dequantized_hellinger_matrix
 
     dags = extract_pareto_dags(solutions, key=key)
     n = len(dags)
 
     if n < 3:
-        return {'pearson_r': 0.0, 'spearman_r': 0.0, 'n_pairs': 0}
+        return {"pearson_r": 0.0, "spearman_r": 0.0, "n_pairs": 0}
 
     H = dequantized_hellinger_matrix(dags, scale=scale, max_order=max_order)
 
@@ -131,13 +133,13 @@ def hellinger_structural_correlation(
             shd_vals.append(shd(dags[i], dags[j]))
 
     if len(hellinger_vals) < 3:
-        return {'pearson_r': 0.0, 'spearman_r': 0.0, 'n_pairs': len(hellinger_vals)}
+        return {"pearson_r": 0.0, "spearman_r": 0.0, "n_pairs": len(hellinger_vals)}
 
     pr, _ = pearsonr(hellinger_vals, shd_vals)
     sr, _ = spearmanr(hellinger_vals, shd_vals)
 
     return {
-        'pearson_r': float(pr),
-        'spearman_r': float(sr),
-        'n_pairs': len(hellinger_vals),
+        "pearson_r": float(pr),
+        "spearman_r": float(sr),
+        "n_pairs": len(hellinger_vals),
     }

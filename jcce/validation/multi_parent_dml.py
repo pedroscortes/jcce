@@ -18,10 +18,11 @@ References:
 - Sharma & Kiciman (2020) "DoWhy: An End-to-End Library for Causal Inference"
 """
 
-import numpy as np
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
 import warnings
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 
 from jcce.validation.dml_crossfitting import (
     DMLCrossFitter,
@@ -38,6 +39,7 @@ from jcce.validation.refutation_suite import (
 @dataclass
 class ParentEffectResult:
     """DML + refutation result for a single discovered parent of Y."""
+
     feature_idx: int
     feature_name: Optional[str]
     edge_weight: float
@@ -49,24 +51,25 @@ class ParentEffectResult:
     def to_dict(self) -> Dict:
         ci = self.dml_result.confidence_interval(0.05)
         result = {
-            'feature_idx': self.feature_idx,
-            'feature_name': self.feature_name,
-            'edge_weight': self.edge_weight,
-            'ate_mean': self.dml_result.ate_mean,
-            'ate_std': self.dml_result.ate_std,
-            'ci_95_lower': ci[0],
-            'ci_95_upper': ci[1],
-            'is_known_treatment': self.is_known_treatment,
-            'is_significant': self.is_significant,
+            "feature_idx": self.feature_idx,
+            "feature_name": self.feature_name,
+            "edge_weight": self.edge_weight,
+            "ate_mean": self.dml_result.ate_mean,
+            "ate_std": self.dml_result.ate_std,
+            "ci_95_lower": ci[0],
+            "ci_95_upper": ci[1],
+            "is_known_treatment": self.is_known_treatment,
+            "is_significant": self.is_significant,
         }
         if self.refutation_result is not None:
-            result['refutation'] = self.refutation_result.to_dict()
+            result["refutation"] = self.refutation_result.to_dict()
         return result
 
 
 @dataclass
 class MultiParentDMLResult:
     """Aggregated DML results for all discovered parents of Y."""
+
     parent_results: List[ParentEffectResult]
     n_parents_discovered: int = field(init=False)
     n_parents_significant: int = field(init=False)
@@ -74,17 +77,15 @@ class MultiParentDMLResult:
 
     def __post_init__(self):
         self.n_parents_discovered = len(self.parent_results)
-        self.n_parents_significant = sum(
-            1 for r in self.parent_results if r.is_significant
-        )
+        self.n_parents_significant = sum(1 for r in self.parent_results if r.is_significant)
         self.parent_indices = [r.feature_idx for r in self.parent_results]
 
     def to_dict(self) -> Dict:
         return {
-            'n_parents_discovered': self.n_parents_discovered,
-            'n_parents_significant': self.n_parents_significant,
-            'parent_indices': self.parent_indices,
-            'parent_effects': [r.to_dict() for r in self.parent_results],
+            "n_parents_discovered": self.n_parents_discovered,
+            "n_parents_significant": self.n_parents_significant,
+            "parent_indices": self.parent_indices,
+            "parent_effects": [r.to_dict() for r in self.parent_results],
         }
 
     def summary_table(self) -> str:
@@ -107,8 +108,7 @@ class MultiParentDMLResult:
             ci_str = f"[{ci[0]:.4f}, {ci[1]:.4f}]"
 
             if r.refutation_result is not None:
-                ref_str = (f"{r.refutation_result.n_passed}/"
-                           f"{r.refutation_result.n_total} pass")
+                ref_str = f"{r.refutation_result.n_passed}/{r.refutation_result.n_total} pass"
             else:
                 ref_str = "skipped"
 
@@ -238,9 +238,11 @@ def run_multi_parent_dml(
             name = feature_names[parent_idx]
 
         if verbose:
-            print(f"\n  DML for parent {parent_idx} "
-                  f"({name or f'X_{parent_idx}'}), "
-                  f"edge weight = {edge_weight:.4f}...")
+            print(
+                f"\n  DML for parent {parent_idx} "
+                f"({name or f'X_{parent_idx}'}), "
+                f"edge weight = {edge_weight:.4f}..."
+            )
 
         # Extract and binarize treatment
         T = X[:, parent_idx].copy()
@@ -252,13 +254,15 @@ def run_multi_parent_dml(
         # Check treatment has variation
         if len(np.unique(T_binary)) < 2:
             if verbose:
-                print(f"    Skipping: no variation in treatment (all same value)")
+                print("    Skipping: no variation in treatment (all same value)")
             continue
 
         # Run DML cross-fitting
         try:
             dml_result = dml.estimate_ate(
-                X=X, T=T_binary, Y=Y,
+                X=X,
+                T=T_binary,
+                Y=Y,
                 train_nuisance_fn=train_fn,
                 predict_nuisance_fn=predict_fn,
                 treatment_idx=parent_idx,
@@ -278,36 +282,39 @@ def run_multi_parent_dml(
             try:
                 original_effect = effect_estimator(X, T_binary, Y)
                 refutation_result = refutation_suite.run_all(
-                    X=X, T=T_binary, Y=Y,
+                    X=X,
+                    T=T_binary,
+                    Y=Y,
                     estimate_effect_fn=effect_estimator,
                     original_effect=original_effect,
                 )
                 if verbose:
-                    print(f"    Refutation: {refutation_result.n_passed}/"
-                          f"{refutation_result.n_total} tests passed")
+                    print(
+                        f"    Refutation: {refutation_result.n_passed}/"
+                        f"{refutation_result.n_total} tests passed"
+                    )
             except Exception as e:
                 warnings.warn(f"Refutation failed for parent {parent_idx}: {e}")
 
         # Determine significance
         ci = dml_result.confidence_interval(0.05)
         ci_excludes_zero = (ci[0] > 0 and ci[1] > 0) or (ci[0] < 0 and ci[1] < 0)
-        refutation_passes = (
-            refutation_result is None or refutation_result.pass_rate >= 0.5
-        )
+        refutation_passes = refutation_result is None or refutation_result.pass_rate >= 0.5
         is_significant = ci_excludes_zero and refutation_passes
 
-        is_known = (known_treatment_idx is not None
-                    and parent_idx == known_treatment_idx)
+        is_known = known_treatment_idx is not None and parent_idx == known_treatment_idx
 
-        parent_results.append(ParentEffectResult(
-            feature_idx=parent_idx,
-            feature_name=name,
-            edge_weight=edge_weight,
-            dml_result=dml_result,
-            refutation_result=refutation_result,
-            is_known_treatment=is_known,
-            is_significant=is_significant,
-        ))
+        parent_results.append(
+            ParentEffectResult(
+                feature_idx=parent_idx,
+                feature_name=name,
+                edge_weight=edge_weight,
+                dml_result=dml_result,
+                refutation_result=refutation_result,
+                is_known_treatment=is_known,
+                is_significant=is_significant,
+            )
+        )
 
     if not parent_results:
         if verbose:

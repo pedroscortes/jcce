@@ -8,12 +8,12 @@ This module provides utilities for:
 - GPU state management and reset
 """
 
-import os
-import jax
-import jax.numpy as jnp
-from jax import device_put, pmap
-from typing import List, Dict, Any, Callable, Optional
 import gc
+import os
+from typing import Any, Callable, Dict, List, Optional
+
+import jax
+from jax import pmap
 
 
 def detect_gpus() -> Dict[str, Any]:
@@ -33,7 +33,7 @@ def detect_gpus() -> Dict[str, Any]:
         "num_gpus": len(devices),
         "devices": devices,
         "device_info": [str(d) for d in devices],
-        "backend": jax.default_backend()
+        "backend": jax.default_backend(),
     }
 
     # Try to estimate memory (RTX 4090 = 24GB each)
@@ -46,8 +46,9 @@ def detect_gpus() -> Dict[str, Any]:
     return info
 
 
-def configure_jax_multi_gpu(memory_fraction: float = 0.9, preallocate: bool = False,
-                            cache_dir: Optional[str] = None):
+def configure_jax_multi_gpu(
+    memory_fraction: float = 0.9, preallocate: bool = False, cache_dir: Optional[str] = None
+):
     """
     Configure JAX for optimal multi-GPU usage.
 
@@ -182,8 +183,9 @@ def create_parallel_evaluator(eval_fn: Callable, devices: List[Any]) -> Callable
     return pmap(eval_fn, devices=devices)
 
 
-def get_optimal_batch_size(num_features: int, num_samples: int, num_gpus: int,
-                          memory_per_gpu_gb: float = 24.0) -> int:
+def get_optimal_batch_size(
+    num_features: int, num_samples: int, num_gpus: int, memory_per_gpu_gb: float = 24.0
+) -> int:
     """
     Calculate optimal batch size based on dataset and GPU memory.
 
@@ -234,9 +236,9 @@ def print_gpu_info():
     print(f"Number of GPUs: {info['num_gpus']}")
     print()
 
-    if info['num_gpus'] > 0:
+    if info["num_gpus"] > 0:
         print("Detected devices:")
-        for i, device_str in enumerate(info['device_info']):
+        for i, device_str in enumerate(info["device_info"]):
             print(f"  GPU {i}: {device_str}")
 
         if "estimated_memory_per_gpu_gb" in info:
@@ -280,8 +282,7 @@ if __name__ == "__main__":
 
         for name, n_features, n_samples in configs:
             batch_size = get_optimal_batch_size(
-                n_features, n_samples, len(devices),
-                memory_per_gpu_gb=24.0
+                n_features, n_samples, len(devices), memory_per_gpu_gb=24.0
             )
             print(f"  {name:25} (n={n_features:2}): batch_size={batch_size:5}")
     else:

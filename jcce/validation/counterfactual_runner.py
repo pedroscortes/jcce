@@ -14,8 +14,9 @@ import numpy as np
 
 def convert_params_to_numpy(processor_params: list) -> list:
     """Recursively convert JAX arrays to numpy in processor params, preserving structure."""
+
     def convert_item(x):
-        if hasattr(x, 'device'):  # JAX DeviceArray
+        if hasattr(x, "device"):  # JAX DeviceArray
             return np.array(x)
         elif isinstance(x, dict):
             return {k: convert_item(v) for k, v in x.items()}
@@ -32,7 +33,7 @@ def convert_params_to_jax(processor_params: list) -> list:
     import jax.numpy as jnp
 
     def convert_item(x):
-        if isinstance(x, np.ndarray) and x.dtype.kind in ('f', 'i', 'u', 'c'):
+        if isinstance(x, np.ndarray) and x.dtype.kind in ("f", "i", "u", "c"):
             return jnp.array(x)
         elif isinstance(x, dict):
             return {k: convert_item(v) for k, v in x.items()}
@@ -44,24 +45,35 @@ def convert_params_to_jax(processor_params: list) -> list:
     return [convert_item(p) for p in processor_params]
 
 
-def reconstruct_processor(processor_type: str, processor_config: dict, processor_params_numpy: list):
+def reconstruct_processor(
+    processor_type: str, processor_config: dict, processor_params_numpy: list
+):
     """Reconstruct a processor + JAX params from saved type/config/numpy-params."""
     from jax import random
+
     from jcce.structure_learning.processor_adapters import (
-        MLPAdapter, TransformerAdapter, MambaAdapter, ELMAdapter, GNNAdapter,
+        ELMAdapter,
+        GNNAdapter,
+        MambaAdapter,
+        MLPAdapter,
+        TransformerAdapter,
     )
+
     adapters = {
-        'mlp': MLPAdapter, 'transformer': TransformerAdapter,
-        'mamba': MambaAdapter, 'elm': ELMAdapter, 'gnn': GNNAdapter,
+        "mlp": MLPAdapter,
+        "transformer": TransformerAdapter,
+        "mamba": MambaAdapter,
+        "elm": ELMAdapter,
+        "gnn": GNNAdapter,
     }
     adapter_cls = adapters.get(processor_type)
     if adapter_cls is None:
         raise ValueError(f"Unknown processor type: {processor_type}")
 
     # Fix legacy checkpoints that used 'aggregation' instead of 'sage_aggregation'
-    if processor_type == 'gnn' and 'aggregation' in processor_config:
+    if processor_type == "gnn" and "aggregation" in processor_config:
         processor_config = dict(processor_config)
-        processor_config['sage_aggregation'] = processor_config.pop('aggregation')
+        processor_config["sage_aggregation"] = processor_config.pop("aggregation")
 
     key = random.PRNGKey(0)
     processor = adapter_cls(key=key, **processor_config)
@@ -85,35 +97,41 @@ def save_cf_checkpoint(
     params_numpy = convert_params_to_numpy(processor_params)
 
     checkpoint = {
-        'X': X,
-        'Y': Y,
-        'A_est': A_est,
-        'A_weights': A_weights,
-        'A_confound_weights': A_confound_weights,
-        'processor_type': processor_type,
-        'processor_config': processor_config,
-        'processor_params': params_numpy,
-        'ds_config': ds_config,
+        "X": X,
+        "Y": Y,
+        "A_est": A_est,
+        "A_weights": A_weights,
+        "A_confound_weights": A_confound_weights,
+        "processor_type": processor_type,
+        "processor_config": processor_config,
+        "processor_params": params_numpy,
+        "ds_config": ds_config,
     }
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(checkpoint_path, 'wb') as f:
+    with open(checkpoint_path, "wb") as f:
         pickle.dump(checkpoint, f)
 
 
 def load_cf_checkpoint(checkpoint_path: Path):
     """Load CF checkpoint and reconstruct the processor."""
-    with open(checkpoint_path, 'rb') as f:
+    with open(checkpoint_path, "rb") as f:
         ckpt = pickle.load(f)
 
     processor, params_jax = reconstruct_processor(
-        ckpt['processor_type'],
-        ckpt['processor_config'],
-        ckpt['processor_params'],
+        ckpt["processor_type"],
+        ckpt["processor_config"],
+        ckpt["processor_params"],
     )
 
     return (
-        ckpt['X'], ckpt['Y'], ckpt['A_est'], ckpt['A_weights'],
-        ckpt['A_confound_weights'], processor, params_jax, ckpt['ds_config'],
+        ckpt["X"],
+        ckpt["Y"],
+        ckpt["A_est"],
+        ckpt["A_weights"],
+        ckpt["A_confound_weights"],
+        processor,
+        params_jax,
+        ckpt["ds_config"],
     )
 
 
@@ -162,6 +180,7 @@ def run_counterfactual_evaluation(
         Dict with CF evaluation metrics, or None if no parents found
     """
     import jax.numpy as jnp
+
     from jcce.counterfactual import (
         CounterfactualSearcher,
         compute_plausibility_score,
@@ -181,8 +200,8 @@ def run_counterfactual_evaluation(
         return None
 
     if verbose:
-        feature_names = ds_config.get('feature_names')
-        parent_names = [feature_names[i] if feature_names else f'X{i}' for i in mb_indices]
+        feature_names = ds_config.get("feature_names")
+        parent_names = [feature_names[i] if feature_names else f"X{i}" for i in mb_indices]
         print(f"\n  CF: Parents of Y: {parent_names} ({len(mb_indices)} features)")
 
     # Build predict_proba using the actual trained JCCE model
@@ -221,8 +240,10 @@ def run_counterfactual_evaluation(
     # Check if the processor uses batch-dependent centering (logits cluster near 0)
     _needs_logit_recalibration = _logit_std < 0.1
     if _needs_logit_recalibration and verbose:
-        print(f"  CF: Detected low logit variance (std={_logit_std:.4f}), "
-              f"applying fixed-mean recalibration")
+        print(
+            f"  CF: Detected low logit variance (std={_logit_std:.4f}), "
+            f"applying fixed-mean recalibration"
+        )
 
     def predict_proba(X_input):
         """Predict class probabilities using the trained JCCE processor."""
@@ -253,18 +274,22 @@ def run_counterfactual_evaluation(
 
         # Diagnostic: prediction confidence distribution
         confidences = np.maximum(Y_pred_prob, 1 - Y_pred_prob)
-        print(f"  CF: Prediction confidence: mean={np.mean(confidences):.3f}, "
-              f"min={np.min(confidences):.3f}, "
-              f"near-boundary(<0.6)={np.sum(confidences < 0.6)}/{len(confidences)}")
+        print(
+            f"  CF: Prediction confidence: mean={np.mean(confidences):.3f}, "
+            f"min={np.min(confidences):.3f}, "
+            f"near-boundary(<0.6)={np.sum(confidences < 0.6)}/{len(confidences)}"
+        )
 
         # Diagnostic: batch vs single prediction consistency check
         diag_sample = min(5, len(X))
         batch_p = predict_proba(X[:diag_sample])
         single_p = np.array([predict_proba(X[i])[0] for i in range(diag_sample)])
         batch_match = np.allclose(batch_p, single_p, atol=0.01)
-        print(f"  CF: Batch vs single predict match: {batch_match} "
-              f"(batch[0]=[{batch_p[0,0]:.4f},{batch_p[0,1]:.4f}], "
-              f"single[0]=[{single_p[0,0]:.4f},{single_p[0,1]:.4f}])")
+        print(
+            f"  CF: Batch vs single predict match: {batch_match} "
+            f"(batch[0]=[{batch_p[0, 0]:.4f},{batch_p[0, 1]:.4f}], "
+            f"single[0]=[{single_p[0, 0]:.4f},{single_p[0, 1]:.4f}])"
+        )
 
     # Build feature bounds from training data
     feature_bounds = np.column_stack([X.min(axis=0), X.max(axis=0)])
@@ -274,10 +299,10 @@ def run_counterfactual_evaluation(
     feature_bounds[:, 1] += 0.05 * ranges
 
     # Immutable features from dataset config
-    immutable = ds_config.get('immutable_features', [])
+    immutable = ds_config.get("immutable_features", [])
 
     # Categorical/binary features: use config if available, otherwise auto-detect
-    categorical = ds_config.get('categorical_features', None)
+    categorical = ds_config.get("categorical_features", None)
     if categorical is None:
         # Auto-detect: features with <= 5 unique values are treated as categorical
         categorical = []
@@ -286,19 +311,24 @@ def run_counterfactual_evaluation(
             if n_unique <= 5:
                 categorical.append(j)
         if verbose and categorical:
-            cat_names = [ds_config.get('feature_names', [f'X{i}' for i in range(n_features)])[j]
-                        for j in categorical]
+            cat_names = [
+                ds_config.get("feature_names", [f"X{i}" for i in range(n_features)])[j]
+                for j in categorical
+            ]
             print(f"  CF: Auto-detected {len(categorical)} categorical features: {cat_names}")
 
     if verbose and categorical:
-        print(f"  CF: {len(categorical)} categorical/binary features "
-              f"(will be rounded to integers in CF search)")
+        print(
+            f"  CF: {len(categorical)} categorical/binary features "
+            f"(will be rounded to integers in CF search)"
+        )
 
     # The CF searcher needs the full augmented DAG including Y
-    dag_augmented = np.abs(np.array(A_est[:n_features + 1, :n_features + 1]))
+    dag_augmented = np.abs(np.array(A_est[: n_features + 1, : n_features + 1]))
 
     # Check if DAG is acyclic — SCM propagation is unreliable with cycles
     from jcce.counterfactual.causal_constraints import topological_sort
+
     dag_features = dag_augmented[:n_features, :n_features]
     try:
         topological_sort(dag_features, threshold=0.1)
@@ -308,7 +338,9 @@ def run_counterfactual_evaluation(
 
     use_scm = dag_is_acyclic  # Only use SCM when DAG is truly acyclic
     if verbose and not dag_is_acyclic:
-        print(f"  CF: Feature DAG has cycles — disabling SCM propagation (using direct perturbation)")
+        print(
+            "  CF: Feature DAG has cycles — disabling SCM propagation (using direct perturbation)"
+        )
 
     # Create searcher with the actual trained model
     searcher = CounterfactualSearcher(
@@ -319,7 +351,7 @@ def run_counterfactual_evaluation(
         immutable_features=immutable,
         categorical_features=categorical,
         use_scm_propagation=use_scm,
-        scm_model_type='ridge',
+        scm_model_type="ridge",
     )
 
     # Fit SCM for Pearl's 3-step propagation (only if DAG is acyclic)
@@ -332,7 +364,7 @@ def run_counterfactual_evaluation(
     # low-confidence predictions (logits near 0), so a strict confidence threshold
     # would exclude all instances.
     confidences_all = np.maximum(Y_pred_prob, 1 - Y_pred_prob)
-    correctly_classified = (Y_pred == Y)
+    correctly_classified = Y_pred == Y
 
     # Try confidence thresholds in decreasing order
     for confidence_threshold in [0.55, 0.51, 0.50]:
@@ -352,24 +384,38 @@ def run_counterfactual_evaluation(
         n_confident = int(np.sum(confidences_all > 0.55))
         n_correct = int(np.sum(correctly_classified))
         if confidence_threshold is not None:
-            print(f"  CF: {n_confident}/{len(Y)} instances with confidence > 0.55, "
-                  f"using threshold={confidence_threshold:.2f}")
+            print(
+                f"  CF: {n_confident}/{len(Y)} instances with confidence > 0.55, "
+                f"using threshold={confidence_threshold:.2f}"
+            )
         else:
-            print(f"  CF: {n_confident}/{len(Y)} confident, using {n_correct}/{len(Y)} "
-                  f"correctly-classified instances instead")
+            print(
+                f"  CF: {n_confident}/{len(Y)} confident, using {n_correct}/{len(Y)} "
+                f"correctly-classified instances instead"
+            )
 
     # Mix: some positives (flip to 0) and some negatives (flip to 1)
     n_pos = min(n_instances // 2, len(positive_idx))
     n_neg = min(n_instances - n_pos, len(negative_idx))
 
     rng = np.random.RandomState(42)
-    selected_pos = rng.choice(positive_idx, size=n_pos, replace=False) if n_pos > 0 else np.array([], dtype=int)
-    selected_neg = rng.choice(negative_idx, size=n_neg, replace=False) if n_neg > 0 else np.array([], dtype=int)
+    selected_pos = (
+        rng.choice(positive_idx, size=n_pos, replace=False)
+        if n_pos > 0
+        else np.array([], dtype=int)
+    )
+    selected_neg = (
+        rng.choice(negative_idx, size=n_neg, replace=False)
+        if n_neg > 0
+        else np.array([], dtype=int)
+    )
     selected_idx = np.concatenate([selected_pos, selected_neg]).astype(int)
 
     if verbose:
-        print(f"  CF: Searching counterfactuals for {len(selected_idx)} instances "
-              f"({n_pos} pos→neg, {n_neg} neg→pos)...")
+        print(
+            f"  CF: Searching counterfactuals for {len(selected_idx)} instances "
+            f"({n_pos} pos→neg, {n_neg} neg→pos)..."
+        )
 
     # Run CF search per instance
     all_results = []
@@ -394,35 +440,40 @@ def run_counterfactual_evaluation(
         if result.best_sparse is not None:
             n_valid += 1
             best = result.best_sparse
-            sparsities.append(best.objectives['sparsity'])
-            distances.append(best.objectives['distance'])
-            causal_validities.append(best.objectives['causal_invalidity'])
+            sparsities.append(best.objectives["sparsity"])
+            distances.append(best.objectives["distance"])
+            causal_validities.append(best.objectives["causal_invalidity"])
 
             # Plausibility check
             _, plaus_details = compute_plausibility_score(
-                best.x_counterfactual, X, k=5,
+                best.x_counterfactual,
+                X,
+                k=5,
             )
-            plausibility_ratios.append(plaus_details['plausibility_ratio'])
-            if plaus_details['is_plausible']:
+            plausibility_ratios.append(plaus_details["plausibility_ratio"])
+            if plaus_details["is_plausible"]:
                 n_plausible += 1
 
-            all_results.append({
-                'instance_idx': int(idx),
-                'original_class': int(Y[idx]),
-                'target_class': result.target_prediction,
-                'n_candidates': len(result.candidates),
-                'n_valid': result.n_valid,
-                'best_sparsity': best.objectives['sparsity'],
-                'best_distance': best.objectives['distance'],
-                'best_causal_invalidity': best.objectives['causal_invalidity'],
-                'changed_features': best.changed_features,
-                'plausibility_ratio': plaus_details['plausibility_ratio'],
-                'is_plausible': plaus_details['is_plausible'],
-            })
+            all_results.append(
+                {
+                    "instance_idx": int(idx),
+                    "original_class": int(Y[idx]),
+                    "target_class": result.target_prediction,
+                    "n_candidates": len(result.candidates),
+                    "n_valid": result.n_valid,
+                    "best_sparsity": best.objectives["sparsity"],
+                    "best_distance": best.objectives["distance"],
+                    "best_causal_invalidity": best.objectives["causal_invalidity"],
+                    "changed_features": best.changed_features,
+                    "plausibility_ratio": plaus_details["plausibility_ratio"],
+                    "is_plausible": plaus_details["is_plausible"],
+                }
+            )
 
         if verbose and (i + 1) % 10 == 0:
-            print(f"    CF progress: {i + 1}/{len(selected_idx)} instances "
-                  f"({n_valid} valid so far)")
+            print(
+                f"    CF progress: {i + 1}/{len(selected_idx)} instances ({n_valid} valid so far)"
+            )
 
     # Aggregate results
     validity_rate = n_valid / max(len(selected_idx), 1)
@@ -432,7 +483,7 @@ def run_counterfactual_evaluation(
     avg_plausibility = float(np.mean(plausibility_ratios)) if plausibility_ratios else 0.0
 
     if verbose:
-        print(f"\n  CF RESULTS:")
+        print("\n  CF RESULTS:")
         print(f"    Validity:     {n_valid}/{len(selected_idx)} ({validity_rate:.1%})")
         print(f"    Avg sparsity: {avg_sparsity:.1f} features changed")
         print(f"    Avg distance: {avg_distance:.3f}")
@@ -442,23 +493,26 @@ def run_counterfactual_evaluation(
         # Show example counterfactual
         if all_results:
             ex = all_results[0]
-            feature_names = ds_config.get('feature_names')
-            changed_names = [feature_names[f] if feature_names else f'X{f}'
-                           for f in ex['changed_features']]
-            print(f"    Example CF (instance {ex['instance_idx']}, "
-                  f"class {ex['original_class']}→{ex['target_class']}): "
-                  f"changed {changed_names}")
+            feature_names = ds_config.get("feature_names")
+            changed_names = [
+                feature_names[f] if feature_names else f"X{f}" for f in ex["changed_features"]
+            ]
+            print(
+                f"    Example CF (instance {ex['instance_idx']}, "
+                f"class {ex['original_class']}→{ex['target_class']}): "
+                f"changed {changed_names}"
+            )
 
     return {
-        'n_instances': len(selected_idx),
-        'n_valid': n_valid,
-        'validity_rate': validity_rate,
-        'avg_sparsity': avg_sparsity,
-        'avg_distance': avg_distance,
-        'avg_causal_validity': avg_causal_validity,
-        'avg_plausibility_ratio': avg_plausibility,
-        'n_plausible': n_plausible,
-        'per_instance_results': all_results,
-        'mb_indices': mb_indices,
-        'model_accuracy': model_acc,
+        "n_instances": len(selected_idx),
+        "n_valid": n_valid,
+        "validity_rate": validity_rate,
+        "avg_sparsity": avg_sparsity,
+        "avg_distance": avg_distance,
+        "avg_causal_validity": avg_causal_validity,
+        "avg_plausibility_ratio": avg_plausibility,
+        "n_plausible": n_plausible,
+        "per_instance_results": all_results,
+        "mb_indices": mb_indices,
+        "model_accuracy": model_acc,
     }

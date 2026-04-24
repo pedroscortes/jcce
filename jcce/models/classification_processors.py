@@ -13,20 +13,21 @@ All processors follow the same interface:
 - __call__(x, training=False): Process features → logits
 """
 
+from typing import Any, Dict, Optional
+
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from typing import Dict, Any, Optional
+
+from jcce.models.gnn import CausalGNN
 
 # Import base processors
 from jcce.models.mamba import MambaProcessor as MambaProcessorBase
-from jcce.models.gnn import CausalGNN
-from jcce.models.elm import ELMProcessor as ELMProcessorBase
-
 
 # ============================================================================
 # MLP Classifier (Baseline)
 # ============================================================================
+
 
 class MLPClassifier(nn.Module):
     """
@@ -53,13 +54,13 @@ class MLPClassifier(nn.Module):
         """
         # Hidden layers
         for i, hidden_size in enumerate(self.hidden_sizes):
-            x = nn.Dense(hidden_size, name=f'fc{i+1}')(x)
+            x = nn.Dense(hidden_size, name=f"fc{i + 1}")(x)
             x = nn.relu(x)
             if training and self.dropout_rate > 0:
                 x = nn.Dropout(rate=self.dropout_rate, deterministic=not training)(x)
 
         # Output layer
-        logits = nn.Dense(self.n_classes, name='output')(x)
+        logits = nn.Dense(self.n_classes, name="output")(x)
 
         return logits
 
@@ -67,6 +68,7 @@ class MLPClassifier(nn.Module):
 # ============================================================================
 # Mamba Classifier
 # ============================================================================
+
 
 class MambaClassifier(nn.Module):
     """
@@ -101,7 +103,7 @@ class MambaClassifier(nn.Module):
         x = x[..., None]  # (B, n_features, 1)
 
         # Project to d_model
-        x = nn.Dense(self.d_model, name='input_projection')(x)  # (B, n_features, d_model)
+        x = nn.Dense(self.d_model, name="input_projection")(x)  # (B, n_features, d_model)
 
         # Apply Mamba processor
         mamba = MambaProcessorBase(
@@ -117,7 +119,7 @@ class MambaClassifier(nn.Module):
         h_pooled = jnp.mean(h, axis=1)  # (B, d_model)
 
         # Classification head
-        logits = nn.Dense(self.n_classes, name='classifier')(h_pooled)  # (B, n_classes)
+        logits = nn.Dense(self.n_classes, name="classifier")(h_pooled)  # (B, n_classes)
 
         return logits
 
@@ -125,6 +127,7 @@ class MambaClassifier(nn.Module):
 # ============================================================================
 # Transformer Classifier
 # ============================================================================
+
 
 class TransformerClassifier(nn.Module):
     """
@@ -157,13 +160,11 @@ class TransformerClassifier(nn.Module):
 
         # Project to d_model and add feature dimension
         x = x[..., None]  # (B, n_features, 1)
-        x = nn.Dense(self.d_model, name='input_projection')(x)  # (B, n_features, d_model)
+        x = nn.Dense(self.d_model, name="input_projection")(x)  # (B, n_features, d_model)
 
         # Add positional encoding (learned)
         pos_embed = self.param(
-            'pos_embed',
-            nn.initializers.normal(stddev=0.02),
-            (1, n_features, self.d_model)
+            "pos_embed", nn.initializers.normal(stddev=0.02), (1, n_features, self.d_model)
         )
         x = x + pos_embed
 
@@ -171,27 +172,25 @@ class TransformerClassifier(nn.Module):
         for layer_idx in range(self.n_layers):
             # Multi-head self-attention
             attn_out = nn.MultiHeadDotProductAttention(
-                num_heads=self.n_heads,
-                qkv_features=self.d_model,
-                name=f'attn_{layer_idx}'
+                num_heads=self.n_heads, qkv_features=self.d_model, name=f"attn_{layer_idx}"
             )(x, x)
             x = x + attn_out  # Residual connection
-            x = nn.LayerNorm(name=f'ln1_{layer_idx}')(x)
+            x = nn.LayerNorm(name=f"ln1_{layer_idx}")(x)
 
             # Feed-forward network
-            ff = nn.Dense(self.d_ff, name=f'ff1_{layer_idx}')(x)
+            ff = nn.Dense(self.d_ff, name=f"ff1_{layer_idx}")(x)
             ff = nn.gelu(ff)
             if training and self.dropout_rate > 0:
                 ff = nn.Dropout(rate=self.dropout_rate, deterministic=not training)(ff)
-            ff = nn.Dense(self.d_model, name=f'ff2_{layer_idx}')(ff)
+            ff = nn.Dense(self.d_model, name=f"ff2_{layer_idx}")(ff)
             x = x + ff  # Residual connection
-            x = nn.LayerNorm(name=f'ln2_{layer_idx}')(x)
+            x = nn.LayerNorm(name=f"ln2_{layer_idx}")(x)
 
         # Global pooling: [CLS] token approach or mean pooling
         h_pooled = jnp.mean(x, axis=1)  # (B, d_model)
 
         # Classification head
-        logits = nn.Dense(self.n_classes, name='classifier')(h_pooled)  # (B, n_classes)
+        logits = nn.Dense(self.n_classes, name="classifier")(h_pooled)  # (B, n_classes)
 
         return logits
 
@@ -199,6 +198,7 @@ class TransformerClassifier(nn.Module):
 # ============================================================================
 # LSTM Classifier
 # ============================================================================
+
 
 class LSTMClassifier(nn.Module):
     """
@@ -234,7 +234,7 @@ class LSTMClassifier(nn.Module):
         # LSTM layers
         for layer_idx in range(self.n_layers):
             # Forward LSTM
-            lstm_cell = nn.LSTMCell(features=self.hidden_size, name=f'lstm_fwd_{layer_idx}')
+            lstm_cell = nn.LSTMCell(features=self.hidden_size, name=f"lstm_fwd_{layer_idx}")
             carry = lstm_cell.initialize_carry(jax.random.PRNGKey(0), (batch_size,))
 
             outputs = []
@@ -246,7 +246,7 @@ class LSTMClassifier(nn.Module):
 
             # Bidirectional: also process in reverse
             if self.bidirectional:
-                lstm_cell_bwd = nn.LSTMCell(features=self.hidden_size, name=f'lstm_bwd_{layer_idx}')
+                lstm_cell_bwd = nn.LSTMCell(features=self.hidden_size, name=f"lstm_bwd_{layer_idx}")
                 carry_bwd = lstm_cell_bwd.initialize_carry(jax.random.PRNGKey(1), (batch_size,))
 
                 outputs_bwd = []
@@ -267,7 +267,7 @@ class LSTMClassifier(nn.Module):
         h_last = x[:, -1, :]  # (B, hidden_size or 2*hidden_size)
 
         # Classification head
-        logits = nn.Dense(self.n_classes, name='classifier')(h_last)
+        logits = nn.Dense(self.n_classes, name="classifier")(h_last)
 
         return logits
 
@@ -275,6 +275,7 @@ class LSTMClassifier(nn.Module):
 # ============================================================================
 # GRU Classifier
 # ============================================================================
+
 
 class GRUClassifier(nn.Module):
     """
@@ -309,7 +310,7 @@ class GRUClassifier(nn.Module):
         # GRU layers
         for layer_idx in range(self.n_layers):
             # Forward GRU
-            gru_cell = nn.GRUCell(features=self.hidden_size, name=f'gru_fwd_{layer_idx}')
+            gru_cell = nn.GRUCell(features=self.hidden_size, name=f"gru_fwd_{layer_idx}")
             carry = gru_cell.initialize_carry(jax.random.PRNGKey(0), (batch_size,))
 
             outputs = []
@@ -321,7 +322,7 @@ class GRUClassifier(nn.Module):
 
             # Bidirectional
             if self.bidirectional:
-                gru_cell_bwd = nn.GRUCell(features=self.hidden_size, name=f'gru_bwd_{layer_idx}')
+                gru_cell_bwd = nn.GRUCell(features=self.hidden_size, name=f"gru_bwd_{layer_idx}")
                 carry_bwd = gru_cell_bwd.initialize_carry(jax.random.PRNGKey(1), (batch_size,))
 
                 outputs_bwd = []
@@ -342,7 +343,7 @@ class GRUClassifier(nn.Module):
         h_last = x[:, -1, :]
 
         # Classification head
-        logits = nn.Dense(self.n_classes, name='classifier')(h_last)
+        logits = nn.Dense(self.n_classes, name="classifier")(h_last)
 
         return logits
 
@@ -350,6 +351,7 @@ class GRUClassifier(nn.Module):
 # ============================================================================
 # GNN Classifier
 # ============================================================================
+
 
 class GNNClassifier(nn.Module):
     """
@@ -363,17 +365,14 @@ class GNNClassifier(nn.Module):
 
     hidden_dim: int = 64
     n_layers: int = 2
-    gnn_type: str = 'gcn'  # 'gcn', 'gat', 'graphsage', 'gin'
-    aggregation: str = 'mean'  # 'mean', 'sum', 'max'
+    gnn_type: str = "gcn"  # 'gcn', 'gat', 'graphsage', 'gin'
+    aggregation: str = "mean"  # 'mean', 'sum', 'max'
     n_classes: int = 2
     dropout_rate: float = 0.1
 
     @nn.compact
     def __call__(
-        self,
-        x: jnp.ndarray,
-        A: Optional[jnp.ndarray] = None,
-        training: bool = False
+        self, x: jnp.ndarray, A: Optional[jnp.ndarray] = None, training: bool = False
     ) -> jnp.ndarray:
         """
         Forward pass.
@@ -408,11 +407,11 @@ class GNNClassifier(nn.Module):
         h = gnn(node_features, A)  # (B, N, hidden_dim)
 
         # Global graph pooling
-        if self.aggregation == 'mean':
+        if self.aggregation == "mean":
             h_pooled = jnp.mean(h, axis=1)
-        elif self.aggregation == 'sum':
+        elif self.aggregation == "sum":
             h_pooled = jnp.sum(h, axis=1)
-        elif self.aggregation == 'max':
+        elif self.aggregation == "max":
             h_pooled = jnp.max(h, axis=1)
         else:
             h_pooled = jnp.mean(h, axis=1)  # Default to mean
@@ -422,7 +421,7 @@ class GNNClassifier(nn.Module):
             h_pooled = nn.Dropout(rate=self.dropout_rate, deterministic=not training)(h_pooled)
 
         # Classification head
-        logits = nn.Dense(self.n_classes, name='classifier')(h_pooled)
+        logits = nn.Dense(self.n_classes, name="classifier")(h_pooled)
 
         return logits
 
@@ -430,6 +429,7 @@ class GNNClassifier(nn.Module):
 # ============================================================================
 # ELM Classifier
 # ============================================================================
+
 
 class ELMClassifier(nn.Module):
     """
@@ -442,7 +442,7 @@ class ELMClassifier(nn.Module):
     hidden_dim: int = 1000
     n_hidden_nodes: int = 1000
     n_classes: int = 2
-    activation: str = 'sigmoid'  # 'sigmoid', 'tanh', 'relu'
+    activation: str = "sigmoid"  # 'sigmoid', 'tanh', 'relu'
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
@@ -459,28 +459,22 @@ class ELMClassifier(nn.Module):
         # Random hidden layer (fixed after initialization)
         # In ELM, hidden weights are random and fixed
         W_hidden = self.param(
-            'W_hidden',
-            nn.initializers.normal(stddev=1.0),
-            (x.shape[-1], self.n_hidden_nodes)
+            "W_hidden", nn.initializers.normal(stddev=1.0), (x.shape[-1], self.n_hidden_nodes)
         )
-        b_hidden = self.param(
-            'b_hidden',
-            nn.initializers.zeros,
-            (self.n_hidden_nodes,)
-        )
+        b_hidden = self.param("b_hidden", nn.initializers.zeros, (self.n_hidden_nodes,))
 
         # Hidden layer activation
         h = jnp.dot(x, W_hidden) + b_hidden
 
-        if self.activation == 'sigmoid':
+        if self.activation == "sigmoid":
             h = nn.sigmoid(h)
-        elif self.activation == 'tanh':
+        elif self.activation == "tanh":
             h = jnp.tanh(h)
-        elif self.activation == 'relu':
+        elif self.activation == "relu":
             h = nn.relu(h)
 
         # Output layer (trainable)
-        logits = nn.Dense(self.n_classes, name='output')(h)
+        logits = nn.Dense(self.n_classes, name="output")(h)
 
         return logits
 
@@ -488,6 +482,7 @@ class ELMClassifier(nn.Module):
 # ============================================================================
 # Factory Function
 # ============================================================================
+
 
 def create_classifier(
     processor_type: str,
@@ -507,7 +502,7 @@ def create_classifier(
     Returns:
         Initialized classifier module
     """
-    if processor_type == 'mlp':
+    if processor_type == "mlp":
         # MLP doesn't need n_features explicitly, it's inferred
         return MLPClassifier(
             hidden_sizes=(64, 32),  # Could be made configurable
@@ -515,60 +510,60 @@ def create_classifier(
             dropout_rate=0.1,
         )
 
-    elif processor_type == 'mamba':
+    elif processor_type == "mamba":
         return MambaClassifier(
-            d_model=config.get('d_model', 128),
-            d_state=config.get('d_state', 16),
-            d_conv=config.get('d_conv', 4),
-            expand=config.get('expand', 2),
+            d_model=config.get("d_model", 128),
+            d_state=config.get("d_state", 16),
+            d_conv=config.get("d_conv", 4),
+            expand=config.get("expand", 2),
             n_layers=2,  # Fixed for simplicity
             n_classes=n_classes,
         )
 
-    elif processor_type == 'transformer':
+    elif processor_type == "transformer":
         return TransformerClassifier(
-            d_model=config.get('d_model', 128),
-            n_heads=config.get('n_heads', 4),
-            n_layers=config.get('n_layers', 2),
-            d_ff=config.get('d_ff', 512),
+            d_model=config.get("d_model", 128),
+            n_heads=config.get("n_heads", 4),
+            n_layers=config.get("n_layers", 2),
+            d_ff=config.get("d_ff", 512),
             n_classes=n_classes,
             dropout_rate=0.1,
         )
 
-    elif processor_type == 'lstm':
+    elif processor_type == "lstm":
         return LSTMClassifier(
-            hidden_size=config.get('hidden_size', 64),
-            n_layers=config.get('n_layers', 2),
-            bidirectional=config.get('bidirectional', False),
+            hidden_size=config.get("hidden_size", 64),
+            n_layers=config.get("n_layers", 2),
+            bidirectional=config.get("bidirectional", False),
             n_classes=n_classes,
-            dropout_rate=config.get('dropout', 0.1),
+            dropout_rate=config.get("dropout", 0.1),
         )
 
-    elif processor_type == 'gru':
+    elif processor_type == "gru":
         return GRUClassifier(
-            hidden_size=config.get('hidden_size', 64),
-            n_layers=config.get('n_layers', 2),
-            bidirectional=config.get('bidirectional', False),
+            hidden_size=config.get("hidden_size", 64),
+            n_layers=config.get("n_layers", 2),
+            bidirectional=config.get("bidirectional", False),
             n_classes=n_classes,
-            dropout_rate=config.get('dropout', 0.1),
+            dropout_rate=config.get("dropout", 0.1),
         )
 
-    elif processor_type == 'gnn':
+    elif processor_type == "gnn":
         return GNNClassifier(
-            hidden_dim=config.get('hidden_dim', 64),
-            n_layers=config.get('n_layers', 2),
-            gnn_type=config.get('gnn_type', 'gcn'),
-            aggregation=config.get('aggregation', 'mean'),
+            hidden_dim=config.get("hidden_dim", 64),
+            n_layers=config.get("n_layers", 2),
+            gnn_type=config.get("gnn_type", "gcn"),
+            aggregation=config.get("aggregation", "mean"),
             n_classes=n_classes,
             dropout_rate=0.1,
         )
 
-    elif processor_type == 'elm':
+    elif processor_type == "elm":
         return ELMClassifier(
-            hidden_dim=config.get('hidden_dim', 1000),
-            n_hidden_nodes=config.get('n_hidden_nodes', 1000),
+            hidden_dim=config.get("hidden_dim", 1000),
+            n_hidden_nodes=config.get("n_hidden_nodes", 1000),
             n_classes=n_classes,
-            activation='sigmoid',
+            activation="sigmoid",
         )
 
     else:

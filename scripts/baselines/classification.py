@@ -7,17 +7,22 @@ with different feature sets (All, SHAP-selected, MB-selected).
 Uses 5-fold cross-validation for robust estimates.
 """
 
-import numpy as np
-import pandas as pd
-from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import (
-    accuracy_score, balanced_accuracy_score, f1_score,
-    precision_score, recall_score, roc_auc_score
-)
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from typing import Dict, List, Tuple, Optional, Any
 import warnings
-warnings.filterwarnings('ignore')
+from typing import Dict, List, Optional
+
+import numpy as np
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import StratifiedKFold
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+
+warnings.filterwarnings("ignore")
 
 # PyTorch for neural network baselines
 import torch
@@ -29,17 +34,21 @@ from torch.utils.data import DataLoader, TensorDataset
 class MLPClassifier(nn.Module):
     """Simple MLP for classification baseline."""
 
-    def __init__(self, input_dim: int, hidden_dims: List[int], n_classes: int, dropout: float = 0.2):
+    def __init__(
+        self, input_dim: int, hidden_dims: List[int], n_classes: int, dropout: float = 0.2
+    ):
         super().__init__()
         layers = []
         prev_dim = input_dim
 
         for hdim in hidden_dims:
-            layers.extend([
-                nn.Linear(prev_dim, hdim),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-            ])
+            layers.extend(
+                [
+                    nn.Linear(prev_dim, hdim),
+                    nn.ReLU(),
+                    nn.Dropout(dropout),
+                ]
+            )
             prev_dim = hdim
 
         layers.append(nn.Linear(prev_dim, n_classes))
@@ -52,8 +61,15 @@ class MLPClassifier(nn.Module):
 class TransformerClassifier(nn.Module):
     """Transformer for tabular classification baseline."""
 
-    def __init__(self, input_dim: int, d_model: int, n_heads: int, n_layers: int,
-                 n_classes: int, dropout: float = 0.1):
+    def __init__(
+        self,
+        input_dim: int,
+        d_model: int,
+        n_heads: int,
+        n_layers: int,
+        n_classes: int,
+        dropout: float = 0.1,
+    ):
         super().__init__()
         self.embedding = nn.Linear(input_dim, d_model)
 
@@ -74,7 +90,7 @@ class TransformerClassifier(nn.Module):
 class ELMClassifier:
     """Extreme Learning Machine classifier."""
 
-    def __init__(self, hidden_dim: int = 100, activation: str = 'relu', random_state: int = 42):
+    def __init__(self, hidden_dim: int = 100, activation: str = "relu", random_state: int = 42):
         self.hidden_dim = hidden_dim
         self.activation = activation
         self.random_state = random_state
@@ -83,11 +99,11 @@ class ELMClassifier:
         self.beta = None
 
     def _activate(self, x):
-        if self.activation == 'relu':
+        if self.activation == "relu":
             return np.maximum(0, x)
-        elif self.activation == 'sigmoid':
+        elif self.activation == "sigmoid":
             return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
-        elif self.activation == 'tanh':
+        elif self.activation == "tanh":
             return np.tanh(x)
         else:
             return x
@@ -134,7 +150,7 @@ def train_pytorch_model(
     epochs: int = 100,
     batch_size: int = 32,
     lr: float = 0.001,
-    device: str = 'cuda',
+    device: str = "cuda",
 ) -> nn.Module:
     """Train a PyTorch model."""
 
@@ -189,25 +205,27 @@ def evaluate_model(
     """Compute classification metrics."""
 
     metrics = {
-        'accuracy': accuracy_score(y_true, y_pred),
-        'balanced_accuracy': balanced_accuracy_score(y_true, y_pred),
-        'f1_macro': f1_score(y_true, y_pred, average='macro', zero_division=0),
-        'f1_weighted': f1_score(y_true, y_pred, average='weighted', zero_division=0),
-        'precision_macro': precision_score(y_true, y_pred, average='macro', zero_division=0),
-        'recall_macro': recall_score(y_true, y_pred, average='macro', zero_division=0),
+        "accuracy": accuracy_score(y_true, y_pred),
+        "balanced_accuracy": balanced_accuracy_score(y_true, y_pred),
+        "f1_macro": f1_score(y_true, y_pred, average="macro", zero_division=0),
+        "f1_weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0),
+        "precision_macro": precision_score(y_true, y_pred, average="macro", zero_division=0),
+        "recall_macro": recall_score(y_true, y_pred, average="macro", zero_division=0),
     }
 
     # AUC-ROC (if probabilities available)
     if y_prob is not None:
         try:
             if y_prob.ndim == 2 and y_prob.shape[1] == 2:
-                metrics['roc_auc'] = roc_auc_score(y_true, y_prob[:, 1])
+                metrics["roc_auc"] = roc_auc_score(y_true, y_prob[:, 1])
             elif y_prob.ndim == 2:
-                metrics['roc_auc'] = roc_auc_score(y_true, y_prob, multi_class='ovr', average='macro')
+                metrics["roc_auc"] = roc_auc_score(
+                    y_true, y_prob, multi_class="ovr", average="macro"
+                )
             else:
-                metrics['roc_auc'] = roc_auc_score(y_true, y_prob)
+                metrics["roc_auc"] = roc_auc_score(y_true, y_prob)
         except:
-            metrics['roc_auc'] = np.nan
+            metrics["roc_auc"] = np.nan
 
     return metrics
 
@@ -219,7 +237,7 @@ def run_classification_cv(
     processor_config: Dict,
     n_splits: int = 5,
     random_state: int = 42,
-    device: str = 'cuda',
+    device: str = "cuda",
 ) -> Dict:
     """
     Run classification with cross-validation.
@@ -258,18 +276,22 @@ def run_classification_cv(
         input_dim = X_train.shape[1]
 
         # Train model based on processor type
-        if processor_type == 'mlp':
+        if processor_type == "mlp":
             model = MLPClassifier(
                 input_dim=input_dim,
-                hidden_dims=processor_config.get('hidden_dims', [64, 32]),
+                hidden_dims=processor_config.get("hidden_dims", [64, 32]),
                 n_classes=n_classes,
-                dropout=processor_config.get('dropout', 0.2),
+                dropout=processor_config.get("dropout", 0.2),
             )
             model = train_pytorch_model(
-                model, X_train, y_train, X_val, y_val,
-                epochs=processor_config.get('epochs', 100),
-                batch_size=processor_config.get('batch_size', 32),
-                lr=processor_config.get('lr', 0.001),
+                model,
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+                epochs=processor_config.get("epochs", 100),
+                batch_size=processor_config.get("batch_size", 32),
+                lr=processor_config.get("lr", 0.001),
                 device=device,
             )
             model.eval()
@@ -279,20 +301,24 @@ def run_classification_cv(
                 y_pred = output.argmax(dim=1).cpu().numpy()
                 y_prob = torch.softmax(output, dim=1).cpu().numpy()
 
-        elif processor_type == 'transformer':
+        elif processor_type == "transformer":
             model = TransformerClassifier(
                 input_dim=input_dim,
-                d_model=processor_config.get('d_model', 64),
-                n_heads=processor_config.get('n_heads', 4),
-                n_layers=processor_config.get('n_layers', 2),
+                d_model=processor_config.get("d_model", 64),
+                n_heads=processor_config.get("n_heads", 4),
+                n_layers=processor_config.get("n_layers", 2),
                 n_classes=n_classes,
-                dropout=processor_config.get('dropout', 0.1),
+                dropout=processor_config.get("dropout", 0.1),
             )
             model = train_pytorch_model(
-                model, X_train, y_train, X_val, y_val,
-                epochs=processor_config.get('epochs', 100),
-                batch_size=processor_config.get('batch_size', 32),
-                lr=processor_config.get('lr', 0.001),
+                model,
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+                epochs=processor_config.get("epochs", 100),
+                batch_size=processor_config.get("batch_size", 32),
+                lr=processor_config.get("lr", 0.001),
                 device=device,
             )
             model.eval()
@@ -302,17 +328,17 @@ def run_classification_cv(
                 y_pred = output.argmax(dim=1).cpu().numpy()
                 y_prob = torch.softmax(output, dim=1).cpu().numpy()
 
-        elif processor_type == 'elm':
+        elif processor_type == "elm":
             model = ELMClassifier(
-                hidden_dim=processor_config.get('hidden_dim', 100),
-                activation=processor_config.get('activation', 'relu'),
+                hidden_dim=processor_config.get("hidden_dim", 100),
+                activation=processor_config.get("activation", "relu"),
                 random_state=random_state + fold,
             )
             model.fit(X_train, y_train)
             y_pred = model.predict(X_val)
             y_prob = model.predict_proba(X_val)
 
-        elif processor_type in ['mamba', 'gnn']:
+        elif processor_type in ["mamba", "gnn"]:
             # For Mamba and GNN, use MLP as proxy (or implement JAX versions)
             # In production, would use actual JAX implementations
             model = MLPClassifier(
@@ -322,8 +348,15 @@ def run_classification_cv(
                 dropout=0.2,
             )
             model = train_pytorch_model(
-                model, X_train, y_train, X_val, y_val,
-                epochs=100, batch_size=32, lr=0.001, device=device,
+                model,
+                X_train,
+                y_train,
+                X_val,
+                y_val,
+                epochs=100,
+                batch_size=32,
+                lr=0.001,
+                device=device,
             )
             model.eval()
             with torch.no_grad():
@@ -344,35 +377,36 @@ def run_classification_cv(
     for metric in all_metrics[0].keys():
         values = [m[metric] for m in all_metrics if not np.isnan(m[metric])]
         if values:
-            result[f'{metric}_mean'] = np.mean(values)
-            result[f'{metric}_std'] = np.std(values)
+            result[f"{metric}_mean"] = np.mean(values)
+            result[f"{metric}_std"] = np.std(values)
         else:
-            result[f'{metric}_mean'] = np.nan
-            result[f'{metric}_std'] = np.nan
+            result[f"{metric}_mean"] = np.nan
+            result[f"{metric}_std"] = np.nan
 
     return result
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Quick test
     from sklearn.datasets import make_classification
 
-    print("="*60)
+    print("=" * 60)
     print("Classification Baseline Test")
-    print("="*60)
+    print("=" * 60)
 
     # Generate test data
-    X, y = make_classification(n_samples=1000, n_features=20, n_informative=10,
-                               n_classes=2, random_state=42)
+    X, y = make_classification(
+        n_samples=1000, n_features=20, n_informative=10, n_classes=2, random_state=42
+    )
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
-    for proc in ['mlp', 'transformer', 'elm']:
+    for proc in ["mlp", "transformer", "elm"]:
         print(f"\n--- {proc.upper()} ---")
-        config = {'hidden_dims': [64, 32], 'epochs': 50}
+        config = {"hidden_dims": [64, 32], "epochs": 50}
         results = run_classification_cv(X, y, proc, config, n_splits=3, device=device)
         print(f"Accuracy: {results['accuracy_mean']:.3f} +/- {results['accuracy_std']:.3f}")
         print(f"F1 Macro: {results['f1_macro_mean']:.3f} +/- {results['f1_macro_std']:.3f}")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)

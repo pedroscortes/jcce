@@ -5,24 +5,26 @@ Replaces sklearn's cross_val_score with JAX training loop.
 Supports all processor types from classification_processors.py.
 """
 
+from typing import Any, Dict, Optional, Tuple
+
 import jax
 import jax.numpy as jnp
-from jax import random
+import numpy as np
 import optax
 from flax.training import train_state
-from typing import Dict, Any, Tuple, Optional
-import numpy as np
-from sklearn.model_selection import KFold, StratifiedKFold
+from jax import random
+from sklearn.model_selection import StratifiedKFold
 
 from jcce.models.classification_processors import create_classifier
-
 
 # ============================================================================
 # Training State
 # ============================================================================
 
+
 class ClassifierTrainState(train_state.TrainState):
     """Training state for classifier."""
+
     pass
 
 
@@ -30,11 +32,8 @@ class ClassifierTrainState(train_state.TrainState):
 # Loss Functions
 # ============================================================================
 
-def cross_entropy_loss(
-    logits: jnp.ndarray,
-    labels: jnp.ndarray,
-    num_classes: int
-) -> jnp.ndarray:
+
+def cross_entropy_loss(logits: jnp.ndarray, labels: jnp.ndarray, num_classes: int) -> jnp.ndarray:
     """
     Cross-entropy loss for classification.
 
@@ -76,11 +75,12 @@ def compute_accuracy(logits: jnp.ndarray, labels: jnp.ndarray) -> float:
 # Training Functions
 # ============================================================================
 
+
 def train_step(
     state: ClassifierTrainState,
     batch: Tuple[jnp.ndarray, jnp.ndarray],
     num_classes: int,
-    rng: random.PRNGKey
+    rng: random.PRNGKey,
 ) -> Tuple[ClassifierTrainState, Dict[str, float], random.PRNGKey]:
     """
     Single training step.
@@ -102,10 +102,7 @@ def train_step(
     def loss_fn(params):
         # Pass dropout RNG to model
         logits = state.apply_fn(
-            {'params': params},
-            features,
-            training=True,
-            rngs={'dropout': dropout_rng}
+            {"params": params}, features, training=True, rngs={"dropout": dropout_rng}
         )
         loss = cross_entropy_loss(logits, labels, num_classes)
         return loss, logits
@@ -121,17 +118,15 @@ def train_step(
     accuracy = compute_accuracy(logits, labels)
 
     metrics = {
-        'loss': float(loss),
-        'accuracy': float(accuracy),
+        "loss": float(loss),
+        "accuracy": float(accuracy),
     }
 
     return new_state, metrics, rng
 
 
 def eval_step(
-    state: ClassifierTrainState,
-    batch: Tuple[jnp.ndarray, jnp.ndarray],
-    num_classes: int
+    state: ClassifierTrainState, batch: Tuple[jnp.ndarray, jnp.ndarray], num_classes: int
 ) -> Dict[str, float]:
     """
     Single evaluation step.
@@ -147,13 +142,13 @@ def eval_step(
     features, labels = batch
 
     # No dropout in eval mode, so no RNG needed
-    logits = state.apply_fn({'params': state.params}, features, training=False)
+    logits = state.apply_fn({"params": state.params}, features, training=False)
     loss = cross_entropy_loss(logits, labels, num_classes)
     accuracy = compute_accuracy(logits, labels)
 
     metrics = {
-        'loss': float(loss),
-        'accuracy': float(accuracy),
+        "loss": float(loss),
+        "accuracy": float(accuracy),
     }
 
     return metrics
@@ -162,6 +157,7 @@ def eval_step(
 # ============================================================================
 # Training Loop
 # ============================================================================
+
 
 def train_classifier(
     model: Any,
@@ -212,16 +208,16 @@ def train_classifier(
     tx = optax.adam(learning_rate)
     state = ClassifierTrainState.create(
         apply_fn=model.apply,
-        params=variables['params'],
+        params=variables["params"],
         tx=tx,
     )
 
     # Training history
     history = {
-        'train_loss': [],
-        'train_accuracy': [],
-        'val_loss': [],
-        'val_accuracy': [],
+        "train_loss": [],
+        "train_accuracy": [],
+        "val_loss": [],
+        "val_accuracy": [],
     }
 
     # Number of batches
@@ -251,29 +247,33 @@ def train_classifier(
             train_metrics.append(metrics)
 
         # Average training metrics
-        epoch_train_loss = float(np.mean([m['loss'] for m in train_metrics]))
-        epoch_train_acc = float(np.mean([m['accuracy'] for m in train_metrics]))
+        epoch_train_loss = float(np.mean([m["loss"] for m in train_metrics]))
+        epoch_train_acc = float(np.mean([m["accuracy"] for m in train_metrics]))
 
-        history['train_loss'].append(epoch_train_loss)
-        history['train_accuracy'].append(epoch_train_acc)
+        history["train_loss"].append(epoch_train_loss)
+        history["train_accuracy"].append(epoch_train_acc)
 
         # Validation
         if X_val is not None and Y_val is not None:
             val_metrics = eval_step(state, (X_val, Y_val), num_classes)
-            history['val_loss'].append(val_metrics['loss'])
-            history['val_accuracy'].append(val_metrics['accuracy'])
+            history["val_loss"].append(val_metrics["loss"])
+            history["val_accuracy"].append(val_metrics["accuracy"])
 
             if verbose and (epoch % 10 == 0 or epoch == num_epochs - 1):
-                print(f"Epoch {epoch+1}/{num_epochs}: "
-                      f"train_loss={epoch_train_loss:.4f}, "
-                      f"train_acc={epoch_train_acc:.4f}, "
-                      f"val_loss={val_metrics['loss']:.4f}, "
-                      f"val_acc={val_metrics['accuracy']:.4f}")
+                print(
+                    f"Epoch {epoch + 1}/{num_epochs}: "
+                    f"train_loss={epoch_train_loss:.4f}, "
+                    f"train_acc={epoch_train_acc:.4f}, "
+                    f"val_loss={val_metrics['loss']:.4f}, "
+                    f"val_acc={val_metrics['accuracy']:.4f}"
+                )
         else:
             if verbose and (epoch % 10 == 0 or epoch == num_epochs - 1):
-                print(f"Epoch {epoch+1}/{num_epochs}: "
-                      f"train_loss={epoch_train_loss:.4f}, "
-                      f"train_acc={epoch_train_acc:.4f}")
+                print(
+                    f"Epoch {epoch + 1}/{num_epochs}: "
+                    f"train_loss={epoch_train_loss:.4f}, "
+                    f"train_acc={epoch_train_acc:.4f}"
+                )
 
     return state, history
 
@@ -281,6 +281,7 @@ def train_classifier(
 # ============================================================================
 # Cross-Validation
 # ============================================================================
+
 
 def cross_validate_classifier(
     processor_type: str,
@@ -364,7 +365,7 @@ def cross_validate_classifier(
 
         # Evaluate on validation fold
         val_metrics = eval_step(state, (X_val_fold, Y_val_fold), num_classes)
-        fold_scores.append(val_metrics['accuracy'])
+        fold_scores.append(val_metrics["accuracy"])
 
         if verbose:
             print(f"    Fold {fold_idx + 1} accuracy: {val_metrics['accuracy']:.4f}")
@@ -377,10 +378,10 @@ def cross_validate_classifier(
         print(f"\n  CV Mean Accuracy: {mean_accuracy:.4f} ± {std_accuracy:.4f}")
 
     results = {
-        'cv_scores': fold_scores,
-        'mean_accuracy': mean_accuracy,
-        'std_accuracy': std_accuracy,
-        'processor_type': processor_type,
+        "cv_scores": fold_scores,
+        "mean_accuracy": mean_accuracy,
+        "std_accuracy": std_accuracy,
+        "processor_type": processor_type,
     }
 
     return results
@@ -389,6 +390,7 @@ def cross_validate_classifier(
 # ============================================================================
 # Nested Cross-Validation (for unbiased hyperparameter tuning)
 # ============================================================================
+
 
 def nested_cross_validate_classifier(
     processor_type: str,
@@ -444,9 +446,9 @@ def nested_cross_validate_classifier(
     outer_scores = []
 
     if verbose:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"NESTED CV: {outer_cv_folds} outer folds × {inner_cv_folds} inner folds")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
     # Outer loop: Evaluation
     for outer_idx, (train_outer_idx, test_outer_idx) in enumerate(outer_kfold.split(X_np, Y_np)):
@@ -484,7 +486,7 @@ def nested_cross_validate_classifier(
 
         # Train final model on entire outer training set
         if verbose:
-            print(f"  Training final model on outer training set...")
+            print("  Training final model on outer training set...")
 
         X_train_outer_jax = jnp.array(X_train_outer)
         Y_train_outer_jax = jnp.array(Y_train_outer)
@@ -509,7 +511,7 @@ def nested_cross_validate_classifier(
         Y_test_outer_jax = jnp.array(Y_test_outer)
 
         test_metrics = eval_step(state, (X_test_outer_jax, Y_test_outer_jax), num_classes)
-        outer_scores.append(test_metrics['accuracy'])
+        outer_scores.append(test_metrics["accuracy"])
 
         if verbose:
             print(f"  Outer test accuracy: {test_metrics['accuracy']:.4f}")
@@ -519,18 +521,18 @@ def nested_cross_validate_classifier(
     std_accuracy = float(np.std(outer_scores))
 
     if verbose:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"NESTED CV RESULT: {mean_accuracy:.4f} ± {std_accuracy:.4f}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
     results = {
-        'outer_scores': outer_scores,
-        'mean_accuracy': mean_accuracy,
-        'std_accuracy': std_accuracy,
-        'processor_type': processor_type,
-        'nested_cv': True,
-        'outer_folds': outer_cv_folds,
-        'inner_folds': inner_cv_folds,
+        "outer_scores": outer_scores,
+        "mean_accuracy": mean_accuracy,
+        "std_accuracy": std_accuracy,
+        "processor_type": processor_type,
+        "nested_cv": True,
+        "outer_folds": outer_cv_folds,
+        "inner_folds": inner_cv_folds,
     }
 
     return results
@@ -539,6 +541,7 @@ def nested_cross_validate_classifier(
 # ============================================================================
 # Simple Evaluate Function
 # ============================================================================
+
 
 def evaluate_classifier(
     state: ClassifierTrainState,

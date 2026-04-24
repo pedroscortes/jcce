@@ -17,46 +17,50 @@ Usage:
 
 import argparse
 import json
-import time
-import sys
 import os
+import sys
+import time
 
-import numpy as np
-import jax
 import jax.numpy as jnp
-from jax import random
-
+import numpy as np
 import optuna
+from jax import random
 from optuna.samplers import TPESampler
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from jcce.data.dag_generator import DAGConfig, generate_dag, count_edges
-from jcce.data.scm import SCMConfig, LinearSCM
-from jcce.utils.metrics import compute_structure_metrics
+from jcce.analysis.hypervolume import compute_hypervolume_2d, extract_pareto_front_2d
+from jcce.analysis.pareto_stability import (
+    compare_stability_to_ground_truth,
+    compute_edge_stability,
+    get_stable_edges,
+    stability_sensitivity_analysis,
+)
+from jcce.data.dag_generator import DAGConfig, generate_dag
+from jcce.data.scm import LinearSCM, SCMConfig
 from jcce.structure_learning.optuna_search import (
-    suggest_hyperparams,
+    constraints_func,
     create_optuna_objective,
     extract_pareto_solutions,
-    constraints_func,
     get_trial_artifacts,
 )
-from jcce.analysis.pareto_stability import (
-    compute_edge_stability,
-    compare_stability_to_ground_truth,
-    stability_sensitivity_analysis,
-    get_stable_edges,
-)
-from jcce.analysis.hypervolume import compute_hypervolume_2d, extract_pareto_front_2d
-
+from jcce.utils.metrics import compute_structure_metrics
 
 # ============================================================================
 # Data Generation
 # ============================================================================
 
-def generate_classification_data(n_vars, n_samples, graph_type, expected_degree,
-                                  noise_scale, seed, min_y_parents=1,
-                                  max_attempts=100):
+
+def generate_classification_data(
+    n_vars,
+    n_samples,
+    graph_type,
+    expected_degree,
+    noise_scale,
+    seed,
+    min_y_parents=1,
+    max_attempts=100,
+):
     """Generate synthetic classification data with known ground truth.
 
     Uses rejection sampling to ensure Y (last node) has at least
@@ -80,8 +84,10 @@ def generate_classification_data(n_vars, n_samples, graph_type, expected_degree,
 
         if n_parents_y >= min_y_parents:
             if attempt > 0:
-                print(f"  [DGP] Rejected {attempt} seed(s); "
-                      f"seed={current_seed} gives Y {n_parents_y} parent(s)")
+                print(
+                    f"  [DGP] Rejected {attempt} seed(s); "
+                    f"seed={current_seed} gives Y {n_parents_y} parent(s)"
+                )
             break
     else:
         raise RuntimeError(
@@ -106,24 +112,28 @@ def generate_classification_data(n_vars, n_samples, graph_type, expected_degree,
 # Analysis: Single Best vs Pareto Stability
 # ============================================================================
 
+
 def analyze_single_best(study, n_vars, A_true_full):
     """Compute structure metrics for the single best trial (highest BAcc).
 
     Returns dict with precision, recall, f1, shd for the best-accuracy solution.
     """
-    completed = [t for t in study.trials
-                 if t.state == optuna.trial.TrialState.COMPLETE
-                 and t.user_attrs.get('h_A', 1.0) < 0.1
-                 and t.values is not None]
+    completed = [
+        t
+        for t in study.trials
+        if t.state == optuna.trial.TrialState.COMPLETE
+        and t.user_attrs.get("h_A", 1.0) < 0.1
+        and t.values is not None
+    ]
     if not completed:
-        return {'precision': 0.0, 'recall': 0.0, 'f1': 0.0, 'shd': -1}
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0, "shd": -1}
 
     best = max(completed, key=lambda t: t.values[0])
     artifacts = get_trial_artifacts(best.number)
     if artifacts is None:
-        return {'precision': 0.0, 'recall': 0.0, 'f1': 0.0, 'shd': -1}
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0, "shd": -1}
 
-    A_est = np.array(artifacts['A_est'])
+    A_est = np.array(artifacts["A_est"])
     A_true_np = np.array(A_true_full)
 
     # Compute edge-level metrics
@@ -132,11 +142,11 @@ def analyze_single_best(study, n_vars, A_true_full):
         jnp.array(A_true_np[:n_vars, :n_vars]),
     )
     return {
-        'precision': sm['precision'],
-        'recall': sm['recall'],
-        'f1': sm['f1'],
-        'shd': sm['shd'],
-        'bacc': best.values[0],
+        "precision": sm["precision"],
+        "recall": sm["recall"],
+        "f1": sm["f1"],
+        "shd": sm["shd"],
+        "bacc": best.values[0],
     }
 
 
@@ -144,23 +154,25 @@ def analyze_single_best(study, n_vars, A_true_full):
 # Main
 # ============================================================================
 
+
 def main():
-    parser = argparse.ArgumentParser(description='C.4: Pareto Edge Stability')
-    parser.add_argument('--n-trials', type=int, default=20)
-    parser.add_argument('--n-vars', type=int, default=10)
-    parser.add_argument('--n-samples', type=int, default=500)
-    parser.add_argument('--max-iter', type=int, default=100)
-    parser.add_argument('--graph-types', nargs='+', default=['erdos_renyi'])
-    parser.add_argument('--expected-degree', type=float, default=2.0)
-    parser.add_argument('--noise-scale', type=float, default=0.5)
-    parser.add_argument('--stability-thresholds', nargs='+', type=float,
-                        default=[0.1, 0.3, 0.5])
-    parser.add_argument('--frequency-cutoffs', nargs='+', type=float,
-                        default=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
-    parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--quick', action='store_true',
-                        help='Quick mode: 5 trials, 20 iters, 5 vars')
-    parser.add_argument('--output', type=str, default=None)
+    parser = argparse.ArgumentParser(description="C.4: Pareto Edge Stability")
+    parser.add_argument("--n-trials", type=int, default=20)
+    parser.add_argument("--n-vars", type=int, default=10)
+    parser.add_argument("--n-samples", type=int, default=500)
+    parser.add_argument("--max-iter", type=int, default=100)
+    parser.add_argument("--graph-types", nargs="+", default=["erdos_renyi"])
+    parser.add_argument("--expected-degree", type=float, default=2.0)
+    parser.add_argument("--noise-scale", type=float, default=0.5)
+    parser.add_argument("--stability-thresholds", nargs="+", type=float, default=[0.1, 0.3, 0.5])
+    parser.add_argument(
+        "--frequency-cutoffs", nargs="+", type=float, default=[0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--quick", action="store_true", help="Quick mode: 5 trials, 20 iters, 5 vars"
+    )
+    parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
 
     if args.quick:
@@ -169,10 +181,9 @@ def main():
         args.n_vars = 5
         args.frequency_cutoffs = [0.5, 0.8, 1.0]
 
-    print(f"PARETO EDGE STABILITY ANALYSIS (C.4)")
-    print(f"=" * 70)
-    print(f"Data: {args.n_samples} samples, {args.n_vars} vars, "
-          f"noise={args.noise_scale}")
+    print("PARETO EDGE STABILITY ANALYSIS (C.4)")
+    print("=" * 70)
+    print(f"Data: {args.n_samples} samples, {args.n_vars} vars, noise={args.noise_scale}")
     print(f"Budget: {args.n_trials} trials x {args.max_iter} iters")
 
     all_results = []
@@ -183,30 +194,38 @@ def main():
 
         # Generate data
         X, Y, A_true = generate_classification_data(
-            args.n_vars, args.n_samples, graph_type, args.expected_degree,
-            args.noise_scale, args.seed + gt_idx * 100,
+            args.n_vars,
+            args.n_samples,
+            graph_type,
+            args.expected_degree,
+            args.noise_scale,
+            args.seed + gt_idx * 100,
         )
-        A_true_X = A_true[:args.n_vars, :args.n_vars]
+        A_true_X = A_true[: args.n_vars, : args.n_vars]
         n_edges = int(np.sum(np.abs(A_true_X) > 1e-6))
         print(f"Ground truth: {n_edges} edges among {args.n_vars} vars")
 
         # Run Optuna search
         print(f"\nRunning {args.n_trials} trials...")
         sampler = TPESampler(
-            multivariate=True, group=True,
+            multivariate=True,
+            group=True,
             seed=args.seed + gt_idx,
             n_startup_trials=min(5, args.n_trials),
             constraints_func=constraints_func,
             constant_liar=True,
         )
         study = optuna.create_study(
-            directions=['maximize', 'maximize'],
+            directions=["maximize", "maximize"],
             sampler=sampler,
         )
 
         objective = create_optuna_objective(
-            X=X, Y=Y, n_vars=args.n_vars,
-            max_iter=args.max_iter, use_v7=True,
+            X=X,
+            Y=Y,
+            n_vars=args.n_vars,
+            max_iter=args.max_iter,
+            use_v7=True,
             jax_key_seed=args.seed + gt_idx,
             verbose=False,
         )
@@ -217,65 +236,73 @@ def main():
 
         enhanced_solutions, _ = extract_pareto_solutions(study, use_v7=True)
 
-        n_feasible = len([t for t in study.trials
-                          if t.state == optuna.trial.TrialState.COMPLETE
-                          and t.user_attrs.get('h_A', 1.0) < 0.1])
+        n_feasible = len(
+            [
+                t
+                for t in study.trials
+                if t.state == optuna.trial.TrialState.COMPLETE
+                and t.user_attrs.get("h_A", 1.0) < 0.1
+            ]
+        )
 
-        print(f"Completed in {elapsed:.1f}s: "
-              f"{n_feasible} feasible, {len(enhanced_solutions)} Pareto solutions")
+        print(
+            f"Completed in {elapsed:.1f}s: "
+            f"{n_feasible} feasible, {len(enhanced_solutions)} Pareto solutions"
+        )
 
         if not enhanced_solutions:
             print("  No feasible Pareto solutions found. Skipping analysis.")
-            all_results.append({
-                'graph_type': graph_type,
-                'n_edges': n_edges,
-                'n_feasible': n_feasible,
-                'n_pareto': 0,
-                'error': 'no feasible solutions',
-            })
+            all_results.append(
+                {
+                    "graph_type": graph_type,
+                    "n_edges": n_edges,
+                    "n_feasible": n_feasible,
+                    "n_pareto": 0,
+                    "error": "no feasible solutions",
+                }
+            )
             continue
 
         # HV
-        points = np.array([[s['objectives'][0], s['objectives'][1]]
-                           for s in enhanced_solutions])
+        points = np.array([[s["objectives"][0], s["objectives"][1]] for s in enhanced_solutions])
         pareto = extract_pareto_front_2d(points)
         hv = compute_hypervolume_2d(pareto, ref_point=np.array([0.0, 0.0]))
 
         # --- Analysis 1: Single best vs Pareto stability ---
         single_best = analyze_single_best(study, args.n_vars, A_true)
-        print(f"\n  Single best solution: F1={single_best['f1']:.3f} "
-              f"Prec={single_best['precision']:.3f} "
-              f"Rec={single_best['recall']:.3f} SHD={single_best['shd']}")
+        print(
+            f"\n  Single best solution: F1={single_best['f1']:.3f} "
+            f"Prec={single_best['precision']:.3f} "
+            f"Rec={single_best['recall']:.3f} SHD={single_best['shd']}"
+        )
 
         # --- Analysis 2: Edge stability at multiple thresholds ---
-        print(f"\n  Pareto Edge Stability (min_frequency -> ground truth comparison):")
-        print(f"  {'Threshold':>10} {'FreqCut':>8} {'#Stable':>8} "
-              f"{'Prec':>6} {'Rec':>6} {'F1':>6}")
+        print("\n  Pareto Edge Stability (min_frequency -> ground truth comparison):")
+        print(f"  {'Threshold':>10} {'FreqCut':>8} {'#Stable':>8} {'Prec':>6} {'Rec':>6} {'F1':>6}")
 
         stability_rows = []
         for threshold in args.stability_thresholds:
-            stab = compute_edge_stability(
-                enhanced_solutions, args.n_vars, threshold=threshold
-            )
+            stab = compute_edge_stability(enhanced_solutions, args.n_vars, threshold=threshold)
             for freq in args.frequency_cutoffs:
-                gt_result = compare_stability_to_ground_truth(
-                    stab, A_true, min_frequency=freq
-                )
+                gt_result = compare_stability_to_ground_truth(stab, A_true, min_frequency=freq)
                 row = {
-                    'threshold': threshold,
-                    'frequency': freq,
+                    "threshold": threshold,
+                    "frequency": freq,
                     **gt_result,
                 }
                 stability_rows.append(row)
-                print(f"  {threshold:>10.2f} {freq:>8.2f} "
-                      f"{gt_result['n_stable']:>8} "
-                      f"{gt_result['precision']:>6.3f} "
-                      f"{gt_result['recall']:>6.3f} "
-                      f"{gt_result['f1']:>6.3f}")
+                print(
+                    f"  {threshold:>10.2f} {freq:>8.2f} "
+                    f"{gt_result['n_stable']:>8} "
+                    f"{gt_result['precision']:>6.3f} "
+                    f"{gt_result['recall']:>6.3f} "
+                    f"{gt_result['f1']:>6.3f}"
+                )
 
         # --- Analysis 3: Sensitivity analysis ---
         sensitivity = stability_sensitivity_analysis(
-            enhanced_solutions, args.n_vars,
+            enhanced_solutions,
+            args.n_vars,
             thresholds=tuple(args.stability_thresholds),
             frequencies=tuple(args.frequency_cutoffs),
             true_graph=A_true,
@@ -283,75 +310,77 @@ def main():
 
         # --- Analysis 4: Key comparison ---
         # Find best stability F1 across all threshold/freq combos
-        best_stab = max(stability_rows, key=lambda r: r['f1'])
+        best_stab = max(stability_rows, key=lambda r: r["f1"])
 
-        print(f"\n  Key Comparison:")
+        print("\n  Key Comparison:")
         print(f"    Single best solution:  F1={single_best['f1']:.3f}")
-        print(f"    Best Pareto-stable:    F1={best_stab['f1']:.3f} "
-              f"(thresh={best_stab['threshold']}, freq={best_stab['frequency']})")
+        print(
+            f"    Best Pareto-stable:    F1={best_stab['f1']:.3f} "
+            f"(thresh={best_stab['threshold']}, freq={best_stab['frequency']})"
+        )
 
-        improvement = best_stab['f1'] - single_best['f1']
+        improvement = best_stab["f1"] - single_best["f1"]
         if improvement > 0:
             print(f"    -> Pareto stability IMPROVES F1 by +{improvement:.3f}")
         elif improvement < 0:
             print(f"    -> Single best has higher F1 by +{-improvement:.3f}")
         else:
-            print(f"    -> Same F1")
+            print("    -> Same F1")
 
         # Stable edges list
-        stab_default = compute_edge_stability(
-            enhanced_solutions, args.n_vars, threshold=0.3
-        )
+        stab_default = compute_edge_stability(enhanced_solutions, args.n_vars, threshold=0.3)
         stable_edges = get_stable_edges(stab_default, min_frequency=0.8)
         if stable_edges:
-            print(f"\n  Highly stable edges (freq >= 0.8, thresh=0.3):")
+            print("\n  Highly stable edges (freq >= 0.8, thresh=0.3):")
             for i, j, freq in stable_edges[:10]:  # Top 10
                 is_true = np.abs(A_true[i, j]) > 1e-6
                 label = "TRUE" if is_true else "FALSE"
                 print(f"    {j} -> {i}: freq={freq:.2f} [{label}]")
 
         result = {
-            'graph_type': graph_type,
-            'n_edges': n_edges,
-            'n_feasible': n_feasible,
-            'n_pareto': len(enhanced_solutions),
-            'hv': hv,
-            'time': elapsed,
-            'single_best': single_best,
-            'best_stability': {
-                'f1': best_stab['f1'],
-                'precision': best_stab['precision'],
-                'recall': best_stab['recall'],
-                'threshold': best_stab['threshold'],
-                'frequency': best_stab['frequency'],
+            "graph_type": graph_type,
+            "n_edges": n_edges,
+            "n_feasible": n_feasible,
+            "n_pareto": len(enhanced_solutions),
+            "hv": hv,
+            "time": elapsed,
+            "single_best": single_best,
+            "best_stability": {
+                "f1": best_stab["f1"],
+                "precision": best_stab["precision"],
+                "recall": best_stab["recall"],
+                "threshold": best_stab["threshold"],
+                "frequency": best_stab["frequency"],
             },
-            'f1_improvement': improvement,
-            'stability_rows': stability_rows,
+            "f1_improvement": improvement,
+            "stability_rows": stability_rows,
         }
         all_results.append(result)
 
     # Final summary
     print(f"\n{'=' * 70}")
-    print(f"SUMMARY")
+    print("SUMMARY")
     for r in all_results:
-        if 'error' in r:
+        if "error" in r:
             print(f"  {r['graph_type']}: FAILED ({r['error']})")
         else:
-            print(f"  {r['graph_type']}: SingleBest F1={r['single_best']['f1']:.3f} "
-                  f"ParetoStable F1={r['best_stability']['f1']:.3f} "
-                  f"(delta={r['f1_improvement']:+.3f})")
+            print(
+                f"  {r['graph_type']}: SingleBest F1={r['single_best']['f1']:.3f} "
+                f"ParetoStable F1={r['best_stability']['f1']:.3f} "
+                f"(delta={r['f1_improvement']:+.3f})"
+            )
 
     # Save results
     if args.output:
         # Convert non-serializable items
         output = {
-            'args': vars(args),
-            'results': all_results,
+            "args": vars(args),
+            "results": all_results,
         }
-        with open(args.output, 'w') as f:
+        with open(args.output, "w") as f:
             json.dump(output, f, indent=2, default=str)
         print(f"\nResults saved to {args.output}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

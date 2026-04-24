@@ -231,9 +231,7 @@ def train_causal_vae(
 
     # Initialize training state
     input_shape = (batch_size, train_data.shape[1])
-    state = create_causal_vae_train_state(
-        model, A_true, learning_rate, key, input_shape
-    )
+    state = create_causal_vae_train_state(model, A_true, learning_rate, key, input_shape)
 
     # Training history
     history = {
@@ -250,9 +248,7 @@ def train_causal_vae(
     # Training loop
     for epoch in range(n_epochs):
         # Train for one epoch
-        state, train_metrics = causal_vae_train_epoch(
-            state, train_data, batch_size, beta=beta
-        )
+        state, train_metrics = causal_vae_train_epoch(state, train_data, batch_size, beta=beta)
 
         # Record training metrics
         history["train_loss"].append(float(train_metrics["total_loss"]))

@@ -14,34 +14,33 @@ Usage:
 
 import argparse
 import json
-import time
-import sys
 import os
+import sys
+import time
 
-import numpy as np
-import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import random
 from scipy import stats
 
 # Project imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from jcce.data.dag_generator import DAGConfig, generate_dag, count_edges
-from jcce.data.scm import SCMConfig, LinearSCM
-from jcce.utils.metrics import compute_structure_metrics
+import optuna
+
+from jcce.data.dag_generator import DAGConfig, generate_dag
+from jcce.data.scm import LinearSCM, SCMConfig
 from jcce.structure_learning.jcce_learner import (
     create_processor,
     learn_structure,
 )
 from jcce.structure_learning.optuna_search import suggest_hyperparams
-
-import optuna
-
+from jcce.utils.metrics import compute_structure_metrics
 
 # ============================================================================
 # Recording Callback
 # ============================================================================
+
 
 class RecordingCallback:
     """Stores metrics at every 10-iter checkpoint during GOLEM training."""
@@ -51,9 +50,9 @@ class RecordingCallback:
 
     def __call__(self, iter_num: int, metrics: dict) -> None:
         self.records[iter_num] = {
-            'balanced_accuracy': metrics['balanced_accuracy'],
-            'h_A': metrics['h_A'],
-            'loss': metrics['loss'],
+            "balanced_accuracy": metrics["balanced_accuracy"],
+            "h_A": metrics["h_A"],
+            "loss": metrics["loss"],
         }
 
     def get_at_rung(self, rung: int):
@@ -71,8 +70,10 @@ class RecordingCallback:
 # Data Generation
 # ============================================================================
 
-def generate_classification_data(n_vars, n_samples, expected_degree, noise_scale, seed,
-                                  min_y_parents=1, max_attempts=100):
+
+def generate_classification_data(
+    n_vars, n_samples, expected_degree, noise_scale, seed, min_y_parents=1, max_attempts=100
+):
     """Generate synthetic classification data from a linear SEM.
 
     Creates an ER DAG with n_vars+1 nodes, samples via LinearSCM, then
@@ -90,7 +91,7 @@ def generate_classification_data(n_vars, n_samples, expected_degree, noise_scale
         current_seed = seed + attempt
         dag_config = DAGConfig(
             num_nodes=n_vars + 1,
-            graph_type='erdos_renyi',
+            graph_type="erdos_renyi",
             expected_degree=expected_degree,
             seed=current_seed,
         )
@@ -102,8 +103,10 @@ def generate_classification_data(n_vars, n_samples, expected_degree, noise_scale
 
         if n_parents_y >= min_y_parents:
             if attempt > 0:
-                print(f"  [DGP] Rejected {attempt} seed(s); "
-                      f"seed={current_seed} gives Y {n_parents_y} parent(s)")
+                print(
+                    f"  [DGP] Rejected {attempt} seed(s); "
+                    f"seed={current_seed} gives Y {n_parents_y} parent(s)"
+                )
             break
     else:
         raise RuntimeError(
@@ -131,6 +134,7 @@ def generate_classification_data(n_vars, n_samples, expected_degree, noise_scale
 # Single Trial Runner
 # ============================================================================
 
+
 def run_single_trial(trial_idx, config, X, Y, n_vars, max_iter, seed):
     """Run a single GOLEM trial to completion with recording callback.
 
@@ -140,10 +144,10 @@ def run_single_trial(trial_idx, config, X, Y, n_vars, max_iter, seed):
     key, proc_key, train_key = random.split(key, 3)
 
     processor = create_processor(
-        config['processor_type'],
+        config["processor_type"],
         key=proc_key,
         n_features=n_vars,
-        **config['processor_config'],
+        **config["processor_config"],
     )
 
     callback = RecordingCallback()
@@ -157,27 +161,27 @@ def run_single_trial(trial_idx, config, X, Y, n_vars, max_iter, seed):
             Y_idx=Y_idx,
             processor=processor,
             key=train_key,
-            processor_type=config['processor_type'],
-            lambda_1=config['lambda_1'],
-            lambda_2_init=config['lambda_2'],
-            lambda_class=config['lambda_class'],
-            lr=config['lr'],
+            processor_type=config["processor_type"],
+            lambda_1=config["lambda_1"],
+            lambda_2_init=config["lambda_2"],
+            lambda_class=config["lambda_class"],
+            lr=config["lr"],
             max_iter=max_iter,
             patience=max_iter + 1,  # No early stopping — run to completion
             verbose=0,
-            task='classification',
+            task="classification",
             use_adaptive_curriculum=True,
             lambda_ident=0.01,
             use_amortized_effects=True,
             enforce_outcome_sink=True,
             iteration_callback=callback,
-            effect_hidden_dim=config.get('effect_hidden_dim', 64),
-            effect_embed_dim=config.get('effect_embed_dim', 16),
-            lambda_effect=config.get('lambda_effect', 10.0),
-            effect_warmup_iter=config.get('effect_warmup_iter', 20),
-            lambda_confound_sparse=config.get('lambda_confound_sparse', 0.05),
-            lambda_bow=config.get('lambda_bow_v7', 0.3),
-            effect_refinement_iters=config.get('effect_refinement_iters', 50),
+            effect_hidden_dim=config.get("effect_hidden_dim", 64),
+            effect_embed_dim=config.get("effect_embed_dim", 16),
+            lambda_effect=config.get("lambda_effect", 10.0),
+            effect_warmup_iter=config.get("effect_warmup_iter", 20),
+            lambda_confound_sparse=config.get("lambda_confound_sparse", 0.05),
+            lambda_bow=config.get("lambda_bow_v7", 0.3),
+            effect_refinement_iters=config.get("effect_refinement_iters", 50),
         )
     except Exception as e:
         print(f"  Trial {trial_idx} failed: {e}")
@@ -190,24 +194,26 @@ def run_single_trial(trial_idx, config, X, Y, n_vars, max_iter, seed):
     )
 
     return {
-        'config': config,
-        'records': callback.records,
-        'callback': callback,
-        'final_metrics': {
-            'balanced_accuracy': float(metrics.get('balanced_accuracy', 0.0)),
-            'h_A': float(metrics.get('final_h_A', 1.0)),
-            'loss': float(callback.records[max(callback.records.keys())]['loss'])
-            if callback.records else 0.0,
-            'f1': struct_metrics['f1'],
-            'shd': struct_metrics['shd'],
+        "config": config,
+        "records": callback.records,
+        "callback": callback,
+        "final_metrics": {
+            "balanced_accuracy": float(metrics.get("balanced_accuracy", 0.0)),
+            "h_A": float(metrics.get("final_h_A", 1.0)),
+            "loss": float(callback.records[max(callback.records.keys())]["loss"])
+            if callback.records
+            else 0.0,
+            "f1": struct_metrics["f1"],
+            "shd": struct_metrics["shd"],
         },
-        'A_est': np.array(A_est),
+        "A_est": np.array(A_est),
     }
 
 
 # ============================================================================
 # Rank Correlation Computation
 # ============================================================================
+
 
 def compute_rank_correlations(trial_results, rungs):
     """Compute Spearman rank correlations between rung metrics and final metrics.
@@ -223,8 +229,8 @@ def compute_rank_correlations(trial_results, rungs):
     if len(results) < 3:
         return {}
 
-    rung_metrics = ['balanced_accuracy', 'h_A', 'loss']
-    final_metrics = ['balanced_accuracy', 'h_A', 'loss', 'f1', 'shd']
+    rung_metrics = ["balanced_accuracy", "h_A", "loss"]
+    final_metrics = ["balanced_accuracy", "h_A", "loss", "f1", "shd"]
 
     correlations = {}
 
@@ -232,18 +238,17 @@ def compute_rank_correlations(trial_results, rungs):
         for rm in rung_metrics:
             rung_values = []
             for r in results:
-                at_rung = r['callback'].get_at_rung(rung)
+                at_rung = r["callback"].get_at_rung(rung)
                 if at_rung is not None:
                     rung_values.append(at_rung[rm])
                 else:
                     rung_values.append(None)
 
             for fm in final_metrics:
-                final_values = [r['final_metrics'][fm] for r in results]
+                final_values = [r["final_metrics"][fm] for r in results]
 
                 # Filter pairs where rung value is available
-                pairs = [(rv, fv) for rv, fv in zip(rung_values, final_values)
-                         if rv is not None]
+                pairs = [(rv, fv) for rv, fv in zip(rung_values, final_values) if rv is not None]
 
                 if len(pairs) < 3:
                     continue
@@ -266,18 +271,20 @@ def compute_rank_correlations(trial_results, rungs):
 # Main
 # ============================================================================
 
+
 def main():
-    parser = argparse.ArgumentParser(description='C.3: Multi-Fidelity Rank Correlations')
-    parser.add_argument('--n-trials', type=int, default=30)
-    parser.add_argument('--n-vars', type=int, default=10)
-    parser.add_argument('--n-samples', type=int, default=500)
-    parser.add_argument('--max-iter', type=int, default=300)
-    parser.add_argument('--expected-degree', type=float, default=2.0)
-    parser.add_argument('--noise-scale', type=float, default=0.5)
-    parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--quick', action='store_true',
-                        help='Quick mode: 5 trials, 30 iters, 5 vars')
-    parser.add_argument('--output', type=str, default=None)
+    parser = argparse.ArgumentParser(description="C.3: Multi-Fidelity Rank Correlations")
+    parser.add_argument("--n-trials", type=int, default=30)
+    parser.add_argument("--n-vars", type=int, default=10)
+    parser.add_argument("--n-samples", type=int, default=500)
+    parser.add_argument("--max-iter", type=int, default=300)
+    parser.add_argument("--expected-degree", type=float, default=2.0)
+    parser.add_argument("--noise-scale", type=float, default=0.5)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--quick", action="store_true", help="Quick mode: 5 trials, 30 iters, 5 vars"
+    )
+    parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
 
     if args.quick:
@@ -292,12 +299,14 @@ def main():
     # For short runs, adjust rungs to what's achievable
     rungs = [r for r in rungs if r <= args.max_iter]
 
-    print(f"MULTI-FIDELITY RANK CORRELATIONS (C.3)")
-    print(f"=" * 60)
+    print("MULTI-FIDELITY RANK CORRELATIONS (C.3)")
+    print("=" * 60)
 
     # Generate data
-    print(f"\nGenerating data: {args.n_samples} samples, {args.n_vars} vars, "
-          f"ER-{args.expected_degree} linear SEM")
+    print(
+        f"\nGenerating data: {args.n_samples} samples, {args.n_vars} vars, "
+        f"ER-{args.expected_degree} linear SEM"
+    )
     X, Y, A_true = generate_classification_data(
         args.n_vars, args.n_samples, args.expected_degree, args.noise_scale, args.seed
     )
@@ -308,7 +317,7 @@ def main():
     # Generate configs via Optuna's suggest_hyperparams
     print(f"\nRunning {args.n_trials} trials to max_iter={args.max_iter}...")
     study = optuna.create_study(
-        directions=['maximize', 'maximize'],
+        directions=["maximize", "maximize"],
         sampler=optuna.samplers.RandomSampler(seed=args.seed),
     )
 
@@ -324,13 +333,17 @@ def main():
     t0 = time.time()
     for i, config in enumerate(configs):
         t_trial = time.time()
-        print(f"  Trial {i + 1}/{args.n_trials} ({config['processor_type']})...", end='', flush=True)
+        print(
+            f"  Trial {i + 1}/{args.n_trials} ({config['processor_type']})...", end="", flush=True
+        )
         result = run_single_trial(i, config, X, Y, args.n_vars, args.max_iter, args.seed)
         trial_results.append(result)
         if result is not None:
-            print(f" BAcc={result['final_metrics']['balanced_accuracy']:.3f} "
-                  f"h_A={result['final_metrics']['h_A']:.4f} "
-                  f"({time.time() - t_trial:.1f}s)")
+            print(
+                f" BAcc={result['final_metrics']['balanced_accuracy']:.3f} "
+                f"h_A={result['final_metrics']['h_A']:.4f} "
+                f"({time.time() - t_trial:.1f}s)"
+            )
         else:
             print(f" FAILED ({time.time() - t_trial:.1f}s)")
 
@@ -343,14 +356,16 @@ def main():
 
     # Display results
     print(f"\n{'=' * 60}")
-    print(f"Data: {args.n_samples} samples, {args.n_vars} vars, "
-          f"ER-{args.expected_degree} linear SEM, {n_edges} edges\n")
+    print(
+        f"Data: {args.n_samples} samples, {args.n_vars} vars, "
+        f"ER-{args.expected_degree} linear SEM, {n_edges} edges\n"
+    )
 
-    final_targets = ['balanced_accuracy', 'shd']
-    rung_metrics = ['balanced_accuracy', 'h_A', 'loss']
+    final_targets = ["balanced_accuracy", "shd"]
+    rung_metrics = ["balanced_accuracy", "h_A", "loss"]
 
     for ft in final_targets:
-        ft_label = 'BAcc' if ft == 'balanced_accuracy' else ft.upper()
+        ft_label = "BAcc" if ft == "balanced_accuracy" else ft.upper()
         print(f"rho(metric@rung -> {ft_label}@final):")
         for rung in rungs:
             parts = []
@@ -358,11 +373,11 @@ def main():
                 key = (rm, rung, ft)
                 if key in correlations:
                     rho, pval = correlations[key]
-                    rm_label = {'balanced_accuracy': 'BAcc', 'h_A': 'h_A', 'loss': 'loss'}[rm]
-                    p_str = f"p<0.001" if pval < 0.001 else f"p={pval:.3f}"
+                    rm_label = {"balanced_accuracy": "BAcc", "h_A": "h_A", "loss": "loss"}[rm]
+                    p_str = "p<0.001" if pval < 0.001 else f"p={pval:.3f}"
                     parts.append(f"{rm_label}@{rung}: {rho:+.2f} ({p_str})")
                 else:
-                    rm_label = {'balanced_accuracy': 'BAcc', 'h_A': 'h_A', 'loss': 'loss'}[rm]
+                    rm_label = {"balanced_accuracy": "BAcc", "h_A": "h_A", "loss": "loss"}[rm]
                     parts.append(f"{rm_label}@{rung}: N/A")
             print(f"  {'    '.join(parts)}")
         print()
@@ -371,34 +386,36 @@ def main():
     best_rho = 0.0
     best_rung = None
     for (rm, rung, fm), (rho, pval) in correlations.items():
-        if fm == 'balanced_accuracy' and abs(rho) > best_rho:
+        if fm == "balanced_accuracy" and abs(rho) > best_rho:
             best_rho = abs(rho)
             best_rung = rung
     if best_rung is not None:
         budget_pct = best_rung / args.max_iter * 100
         verdict = "supports" if best_rho >= 0.7 else "weak support for"
-        print(f"Conclusion: best rho={best_rho:.2f} at rung {best_rung} "
-              f"({budget_pct:.0f}% budget) -> {verdict} pruning at that rung.")
+        print(
+            f"Conclusion: best rho={best_rho:.2f} at rung {best_rung} "
+            f"({budget_pct:.0f}% budget) -> {verdict} pruning at that rung."
+        )
     else:
         print("Conclusion: insufficient data for rank correlation analysis.")
 
     # Save results
     if args.output:
         output = {
-            'args': vars(args),
-            'n_edges': n_edges,
-            'n_success': n_success,
-            'total_time': total_time,
-            'rungs': rungs,
-            'correlations': {
-                f"{rm}@{rung}->{fm}": {'rho': rho, 'pvalue': pval}
+            "args": vars(args),
+            "n_edges": n_edges,
+            "n_success": n_success,
+            "total_time": total_time,
+            "rungs": rungs,
+            "correlations": {
+                f"{rm}@{rung}->{fm}": {"rho": rho, "pvalue": pval}
                 for (rm, rung, fm), (rho, pval) in correlations.items()
             },
         }
-        with open(args.output, 'w') as f:
+        with open(args.output, "w") as f:
             json.dump(output, f, indent=2)
         print(f"\nResults saved to {args.output}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

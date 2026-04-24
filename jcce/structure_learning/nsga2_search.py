@@ -24,31 +24,29 @@ Objectives:
 Pareto validation filters out solutions with h(A) > threshold (cycles).
 """
 
-import numpy as np
+import ctypes
+import gc
+import time
+from typing import Any, Dict, List, Optional, Tuple
+
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import random
-from typing import Tuple, Dict, Any, Optional, List
-from pymoo.core.problem import Problem
 from pymoo.algorithms.moo.nsga2 import NSGA2
+from pymoo.core.problem import Problem
 from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
 from pymoo.operators.sampling.rnd import IntegerRandomSampling
 from pymoo.optimize import minimize
 from pymoo.termination import get_termination
-import gc
-import time
-import ctypes
 
 from jcce.structure_learning.genome import MACliteGenome
-
-# DML cross-fitting (O5) and actionability proxy (O6) for causal validation
-from jcce.validation.dml_crossfitting import DMLCrossFitter, get_progressive_k
-from jcce.counterfactual.causal_constraints import compute_actionability_proxy, get_ancestors
 
 # Phase 3: Warm-start cache for structure initialization
 from jcce.structure_learning.warm_start_cache import ImprovedWarmStartCache
 
+# DML cross-fitting (O5) and actionability proxy (O6) for causal validation
 
 # ============================================================================
 # Aggressive Memory Cleanup for Long-Running Experiments
@@ -106,12 +104,13 @@ def aggressive_memory_cleanup(sleep_time: float = 0.1, clear_jax_cache: bool = F
 # Soft F1 Computation for MB Optimization
 # ============================================================================
 
+
 def compute_soft_mb_f1(
     predicted_mb: List[int],
     true_mb: List[int],
     n_vars: int,
     mb_weights: Optional[np.ndarray] = None,
-    beta: float = 10.0
+    beta: float = 10.0,
 ) -> Tuple[float, float, float]:
     """
     Compute soft (differentiable-friendly) F1 score for Markov Blanket.
@@ -170,35 +169,73 @@ def compute_soft_mb_f1(
 # Unified Genome (No Structure Algorithm Selection)
 # ============================================================================
 
-PROCESSOR_TYPES = ['elm', 'gnn', 'mlp', 'transformer', 'mamba']
+PROCESSOR_TYPES = ["elm", "gnn", "mlp", "transformer", "mamba"]
 
 # GOLEM hyperparameters
-GOLEM_LAMBDA_1 = [0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0]  # Sparsity (extended for high-d datasets like breast cancer d=30)
+GOLEM_LAMBDA_1 = [
+    0.005,
+    0.01,
+    0.02,
+    0.05,
+    0.1,
+    0.2,
+    0.5,
+    1.0,
+    2.0,
+    5.0,
+]  # Sparsity (extended for high-d datasets like breast cancer d=30)
 GOLEM_LAMBDA_2 = [0.001, 0.01, 0.1, 1.0]  # DAG constraint init
 GOLEM_LAMBDA_CLASS = [0.1, 0.5, 1.0, 2.0, 5.0]  # Classification weight
 GOLEM_LRS = [0.0001, 0.0003, 0.001, 0.003, 0.01]
 
 # Effect estimation hyperparameters
-EFFECT_HIDDEN_DIMS = [64, 128, 256]  # Effect network hidden dimension (increased for complex datasets)
-EFFECT_EMBED_DIMS = [16, 32, 64]  # Treatment embedding dimension (increased for better treatment representation)
+EFFECT_HIDDEN_DIMS = [
+    64,
+    128,
+    256,
+]  # Effect network hidden dimension (increased for complex datasets)
+EFFECT_EMBED_DIMS = [
+    16,
+    32,
+    64,
+]  # Treatment embedding dimension (increased for better treatment representation)
 LAMBDA_EFFECTS = [5.0, 10.0, 20.0, 50.0]
 EFFECT_WARMUP_ITERS = [10, 20, 30, 50]  # Warmup before effect training
-LAMBDA_CONFOUND_SPARSE = [0.01, 0.05, 0.1, 0.5]  # A_confound sparsity (v11: increased 10x for sparser bi-directed edges)
+LAMBDA_CONFOUND_SPARSE = [
+    0.01,
+    0.05,
+    0.1,
+    0.5,
+]  # A_confound sparsity (v11: increased 10x for sparser bi-directed edges)
 LAMBDA_BOW_V7 = [0.1, 0.3, 0.5, 1.0]
 EFFECT_REFINEMENT_ITERS = [0, 30, 50, 100]  # Post-hoc effect refinement iterations
 
 # Processor-specific configs (reuse from search_space.py)
 from jcce.structure_learning.search_space import (
-    MAMBA_D_MODELS, MAMBA_D_STATES, MAMBA_D_CONVS, MAMBA_EXPANDS,
-    TRANSFORMER_D_MODELS, TRANSFORMER_N_HEADS, TRANSFORMER_N_LAYERS, TRANSFORMER_D_FFS,
-    GNN_HIDDEN_DIMS, GNN_N_LAYERS, GNN_TYPES, GNN_AGGREGATIONS,
-    ELM_HIDDEN_DIMS, ELM_N_HIDDEN_NODES, ELM_ACTIVATIONS,
-    MLP_HIDDEN_DIMS, MLP_N_LAYERS, MLP_ACTIVATIONS,
+    ELM_ACTIVATIONS,
+    ELM_HIDDEN_DIMS,
+    ELM_N_HIDDEN_NODES,
+    GNN_AGGREGATIONS,
+    GNN_HIDDEN_DIMS,
+    GNN_N_LAYERS,
+    GNN_TYPES,
+    MAMBA_D_CONVS,
+    MAMBA_D_MODELS,
+    MAMBA_D_STATES,
+    MAMBA_EXPANDS,
+    MLP_ACTIVATIONS,
+    MLP_HIDDEN_DIMS,
+    MLP_N_LAYERS,
+    TRANSFORMER_D_FFS,
+    TRANSFORMER_D_MODELS,
+    TRANSFORMER_N_HEADS,
+    TRANSFORMER_N_LAYERS,
 )
 
 
-
-def genome_to_unified_config(genome: MACliteGenome, use_v7: bool = False, n_vars: int = 12) -> Dict[str, Any]:
+def genome_to_unified_config(
+    genome: MACliteGenome, use_v7: bool = False, n_vars: int = 12
+) -> Dict[str, Any]:
     """
     Convert genome to unified configuration (processor + GOLEM hyperparams).
 
@@ -224,70 +261,84 @@ def genome_to_unified_config(genome: MACliteGenome, use_v7: bool = False, n_vars
     lambda_class = GOLEM_LAMBDA_CLASS[lambda_class_idx]
 
     # Processor config (architecture-specific)
-    if processor_type == 'elm':
+    if processor_type == "elm":
         processor_config = {
-            'hidden_dim': ELM_HIDDEN_DIMS[genome.elm_hidden_dim_idx],
-            'n_hidden_nodes': ELM_N_HIDDEN_NODES[genome.elm_n_hidden_nodes_idx],
-            'activation': ELM_ACTIVATIONS[genome.elm_activation_idx],
+            "hidden_dim": ELM_HIDDEN_DIMS[genome.elm_hidden_dim_idx],
+            "n_hidden_nodes": ELM_N_HIDDEN_NODES[genome.elm_n_hidden_nodes_idx],
+            "activation": ELM_ACTIVATIONS[genome.elm_activation_idx],
         }
-    elif processor_type == 'gnn':
+    elif processor_type == "gnn":
         processor_config = {
-            'hidden_dim': GNN_HIDDEN_DIMS[genome.gnn_hidden_dim_idx],
-            'n_layers': GNN_N_LAYERS[genome.gnn_n_layers_idx],
-            'gnn_type': GNN_TYPES[genome.gnn_type_idx],
-            'sage_aggregation': GNN_AGGREGATIONS[genome.gnn_aggregation_idx],
+            "hidden_dim": GNN_HIDDEN_DIMS[genome.gnn_hidden_dim_idx],
+            "n_layers": GNN_N_LAYERS[genome.gnn_n_layers_idx],
+            "gnn_type": GNN_TYPES[genome.gnn_type_idx],
+            "sage_aggregation": GNN_AGGREGATIONS[genome.gnn_aggregation_idx],
         }
-    elif processor_type == 'mamba':
+    elif processor_type == "mamba":
         processor_config = {
-            'd_model': MAMBA_D_MODELS[genome.mamba_d_model_idx],
-            'd_state': MAMBA_D_STATES[genome.mamba_d_state_idx],
-            'd_conv': MAMBA_D_CONVS[genome.mamba_d_conv_idx],
-            'expand': MAMBA_EXPANDS[genome.mamba_expand_idx],
+            "d_model": MAMBA_D_MODELS[genome.mamba_d_model_idx],
+            "d_state": MAMBA_D_STATES[genome.mamba_d_state_idx],
+            "d_conv": MAMBA_D_CONVS[genome.mamba_d_conv_idx],
+            "expand": MAMBA_EXPANDS[genome.mamba_expand_idx],
         }
-    elif processor_type == 'mlp':
+    elif processor_type == "mlp":
         # Use Transformer indices for MLP (we don't have dedicated MLP genes)
         processor_config = {
-            'hidden_dim': MLP_HIDDEN_DIMS[genome.transformer_d_model_idx % len(MLP_HIDDEN_DIMS)],
-            'n_layers': MLP_N_LAYERS[genome.transformer_n_layers_idx % len(MLP_N_LAYERS)],
-            'activation': MLP_ACTIVATIONS[genome.transformer_n_heads_idx % len(MLP_ACTIVATIONS)],
+            "hidden_dim": MLP_HIDDEN_DIMS[genome.transformer_d_model_idx % len(MLP_HIDDEN_DIMS)],
+            "n_layers": MLP_N_LAYERS[genome.transformer_n_layers_idx % len(MLP_N_LAYERS)],
+            "activation": MLP_ACTIVATIONS[genome.transformer_n_heads_idx % len(MLP_ACTIVATIONS)],
         }
-    elif processor_type == 'transformer':
+    elif processor_type == "transformer":
         processor_config = {
-            'd_model': TRANSFORMER_D_MODELS[genome.transformer_d_model_idx],
-            'n_heads': TRANSFORMER_N_HEADS[genome.transformer_n_heads_idx],
-            'n_layers': TRANSFORMER_N_LAYERS[genome.transformer_n_layers_idx],
-            'd_ff': TRANSFORMER_D_FFS[genome.transformer_d_ff_idx],
+            "d_model": TRANSFORMER_D_MODELS[genome.transformer_d_model_idx],
+            "n_heads": TRANSFORMER_N_HEADS[genome.transformer_n_heads_idx],
+            "n_layers": TRANSFORMER_N_LAYERS[genome.transformer_n_layers_idx],
+            "d_ff": TRANSFORMER_D_FFS[genome.transformer_d_ff_idx],
         }
     else:
         raise ValueError(f"Unknown processor type: {processor_type}")
 
     config = {
-        'processor_type': processor_type,
-        'processor_config': processor_config,
-        'lambda_1': lambda_1,
-        'lambda_2': lambda_2,
-        'lambda_class': lambda_class,
-        'lr': lr,
+        "processor_type": processor_type,
+        "processor_config": processor_config,
+        "lambda_1": lambda_1,
+        "lambda_2": lambda_2,
+        "lambda_class": lambda_class,
+        "lr": lr,
     }
 
     # Add effect estimation parameters if available
     if use_v7:
         # Extract v7 gene indices with defaults for backward compatibility
-        effect_hidden_dim_idx = getattr(genome, 'effect_hidden_dim_idx', 1)  # default: 64
-        effect_embed_dim_idx = getattr(genome, 'effect_embed_dim_idx', 1)  # default: 16
-        lambda_effect_idx = getattr(genome, 'lambda_effect_idx', 1)  # default: 10.0
-        effect_warmup_iter_idx = getattr(genome, 'effect_warmup_iter_idx', 1)  # default: 20
-        lambda_confound_sparse_idx = getattr(genome, 'lambda_confound_sparse_idx', 1)  # default: 0.05
-        lambda_bow_v7_idx = getattr(genome, 'lambda_bow_v7_idx', 1)  # default: 0.3
-        effect_refinement_iters_idx = getattr(genome, 'effect_refinement_iters_idx', 2)  # default: 50
+        effect_hidden_dim_idx = getattr(genome, "effect_hidden_dim_idx", 1)  # default: 64
+        effect_embed_dim_idx = getattr(genome, "effect_embed_dim_idx", 1)  # default: 16
+        lambda_effect_idx = getattr(genome, "lambda_effect_idx", 1)  # default: 10.0
+        effect_warmup_iter_idx = getattr(genome, "effect_warmup_iter_idx", 1)  # default: 20
+        lambda_confound_sparse_idx = getattr(
+            genome, "lambda_confound_sparse_idx", 1
+        )  # default: 0.05
+        lambda_bow_v7_idx = getattr(genome, "lambda_bow_v7_idx", 1)  # default: 0.3
+        effect_refinement_iters_idx = getattr(
+            genome, "effect_refinement_iters_idx", 2
+        )  # default: 50
 
-        config['effect_hidden_dim'] = EFFECT_HIDDEN_DIMS[effect_hidden_dim_idx % len(EFFECT_HIDDEN_DIMS)]
-        config['effect_embed_dim'] = EFFECT_EMBED_DIMS[effect_embed_dim_idx % len(EFFECT_EMBED_DIMS)]
-        config['lambda_effect'] = LAMBDA_EFFECTS[lambda_effect_idx % len(LAMBDA_EFFECTS)]
-        config['effect_warmup_iter'] = EFFECT_WARMUP_ITERS[effect_warmup_iter_idx % len(EFFECT_WARMUP_ITERS)]
-        config['lambda_confound_sparse'] = LAMBDA_CONFOUND_SPARSE[lambda_confound_sparse_idx % len(LAMBDA_CONFOUND_SPARSE)]
-        config['lambda_bow_v7'] = LAMBDA_BOW_V7[lambda_bow_v7_idx % len(LAMBDA_BOW_V7)]
-        config['effect_refinement_iters'] = EFFECT_REFINEMENT_ITERS[effect_refinement_iters_idx % len(EFFECT_REFINEMENT_ITERS)]
+        config["effect_hidden_dim"] = EFFECT_HIDDEN_DIMS[
+            effect_hidden_dim_idx % len(EFFECT_HIDDEN_DIMS)
+        ]
+        config["effect_embed_dim"] = EFFECT_EMBED_DIMS[
+            effect_embed_dim_idx % len(EFFECT_EMBED_DIMS)
+        ]
+        config["lambda_effect"] = LAMBDA_EFFECTS[lambda_effect_idx % len(LAMBDA_EFFECTS)]
+        config["effect_warmup_iter"] = EFFECT_WARMUP_ITERS[
+            effect_warmup_iter_idx % len(EFFECT_WARMUP_ITERS)
+        ]
+        config["lambda_confound_sparse"] = LAMBDA_CONFOUND_SPARSE[
+            lambda_confound_sparse_idx % len(LAMBDA_CONFOUND_SPARSE)
+        ]
+        config["lambda_bow_v7"] = LAMBDA_BOW_V7[lambda_bow_v7_idx % len(LAMBDA_BOW_V7)]
+        config["effect_refinement_iters"] = EFFECT_REFINEMENT_ITERS[
+            effect_refinement_iters_idx % len(EFFECT_REFINEMENT_ITERS)
+        ]
 
     return config
 
@@ -295,6 +346,7 @@ def genome_to_unified_config(genome: MACliteGenome, use_v7: bool = False, n_vars
 # ============================================================================
 # NSGA-II Problem Definition
 # ============================================================================
+
 
 class UnifiedSCDProblem(Problem):
     """
@@ -328,7 +380,7 @@ class UnifiedSCDProblem(Problem):
         use_condition_constraint: bool = True,  # kappa(MB) < condition_threshold
         condition_threshold: float = 100.0,  # Standard ill-conditioning threshold
         # Task type
-        task: str = 'classification',  # 'classification' or 'regression'
+        task: str = "classification",  # 'classification' or 'regression'
         # GOLEM overrides for ablation studies
         golem_overrides: Optional[Dict[str, Any]] = None,
         # Phase 3: Warm-start cache
@@ -410,38 +462,40 @@ class UnifiedSCDProblem(Problem):
         # Bounds (all integer indices)
         xl = np.zeros(n_vars_genome, dtype=int)
         xu_base = [
-            len(PROCESSOR_TYPES) - 1,      # 0: processor_type_idx
-            len(GOLEM_LAMBDA_1) - 1,       # 1: lambda_1_idx
-            len(GOLEM_LAMBDA_2) - 1,       # 2: lambda_2_idx
-            len(GOLEM_LRS) - 1,            # 3: lr_idx
-            len(GOLEM_LAMBDA_CLASS) - 1,   # 4: lambda_class_idx
-            len(MAMBA_D_MODELS) - 1,       # 5
-            len(MAMBA_D_STATES) - 1,       # 6
-            len(MAMBA_D_CONVS) - 1,        # 7
-            len(MAMBA_EXPANDS) - 1,        # 8
-            len(TRANSFORMER_D_MODELS) - 1, # 9
+            len(PROCESSOR_TYPES) - 1,  # 0: processor_type_idx
+            len(GOLEM_LAMBDA_1) - 1,  # 1: lambda_1_idx
+            len(GOLEM_LAMBDA_2) - 1,  # 2: lambda_2_idx
+            len(GOLEM_LRS) - 1,  # 3: lr_idx
+            len(GOLEM_LAMBDA_CLASS) - 1,  # 4: lambda_class_idx
+            len(MAMBA_D_MODELS) - 1,  # 5
+            len(MAMBA_D_STATES) - 1,  # 6
+            len(MAMBA_D_CONVS) - 1,  # 7
+            len(MAMBA_EXPANDS) - 1,  # 8
+            len(TRANSFORMER_D_MODELS) - 1,  # 9
             len(TRANSFORMER_N_HEADS) - 1,  # 10
-            len(TRANSFORMER_N_LAYERS) - 1, # 11
-            len(TRANSFORMER_D_FFS) - 1,    # 12
-            len(GNN_HIDDEN_DIMS) - 1,      # 13
-            len(GNN_N_LAYERS) - 1,         # 14
-            len(GNN_TYPES) - 1,            # 15
-            len(GNN_AGGREGATIONS) - 1,     # 16
-            len(ELM_HIDDEN_DIMS) - 1,      # 17
-            len(ELM_N_HIDDEN_NODES) - 1,   # 18
-            len(ELM_ACTIVATIONS) - 1,      # 19
+            len(TRANSFORMER_N_LAYERS) - 1,  # 11
+            len(TRANSFORMER_D_FFS) - 1,  # 12
+            len(GNN_HIDDEN_DIMS) - 1,  # 13
+            len(GNN_N_LAYERS) - 1,  # 14
+            len(GNN_TYPES) - 1,  # 15
+            len(GNN_AGGREGATIONS) - 1,  # 16
+            len(ELM_HIDDEN_DIMS) - 1,  # 17
+            len(ELM_N_HIDDEN_NODES) - 1,  # 18
+            len(ELM_ACTIVATIONS) - 1,  # 19
         ]
 
         if use_v7:
-            xu_base.extend([
-                len(EFFECT_HIDDEN_DIMS) - 1,    # 20: effect_hidden_dim_idx
-                len(EFFECT_EMBED_DIMS) - 1,     # 21: effect_embed_dim_idx
-                len(LAMBDA_EFFECTS) - 1,        # 22: lambda_effect_idx
-                len(EFFECT_WARMUP_ITERS) - 1,   # 23: effect_warmup_iter_idx
-                len(LAMBDA_CONFOUND_SPARSE) - 1, # 24: lambda_confound_sparse_idx
-                len(LAMBDA_BOW_V7) - 1,         # 25: lambda_bow_v7_idx
-                len(EFFECT_REFINEMENT_ITERS) - 1, # 26: effect_refinement_iters_idx (v7.2)
-            ])
+            xu_base.extend(
+                [
+                    len(EFFECT_HIDDEN_DIMS) - 1,  # 20: effect_hidden_dim_idx
+                    len(EFFECT_EMBED_DIMS) - 1,  # 21: effect_embed_dim_idx
+                    len(LAMBDA_EFFECTS) - 1,  # 22: lambda_effect_idx
+                    len(EFFECT_WARMUP_ITERS) - 1,  # 23: effect_warmup_iter_idx
+                    len(LAMBDA_CONFOUND_SPARSE) - 1,  # 24: lambda_confound_sparse_idx
+                    len(LAMBDA_BOW_V7) - 1,  # 25: lambda_bow_v7_idx
+                    len(EFFECT_REFINEMENT_ITERS) - 1,  # 26: effect_refinement_iters_idx (v7.2)
+                ]
+            )
 
         xu = np.array(xu_base, dtype=int)
 
@@ -483,11 +537,11 @@ class UnifiedSCDProblem(Problem):
             return None
 
         # Define processor speed tiers (fast -> slow)
-        speed_order = ['elm', 'mlp', 'gnn', 'transformer', 'mamba']
+        speed_order = ["elm", "mlp", "gnn", "transformer", "mamba"]
 
         # Find best donor (faster processor with good structure)
         best_donor = None
-        best_fitness = -float('inf')
+        best_fitness = -float("inf")
 
         for donor_type, info in self.structure_pool.items():
             if donor_type == processor_type:
@@ -501,16 +555,17 @@ class UnifiedSCDProblem(Problem):
                 continue
 
             # Only migrate from faster to slower processors
-            if donor_speed < current_speed and info['fitness'] > best_fitness:
-                best_fitness = info['fitness']
+            if donor_speed < current_speed and info["fitness"] > best_fitness:
+                best_fitness = info["fitness"]
                 best_donor = info
 
         if best_donor is not None:
-            return best_donor['A']
+            return best_donor["A"]
         return None
 
-    def _update_structure_pool(self, processor_type: str, A_est: jnp.ndarray,
-                               fitness: float, generation: int):
+    def _update_structure_pool(
+        self, processor_type: str, A_est: jnp.ndarray, fitness: float, generation: int
+    ):
         """
         v11: Update structure pool with best structure per processor type.
         """
@@ -519,11 +574,15 @@ class UnifiedSCDProblem(Problem):
 
         if processor_type not in self.structure_pool:
             self.structure_pool[processor_type] = {
-                'A': A_est, 'fitness': fitness, 'gen': generation
+                "A": A_est,
+                "fitness": fitness,
+                "gen": generation,
             }
-        elif fitness > self.structure_pool[processor_type]['fitness']:
+        elif fitness > self.structure_pool[processor_type]["fitness"]:
             self.structure_pool[processor_type] = {
-                'A': A_est, 'fitness': fitness, 'gen': generation
+                "A": A_est,
+                "fitness": fitness,
+                "gen": generation,
             }
 
     def _evaluate(self, X, out, *args, **kwargs):
@@ -544,13 +603,11 @@ class UnifiedSCDProblem(Problem):
         # Run PC algorithm once for warm-start (cached)
         if self.use_pc_warmstart and self.pc_init is None:
             from jcce.structure_learning.jcce_learner import get_pc_warmstart
+
             if self.verbose:
                 print("Running PC algorithm for warm-start...")
             pc_result = get_pc_warmstart(
-                self.X_train,
-                alpha=0.05,
-                max_cond_size=2,
-                verbose=self.verbose
+                self.X_train, alpha=0.05, max_cond_size=2, verbose=self.verbose
             )
             # PC returns n_vars x n_vars, but v7 needs (n_vars+1) x (n_vars+1)
             # Expand by adding zero row/column for Y (outcome sink constraint)
@@ -561,7 +618,9 @@ class UnifiedSCDProblem(Problem):
             # Y has no outgoing edges (outcome sink)
             if self.verbose:
                 n_pc_edges = int(jnp.sum(pc_result))
-                print(f"PC warm-start complete: {n_pc_edges} edges (expanded to {n_total}x{n_total})\n")
+                print(
+                    f"PC warm-start complete: {n_pc_edges} edges (expanded to {n_total}x{n_total})\n"
+                )
 
         for i in range(pop_size):
             aggressive_memory_cleanup(sleep_time=0)
@@ -572,7 +631,7 @@ class UnifiedSCDProblem(Problem):
                 genome = self._decision_to_genome(decision_vars)
 
                 config = genome_to_unified_config(genome, use_v7=self.use_v7, n_vars=self.n_vars)
-                processor_type = config['processor_type']
+                processor_type = config["processor_type"]
 
                 # Phase 3: Warm-start priority: (1) cache.get → (2) cache.sample → (3) migration → (4) PC → (5) random
                 A_init_to_use = None
@@ -606,72 +665,85 @@ class UnifiedSCDProblem(Problem):
                 )
 
                 # Extract objectives
-                accuracy = metrics['classification_accuracy']
-                sparsity = metrics['mb_sparsity']
-                h_A = metrics.get('structure_h_A', 0.0)
+                accuracy = metrics["classification_accuracy"]
+                sparsity = metrics["mb_sparsity"]
+                h_A = metrics.get("structure_h_A", 0.0)
 
                 # 2 objectives: balanced accuracy + sparsity (h(A) is a constraint)
-                balanced_acc = metrics.get('classification_balanced_accuracy',
-                                           metrics.get('balanced_accuracy', accuracy))
+                balanced_acc = metrics.get(
+                    "classification_balanced_accuracy", metrics.get("balanced_accuracy", accuracy)
+                )
                 F[i, 0] = -balanced_acc  # Negate to maximize
-                F[i, 1] = -sparsity     # Negate to maximize
+                F[i, 1] = -sparsity  # Negate to maximize
 
                 # Compute MB F1 for reporting (not an objective)
                 if self.true_mb is not None:
-                    predicted_mb = metrics.get('markov_blanket', [])
+                    predicted_mb = metrics.get("markov_blanket", [])
                     mb_f1, mb_prec, mb_rec = compute_soft_mb_f1(
                         predicted_mb, self.true_mb, self.n_vars
                     )
-                    metrics['mb_f1'] = mb_f1
-                    metrics['mb_precision'] = mb_prec
-                    metrics['mb_recall'] = mb_rec
+                    metrics["mb_f1"] = mb_f1
+                    metrics["mb_precision"] = mb_prec
+                    metrics["mb_recall"] = mb_rec
 
                 # Negative control penalty (applied to accuracy objective)
                 if self.negative_control_idx is not None:
-                    from jcce.structure_learning.jcce_learner import compute_negative_control_penalty
-                    predicted_mb = metrics.get('markov_blanket', [])
-                    causal_effects = metrics.get('causal_effects', {})
+                    from jcce.structure_learning.jcce_learner import (
+                        compute_negative_control_penalty,
+                    )
+
+                    predicted_mb = metrics.get("markov_blanket", [])
+                    causal_effects = metrics.get("causal_effects", {})
                     nc_penalty, nc_diag = compute_negative_control_penalty(
                         predicted_mb, causal_effects, self.negative_control_idx, verbose=False
                     )
                     # Apply penalty to accuracy objective (reduce fitness if NC detected)
-                    F[i, 0] += nc_penalty  # Makes accuracy worse (more negative = better, so add penalty)
-                    metrics['nc_penalty'] = nc_penalty
-                    metrics['nc_in_mb'] = nc_diag['in_markov_blanket']
+                    F[i, 0] += (
+                        nc_penalty  # Makes accuracy worse (more negative = better, so add penalty)
+                    )
+                    metrics["nc_penalty"] = nc_penalty
+                    metrics["nc_in_mb"] = nc_diag["in_markov_blanket"]
 
                 # Update structure pool for inter-processor migration
-                if 'structure_A_est' in metrics:
+                if "structure_A_est" in metrics:
                     # Compute fitness for migration (weighted combination)
                     migration_fitness = 0.5 * accuracy + 0.3 * sparsity - 0.2 * min(h_A, 1.0)
                     self._update_structure_pool(
-                        processor_type, jnp.array(metrics['structure_A_est']),
-                        migration_fitness, self.current_generation
+                        processor_type,
+                        jnp.array(metrics["structure_A_est"]),
+                        migration_fitness,
+                        self.current_generation,
                     )
 
                     # Phase 3: Populate warm-start cache
                     if self.warm_start_cache is not None:
                         self.warm_start_cache.add(
-                            config, metrics['structure_A_est'],
-                            accuracy, self.current_generation, processor_type
+                            config,
+                            metrics["structure_A_est"],
+                            accuracy,
+                            self.current_generation,
+                            processor_type,
                         )
 
                 # Store full metrics for enhanced results (genome tuple as key)
                 genome_key = tuple(X[i, :].tolist())
                 self.evaluation_cache[genome_key] = {
                     **metrics,
-                    'genome': X[i, :].copy(),
+                    "genome": X[i, :].copy(),
                 }
 
                 if self.verbose:
-                    base_msg = (f"  Eval {i+1}/{pop_size}: {processor_type:12} "
-                                f"bacc={balanced_acc:.3f} spar={sparsity:.3f} h(A)={h_A:.4f}")
+                    base_msg = (
+                        f"  Eval {i + 1}/{pop_size}: {processor_type:12} "
+                        f"bacc={balanced_acc:.3f} spar={sparsity:.3f} h(A)={h_A:.4f}"
+                    )
 
                     if self.use_v7:
-                        effect_loss = metrics.get('effect_loss', 1.0)
+                        effect_loss = metrics.get("effect_loss", 1.0)
                         base_msg += f" eff={effect_loss:.4f}"
 
                     if self.true_mb is not None:
-                        mb_f1 = metrics.get('mb_f1', 0.0)
+                        mb_f1 = metrics.get("mb_f1", 0.0)
                         base_msg += f" F1={mb_f1:.3f}"
 
                     print(base_msg)
@@ -680,9 +752,9 @@ class UnifiedSCDProblem(Problem):
                 aggressive_memory_cleanup(sleep_time=0.01)
 
             except Exception as e:
-                print(f"  Evaluation {i+1}/{pop_size} failed: {e}")
-                F[i, 0] = 0.0    # Worst balanced accuracy (negated, so 0 = worst)
-                F[i, 1] = 0.0    # Worst sparsity (negated, so 0 = worst)
+                print(f"  Evaluation {i + 1}/{pop_size} failed: {e}")
+                F[i, 0] = 0.0  # Worst balanced accuracy (negated, so 0 = worst)
+                F[i, 1] = 0.0  # Worst sparsity (negated, so 0 = worst)
                 aggressive_memory_cleanup(sleep_time=0.05)
 
         self.current_generation += 1
@@ -694,7 +766,9 @@ class UnifiedSCDProblem(Problem):
         # Log migration status periodically
         if self.verbose and self.migration_enabled and len(self.structure_pool) > 0:
             if self.current_generation % self.migration_interval == 0:
-                pool_summary = ", ".join([f"{p}:{info['fitness']:.3f}" for p, info in self.structure_pool.items()])
+                pool_summary = ", ".join(
+                    [f"{p}:{info['fitness']:.3f}" for p, info in self.structure_pool.items()]
+                )
                 print(f"  [Migration pool: {pool_summary}]")
 
         # Cleanup at end of each generation
@@ -713,14 +787,17 @@ class UnifiedSCDProblem(Problem):
             cached = self.evaluation_cache.get(genome_key, {})
 
             # C1: h(A) constraint — feasible when h(A) < 0.1
-            h_A = cached.get('structure_h_A', 1.0)
+            h_A = cached.get("structure_h_A", 1.0)
             G[i, 0] = h_A - 0.1  # Feasible when <= 0
 
             # C2: Condition number constraint (optional)
             if self.use_condition_constraint:
-                mb_indices = cached.get('markov_blanket', [])
+                mb_indices = cached.get("markov_blanket", [])
                 if len(mb_indices) > 1:
-                    from jcce.validation.identifiability_diagnostics import compute_mb_condition_number
+                    from jcce.validation.identifiability_diagnostics import (
+                        compute_mb_condition_number,
+                    )
+
                     X_np = np.array(self.X_train)
                     kappa = compute_mb_condition_number(X_np, mb_indices)
                     G[i, 1] = kappa - self.condition_threshold
@@ -771,13 +848,13 @@ class UnifiedSCDProblem(Problem):
 
         # Add effect estimation genes dynamically (bypass frozen dataclass)
         if self.use_v7 and len(decision_vars) >= 27:
-            object.__setattr__(genome, 'effect_hidden_dim_idx', int(decision_vars[20]))
-            object.__setattr__(genome, 'effect_embed_dim_idx', int(decision_vars[21]))
-            object.__setattr__(genome, 'lambda_effect_idx', int(decision_vars[22]))
-            object.__setattr__(genome, 'effect_warmup_iter_idx', int(decision_vars[23]))
-            object.__setattr__(genome, 'lambda_confound_sparse_idx', int(decision_vars[24]))
-            object.__setattr__(genome, 'lambda_bow_v7_idx', int(decision_vars[25]))
-            object.__setattr__(genome, 'effect_refinement_iters_idx', int(decision_vars[26]))
+            object.__setattr__(genome, "effect_hidden_dim_idx", int(decision_vars[20]))
+            object.__setattr__(genome, "effect_embed_dim_idx", int(decision_vars[21]))
+            object.__setattr__(genome, "lambda_effect_idx", int(decision_vars[22]))
+            object.__setattr__(genome, "effect_warmup_iter_idx", int(decision_vars[23]))
+            object.__setattr__(genome, "lambda_confound_sparse_idx", int(decision_vars[24]))
+            object.__setattr__(genome, "lambda_bow_v7_idx", int(decision_vars[25]))
+            object.__setattr__(genome, "effect_refinement_iters_idx", int(decision_vars[26]))
 
         return genome
 
@@ -797,7 +874,7 @@ def evaluate_genome_unified(
     enable_pruning: bool = False,
     use_v7: bool = False,
     Y_continuous: Optional[jnp.ndarray] = None,  # Continuous Y for effect estimation
-    task: str = 'classification',
+    task: str = "classification",
     golem_overrides: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, float]:
     """
@@ -815,8 +892,8 @@ def evaluate_genome_unified(
 
     # Import here to avoid circular dependency
     from jcce.structure_learning.jcce_learner import (
-        create_processor,
         _learn_structure_legacy,
+        create_processor,
         extract_markov_blanket,
     )
 
@@ -838,10 +915,10 @@ def evaluate_genome_unified(
     n_features_for_processor = n_vars  # X features only
     key, proc_key = random.split(key)
     processor = create_processor(
-        config['processor_type'],
+        config["processor_type"],
         key=proc_key,
         n_features=n_features_for_processor,
-        **config['processor_config']
+        **config["processor_config"],
     )
 
     # Use v7 function with effect estimation if enabled
@@ -852,75 +929,73 @@ def evaluate_genome_unified(
         # Expects X only (not augmented with Y) — Y handled separately
         # Y should be (n_samples, 1) for v7
         Y_for_v7 = Y_for_v4.reshape(-1, 1) if Y_for_v4.ndim == 1 else Y_for_v4
-        A_est_augmented, processor_trained, processor_params, v7_metrics = \
-            learn_structure(
-                data=X,  # Pass X only, not X_augmented
-                Y=Y_for_v7,
-                Y_idx=Y_idx,  # Still n_vars (index of Y in full variable space)
-                processor=processor,
-                key=v7_key,
-                processor_type=config['processor_type'],
-                lambda_1=config['lambda_1'],
-                lambda_2_init=config['lambda_2'],
-                lambda_class=config['lambda_class'],
-                lr=config['lr'],
-                max_iter=max_iter,
-                patience=25,
-                verbose=verbose,
-                A_init=A_init,
-                # Effect parameters
-                effect_hidden_dim=config.get('effect_hidden_dim', 64),
-                effect_embed_dim=config.get('effect_embed_dim', 16),
-                lambda_effect=golem_overrides.get('lambda_effect', config.get('lambda_effect', 10.0)),
-                effect_warmup_iter=config.get('effect_warmup_iter', 20),
-                lambda_confound_sparse=config.get('lambda_confound_sparse', 0.05),
-                lambda_bow=golem_overrides.get('lambda_bow', config.get('lambda_bow_v7', 0.3)),
-                Y_continuous=Y_continuous,
-                effect_refinement_iters=config.get('effect_refinement_iters', 50),
-                n_latent_confounders=config.get('n_latent_confounders', 5),
-                task=task,
-                # Ablation overrides
-                use_adaptive_curriculum=golem_overrides.get('use_adaptive_curriculum', True),
-                curriculum_phase_splits=golem_overrides.get('curriculum_phase_splits', (0.4, 0.8)),
-                lambda_ident=golem_overrides.get('lambda_ident', 0.01),
-                use_amortized_effects=golem_overrides.get('use_amortized_effects', True),
-                use_dragonnet=golem_overrides.get('use_dragonnet', True),
-                use_structural_dml=golem_overrides.get('use_structural_dml', False),
-                use_pcgrad=golem_overrides.get('use_pcgrad', False),
-                enforce_outcome_sink=golem_overrides.get('enforce_outcome_sink', True),
-                freeze_A=golem_overrides.get('freeze_A', False),
-                proc_params_init=None,  # NSGA2 doesn't use SPR transfer; consistent with Optuna interface
-            )
+        A_est_augmented, processor_trained, processor_params, v7_metrics = learn_structure(
+            data=X,  # Pass X only, not X_augmented
+            Y=Y_for_v7,
+            Y_idx=Y_idx,  # Still n_vars (index of Y in full variable space)
+            processor=processor,
+            key=v7_key,
+            processor_type=config["processor_type"],
+            lambda_1=config["lambda_1"],
+            lambda_2_init=config["lambda_2"],
+            lambda_class=config["lambda_class"],
+            lr=config["lr"],
+            max_iter=max_iter,
+            patience=25,
+            verbose=verbose,
+            A_init=A_init,
+            # Effect parameters
+            effect_hidden_dim=config.get("effect_hidden_dim", 64),
+            effect_embed_dim=config.get("effect_embed_dim", 16),
+            lambda_effect=golem_overrides.get("lambda_effect", config.get("lambda_effect", 10.0)),
+            effect_warmup_iter=config.get("effect_warmup_iter", 20),
+            lambda_confound_sparse=config.get("lambda_confound_sparse", 0.05),
+            lambda_bow=golem_overrides.get("lambda_bow", config.get("lambda_bow_v7", 0.3)),
+            Y_continuous=Y_continuous,
+            effect_refinement_iters=config.get("effect_refinement_iters", 50),
+            n_latent_confounders=config.get("n_latent_confounders", 5),
+            task=task,
+            # Ablation overrides
+            use_adaptive_curriculum=golem_overrides.get("use_adaptive_curriculum", True),
+            curriculum_phase_splits=golem_overrides.get("curriculum_phase_splits", (0.4, 0.8)),
+            lambda_ident=golem_overrides.get("lambda_ident", 0.01),
+            use_amortized_effects=golem_overrides.get("use_amortized_effects", True),
+            use_dragonnet=golem_overrides.get("use_dragonnet", True),
+            use_structural_dml=golem_overrides.get("use_structural_dml", False),
+            use_pcgrad=golem_overrides.get("use_pcgrad", False),
+            enforce_outcome_sink=golem_overrides.get("enforce_outcome_sink", True),
+            freeze_A=golem_overrides.get("freeze_A", False),
+            proc_params_init=None,  # NSGA2 doesn't use SPR transfer; consistent with Optuna interface
+        )
         v4_metrics = v7_metrics  # Use same variable name for downstream code
     else:
         # Run v4 unified optimization (legacy path)
         key, v4_key = random.split(key)
-        A_est_augmented, processor_trained, processor_params, v4_metrics = \
-            _learn_structure_legacy(
-                data=X_augmented,
-                Y=Y_for_v4,
-                Y_idx=Y_idx,
-                processor=processor,
-                key=v4_key,
-                processor_type=config['processor_type'],
-                lambda_1=config['lambda_1'],
-                lambda_2_init=config['lambda_2'],
-                lambda_class=config['lambda_class'],
-                lr=config['lr'],
-                max_iter=max_iter,
-                patience=15,
-                verbose=verbose,
-                A_init=A_init,
-                use_spectral_constraint=use_spectral_constraint,
-                enable_pruning=enable_pruning,
-                task=task,
-                lambda_bow=golem_overrides.get('lambda_bow', config.get('lambda_bow', 0.1)),
-            )
+        A_est_augmented, processor_trained, processor_params, v4_metrics = _learn_structure_legacy(
+            data=X_augmented,
+            Y=Y_for_v4,
+            Y_idx=Y_idx,
+            processor=processor,
+            key=v4_key,
+            processor_type=config["processor_type"],
+            lambda_1=config["lambda_1"],
+            lambda_2_init=config["lambda_2"],
+            lambda_class=config["lambda_class"],
+            lr=config["lr"],
+            max_iter=max_iter,
+            patience=15,
+            verbose=verbose,
+            A_init=A_init,
+            use_spectral_constraint=use_spectral_constraint,
+            enable_pruning=enable_pruning,
+            task=task,
+            lambda_bow=golem_overrides.get("lambda_bow", config.get("lambda_bow", 0.1)),
+        )
 
     # Extract Markov Blanket - use the one from v7/v4 metrics which includes confound neighbors
     # Bug fix: Previously used extract_markov_blanket() which excluded confound_neighbors,
     # causing F1 to be computed on a different (smaller) MB than what's printed/intended
-    mb_from_metrics = v4_metrics.get('markov_blanket', [])
+    mb_from_metrics = v4_metrics.get("markov_blanket", [])
     if mb_from_metrics:
         # Use the MB from the training function (includes parents, children, spouses, confound_neighbors)
         mb_indices = jnp.array([idx for idx in mb_from_metrics if idx != Y_idx])
@@ -940,99 +1015,104 @@ def evaluate_genome_unified(
 
     # Use metrics directly from GOLEM (training-data metrics as NSGA-II fitness proxy;
     # proper held-out evaluation happens in unified_cv_evaluation).
-    classification_accuracy = float(v4_metrics.get('classification_accuracy', 0.0))
-    classification_precision = float(v4_metrics.get('precision', 0.0))
-    classification_recall = float(v4_metrics.get('recall', 0.0))
-    classification_f1 = float(v4_metrics.get('f1_score', 0.0))
-    classification_balanced_acc = float(v4_metrics.get('balanced_accuracy', 0.0))
-    classification_roc_auc = float(v4_metrics.get('auc_roc', 0.0))
+    classification_accuracy = float(v4_metrics.get("classification_accuracy", 0.0))
+    classification_precision = float(v4_metrics.get("precision", 0.0))
+    classification_recall = float(v4_metrics.get("recall", 0.0))
+    classification_f1 = float(v4_metrics.get("f1_score", 0.0))
+    classification_balanced_acc = float(v4_metrics.get("balanced_accuracy", 0.0))
+    classification_roc_auc = float(v4_metrics.get("auc_roc", 0.0))
 
     result = {
-        'fitness': 0.7 * classification_accuracy + 0.3 * mb_sparsity,
-        'classification_accuracy': classification_accuracy,
-        'classification_precision': classification_precision,
-        'classification_recall': classification_recall,
-        'classification_f1': classification_f1,
-        'classification_balanced_accuracy': classification_balanced_acc,
-        'classification_roc_auc': classification_roc_auc,
-        'mb_sparsity': mb_sparsity,
-        'mb_size': mb_size,
-        'mb_indices': list(np.array(mb_indices)),
-        'markov_blanket': list(np.array(mb_indices)),
-        'structure_n_edges': v4_metrics.get('n_edges', 0),
-        'structure_h_A': v4_metrics.get('final_h_A', 0.0),
-        'structure_A_est': np.array(A_est_augmented),  # For warm-start caching!
-        'v4_recon_loss': v4_metrics.get('final_recon_loss', 0.0),
-        'v4_class_loss': v4_metrics.get('final_class_loss', 0.0),
-        'v4_iterations': v4_metrics.get('iterations', max_iter),
-        'v4_early_stopped': v4_metrics.get('early_stopped', False),
+        "fitness": 0.7 * classification_accuracy + 0.3 * mb_sparsity,
+        "classification_accuracy": classification_accuracy,
+        "classification_precision": classification_precision,
+        "classification_recall": classification_recall,
+        "classification_f1": classification_f1,
+        "classification_balanced_accuracy": classification_balanced_acc,
+        "classification_roc_auc": classification_roc_auc,
+        "mb_sparsity": mb_sparsity,
+        "mb_size": mb_size,
+        "mb_indices": list(np.array(mb_indices)),
+        "markov_blanket": list(np.array(mb_indices)),
+        "structure_n_edges": v4_metrics.get("n_edges", 0),
+        "structure_h_A": v4_metrics.get("final_h_A", 0.0),
+        "structure_A_est": np.array(A_est_augmented),  # For warm-start caching!
+        "v4_recon_loss": v4_metrics.get("final_recon_loss", 0.0),
+        "v4_class_loss": v4_metrics.get("final_class_loss", 0.0),
+        "v4_iterations": v4_metrics.get("iterations", max_iter),
+        "v4_early_stopped": v4_metrics.get("early_stopped", False),
         # Store processor identity + GOLEM hyperparams for reproducibility
-        'processor_type': config['processor_type'],
-        'processor_config': config['processor_config'],
-        'lambda_1': config['lambda_1'],
-        'lambda_2': config['lambda_2'],
-        'lambda_class': config['lambda_class'],
-        'lr': config['lr'],
+        "processor_type": config["processor_type"],
+        "processor_config": config["processor_config"],
+        "lambda_1": config["lambda_1"],
+        "lambda_2": config["lambda_2"],
+        "lambda_class": config["lambda_class"],
+        "lr": config["lr"],
     }
 
     # Store trained processor + params for post-hoc counterfactual evaluation
     # These are runtime-only (JAX objects, not pickle-safe) — underscore prefix signals this
-    result['_processor'] = processor_trained
-    result['_processor_params'] = processor_params
+    result["_processor"] = processor_trained
+    result["_processor_params"] = processor_params
 
     # Add effect estimation metrics
     if use_v7:
-        result['effect_loss'] = v4_metrics.get('effect_loss', 1.0)
-        result['causal_effects'] = v4_metrics.get('causal_effects', {})
-        result['n_confound_edges'] = v4_metrics.get('n_confound_edges', 0)
-        result['bow_loss'] = v4_metrics.get('bow_loss', 0.0)
-        if 'A_confound' in v4_metrics:
-            result['A_confound'] = np.array(v4_metrics['A_confound'])
+        result["effect_loss"] = v4_metrics.get("effect_loss", 1.0)
+        result["causal_effects"] = v4_metrics.get("causal_effects", {})
+        result["n_confound_edges"] = v4_metrics.get("n_confound_edges", 0)
+        result["bow_loss"] = v4_metrics.get("bow_loss", 0.0)
+        if "A_confound" in v4_metrics:
+            result["A_confound"] = np.array(v4_metrics["A_confound"])
         # Store weighted matrices for DAG visualization
-        if 'A_weights' in v4_metrics:
-            result['A_weights'] = np.array(v4_metrics['A_weights'])
+        if "A_weights" in v4_metrics:
+            result["A_weights"] = np.array(v4_metrics["A_weights"])
         # Training-time diagnostics (gradient cosines, bow-free violations, residual normality)
-        if 'gradient_diagnostics' in v4_metrics:
-            result['gradient_diagnostics'] = v4_metrics['gradient_diagnostics']
-        if 'bow_free_violations' in v4_metrics:
-            result['bow_free_violations'] = v4_metrics['bow_free_violations']
-        if 'residual_normality_pvals' in v4_metrics:
-            result['residual_normality_pvals'] = v4_metrics['residual_normality_pvals']
-        if 'A_confound_weights' in v4_metrics:
-            result['A_confound_weights'] = np.array(v4_metrics['A_confound_weights'])
+        if "gradient_diagnostics" in v4_metrics:
+            result["gradient_diagnostics"] = v4_metrics["gradient_diagnostics"]
+        if "bow_free_violations" in v4_metrics:
+            result["bow_free_violations"] = v4_metrics["bow_free_violations"]
+        if "residual_normality_pvals" in v4_metrics:
+            result["residual_normality_pvals"] = v4_metrics["residual_normality_pvals"]
+        if "A_confound_weights" in v4_metrics:
+            result["A_confound_weights"] = np.array(v4_metrics["A_confound_weights"])
         # Store v7 effect config so CV evaluation detects v7 correctly
         # Without these keys, evaluate_pareto_solution_cv falls back to v4,
         # causing pos_embed shape mismatch for Transformer processors
-        result['effect_hidden_dim'] = config.get('effect_hidden_dim', 64)
-        result['lambda_effect'] = golem_overrides.get('lambda_effect', config.get('lambda_effect', 10.0))
-        result['effect_embed_dim'] = config.get('effect_embed_dim', 16)
-        result['effect_warmup_iter'] = config.get('effect_warmup_iter', 20)
-        result['lambda_confound_sparse'] = config.get('lambda_confound_sparse', 0.05)
-        result['lambda_bow'] = golem_overrides.get('lambda_bow', config.get('lambda_bow_v7', 0.3))
+        result["effect_hidden_dim"] = config.get("effect_hidden_dim", 64)
+        result["lambda_effect"] = golem_overrides.get(
+            "lambda_effect", config.get("lambda_effect", 10.0)
+        )
+        result["effect_embed_dim"] = config.get("effect_embed_dim", 16)
+        result["effect_warmup_iter"] = config.get("effect_warmup_iter", 20)
+        result["lambda_confound_sparse"] = config.get("lambda_confound_sparse", 0.05)
+        result["lambda_bow"] = golem_overrides.get("lambda_bow", config.get("lambda_bow_v7", 0.3))
 
     # Add structure metrics if ground truth available
     if true_graph is not None:
         from jcce.training.metrics import evaluate_structure_recovery
+
         # Compare learned structure (X part only) with ground truth
         A_est_X = np.array(A_est_augmented[:n_vars, :n_vars])
         true_graph_np = np.array(true_graph)
 
         # Ensure same shape
         if A_est_X.shape == true_graph_np.shape:
-            structure_metrics = evaluate_structure_recovery(A_est_X, true_graph_np, compute_sid=True)
-            result['structure_edge_f1'] = structure_metrics['f1']
-            result['structure_edge_precision'] = structure_metrics['precision']
-            result['structure_edge_recall'] = structure_metrics['recall']
-            result['structure_shd'] = structure_metrics['shd']
-            result['structure_sid'] = structure_metrics.get('sid', 0)
-            result['structure_sid_normalized'] = structure_metrics.get('sid_normalized', 0.0)
-            result['structure_tp'] = structure_metrics['tp']
-            result['structure_fp'] = structure_metrics['fp']
-            result['structure_fn'] = structure_metrics['fn']
+            structure_metrics = evaluate_structure_recovery(
+                A_est_X, true_graph_np, compute_sid=True
+            )
+            result["structure_edge_f1"] = structure_metrics["f1"]
+            result["structure_edge_precision"] = structure_metrics["precision"]
+            result["structure_edge_recall"] = structure_metrics["recall"]
+            result["structure_shd"] = structure_metrics["shd"]
+            result["structure_sid"] = structure_metrics.get("sid", 0)
+            result["structure_sid_normalized"] = structure_metrics.get("sid_normalized", 0.0)
+            result["structure_tp"] = structure_metrics["tp"]
+            result["structure_fp"] = structure_metrics["fp"]
+            result["structure_fn"] = structure_metrics["fn"]
 
     # Add MB components if available
-    if 'mb_components' in v4_metrics:
-        result['mb_components'] = v4_metrics['mb_components']
+    if "mb_components" in v4_metrics:
+        result["mb_components"] = v4_metrics["mb_components"]
 
     return result
 
@@ -1040,6 +1120,7 @@ def evaluate_genome_unified(
 # ============================================================================
 # Run NSGA-II
 # ============================================================================
+
 
 def run_nsga2(
     X: jnp.ndarray,
@@ -1062,7 +1143,7 @@ def run_nsga2(
     # Identifiability constraint
     use_condition_constraint: bool = True,  # kappa(MB) < condition_threshold
     condition_threshold: float = 100.0,
-    task: str = 'classification',  # 'classification' or 'regression'
+    task: str = "classification",  # 'classification' or 'regression'
     golem_overrides: Optional[Dict[str, Any]] = None,
     # Phase 3: Warm-start cache
     enable_warm_start: bool = False,
@@ -1081,15 +1162,15 @@ def run_nsga2(
             - evaluation_cache: All evaluations (genome_key → metrics)
     """
     n_obj = 2
-    obj_names = "R², sparsity" if task == 'regression' else "balanced_acc, sparsity"
+    obj_names = "R², sparsity" if task == "regression" else "balanced_acc, sparsity"
     constraint_names = "h(A)<0.1"
     if use_condition_constraint:
         constraint_names += f", kappa<{condition_threshold}"
 
     if verbose:
-        print("="*80)
-        print(f"NSGA-II for Unified Supervised Causal Discovery")
-        print("="*80)
+        print("=" * 80)
+        print("NSGA-II for Unified Supervised Causal Discovery")
+        print("=" * 80)
         print(f"Exploring: {len(PROCESSOR_TYPES)} processors × GOLEM hyperparams")
         print(f"Processors: {', '.join(PROCESSOR_TYPES)}")
         print(f"Population: {pop_size}, Generations: {n_generations}")
@@ -1099,7 +1180,7 @@ def run_nsga2(
         if true_mb is not None:
             print(f"True MB: {true_mb} ({len(true_mb)} features)")
         print(f"Data: X{X.shape}, Y{Y.shape}")
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
     # Create problem
     problem = UnifiedSCDProblem(
@@ -1131,7 +1212,7 @@ def run_nsga2(
         pop_size=pop_size,
         sampling=IntegerRandomSampling(),
         crossover=SBX(prob=0.9, eta=15, vtype=float, repair=None),
-        mutation=PM(prob=1.0/problem.n_var, eta=20, vtype=float, repair=None),
+        mutation=PM(prob=1.0 / problem.n_var, eta=20, vtype=float, repair=None),
         eliminate_duplicates=True,
     )
 
@@ -1156,9 +1237,9 @@ def run_nsga2(
             # Also retrieve h(A) from cache for reporting
             genome_key = tuple(result.X[i, :].tolist())
             cached = problem.evaluation_cache.get(genome_key, {})
-            h_A = cached.get('structure_h_A', 0.0)
-            effect_loss = cached.get('effect_loss', 0.0)
-            mb_f1 = cached.get('mb_f1', 0.0)
+            h_A = cached.get("structure_h_A", 0.0)
+            effect_loss = cached.get("effect_loss", 0.0)
+            mb_f1 = cached.get("mb_f1", 0.0)
 
             # Entry: (balanced_acc, sparsity, h_A, effect_loss, mb_f1) for reporting
             entry = [balanced_acc, spar, h_A, effect_loss, mb_f1]
@@ -1169,11 +1250,12 @@ def run_nsga2(
         print(f"  Cache contains {len(problem.evaluation_cache)} evaluated solutions")
         fallback_solutions = []
         for genome_key, metrics in problem.evaluation_cache.items():
-            h_A = metrics.get('structure_h_A', 1.0)
+            h_A = metrics.get("structure_h_A", 1.0)
             if h_A <= 0.1:  # feasible
-                bacc = metrics.get('classification_balanced_accuracy',
-                                   metrics.get('balanced_accuracy', 0.0))
-                spar = metrics.get('mb_sparsity', 0.0)
+                bacc = metrics.get(
+                    "classification_balanced_accuracy", metrics.get("balanced_accuracy", 0.0)
+                )
+                spar = metrics.get("mb_sparsity", 0.0)
                 fallback_solutions.append((bacc, spar, h_A, metrics))
         # Non-dominated sort: remove dominated solutions (Deb et al. 2002)
         # A solution (bacc_a, spar_a) dominates (bacc_b, spar_b) if
@@ -1182,7 +1264,12 @@ def run_nsga2(
         for i, (bacc_i, spar_i, _, _) in enumerate(fallback_solutions):
             dominated = False
             for j, (bacc_j, spar_j, _, _) in enumerate(fallback_solutions):
-                if i != j and bacc_j >= bacc_i and spar_j >= spar_i and (bacc_j > bacc_i or spar_j > spar_i):
+                if (
+                    i != j
+                    and bacc_j >= bacc_i
+                    and spar_j >= spar_i
+                    and (bacc_j > bacc_i or spar_j > spar_i)
+                ):
                     dominated = True
                     break
             if not dominated:
@@ -1191,26 +1278,30 @@ def run_nsga2(
         fallback_solutions.sort(key=lambda x: -x[0])
         print(f"  Found {len(fallback_solutions)} non-dominated feasible solutions in cache")
         for bacc, spar, h_A, metrics in fallback_solutions:
-            effect_loss = metrics.get('effect_loss', 0.0)
-            mb_f1 = metrics.get('mb_f1', 0.0)
+            effect_loss = metrics.get("effect_loss", 0.0)
+            mb_f1 = metrics.get("mb_f1", 0.0)
             pareto_front.append((bacc, spar, h_A, effect_loss, mb_f1))
 
     if verbose:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print(f"NSGA-II Complete! Pareto Front: {len(pareto_front)} solutions")
-        print("="*80)
+        print("=" * 80)
 
         # Pareto front display
-        header = f"{'#':<5} {'BalAcc':<10} {'Sparsity':<10} {'h(A)':<12} {'EffLoss':<10} {'MB_F1':<8}"
+        header = (
+            f"{'#':<5} {'BalAcc':<10} {'Sparsity':<10} {'h(A)':<12} {'EffLoss':<10} {'MB_F1':<8}"
+        )
         print(header)
-        print("-"*60)
+        print("-" * 60)
 
         for i, entry in enumerate(pareto_front):
-            row = (f"{i+1:<5} {entry[0]:<10.4f} {entry[1]:<10.4f} "
-                   f"{entry[2]:<12.6f} {entry[3]:<10.4f} {entry[4]:<8.3f}")
+            row = (
+                f"{i + 1:<5} {entry[0]:<10.4f} {entry[1]:<10.4f} "
+                f"{entry[2]:<12.6f} {entry[3]:<10.4f} {entry[4]:<8.3f}"
+            )
             print(row)
 
-        print("="*80 + "\n")
+        print("=" * 80 + "\n")
 
     # Build enhanced solution data for Pareto front
     enhanced_solutions = []
@@ -1219,32 +1310,39 @@ def run_nsga2(
             genome_key = tuple(result.X[i, :].tolist())
             if genome_key in problem.evaluation_cache:
                 metrics = problem.evaluation_cache[genome_key]
-                enhanced_solutions.append({
-                    'genome': result.X[i, :],
-                    'objectives': result.F[i, :],
-                    'metrics': metrics,
-                })
+                enhanced_solutions.append(
+                    {
+                        "genome": result.X[i, :],
+                        "objectives": result.F[i, :],
+                        "metrics": metrics,
+                    }
+                )
             else:
                 # Fallback if not in cache (shouldn't happen)
-                enhanced_solutions.append({
-                    'genome': result.X[i, :],
-                    'objectives': result.F[i, :],
-                    'metrics': None,
-                })
+                enhanced_solutions.append(
+                    {
+                        "genome": result.X[i, :],
+                        "objectives": result.F[i, :],
+                        "metrics": None,
+                    }
+                )
     else:
         # Reconstruct from cache (matches fallback pareto_front above)
         for genome_key, metrics in problem.evaluation_cache.items():
-            h_A = metrics.get('structure_h_A', 1.0)
+            h_A = metrics.get("structure_h_A", 1.0)
             if h_A <= 0.1:
-                genome = metrics.get('genome', np.array(list(genome_key)))
-                bacc = metrics.get('classification_balanced_accuracy',
-                                   metrics.get('balanced_accuracy', 0.0))
-                spar = metrics.get('mb_sparsity', 0.0)
-                enhanced_solutions.append({
-                    'genome': genome,
-                    'objectives': np.array([-bacc, -spar]),
-                    'metrics': metrics,
-                })
+                genome = metrics.get("genome", np.array(list(genome_key)))
+                bacc = metrics.get(
+                    "classification_balanced_accuracy", metrics.get("balanced_accuracy", 0.0)
+                )
+                spar = metrics.get("mb_sparsity", 0.0)
+                enhanced_solutions.append(
+                    {
+                        "genome": genome,
+                        "objectives": np.array([-bacc, -spar]),
+                        "metrics": metrics,
+                    }
+                )
 
     # Post-hoc filtering: NSGA-II already filters via constraint, but apply
     # threshold again for extra safety.
@@ -1253,18 +1351,20 @@ def run_nsga2(
     invalid_count = 0
 
     for sol in enhanced_solutions:
-        metrics = sol.get('metrics', {})
+        metrics = sol.get("metrics", {})
         if metrics is None:
             metrics = {}
-        h_A = metrics.get('structure_h_A', 1.0)
+        h_A = metrics.get("structure_h_A", 1.0)
         if h_A <= H_A_THRESHOLD:
             valid_solutions.append(sol)
         else:
             invalid_count += 1
 
     if verbose and invalid_count > 0:
-        print(f"\n[Post-filter] Removed {invalid_count}/{len(enhanced_solutions)} "
-              f"solutions with h(A) > {H_A_THRESHOLD}")
+        print(
+            f"\n[Post-filter] Removed {invalid_count}/{len(enhanced_solutions)} "
+            f"solutions with h(A) > {H_A_THRESHOLD}"
+        )
 
     if len(valid_solutions) > 0:
         enhanced_solutions = valid_solutions
@@ -1278,12 +1378,12 @@ def run_nsga2(
     pareto_front = valid_pareto_front if valid_pareto_front else pareto_front
 
     return {
-        'X': result.X,
-        'F': result.F,
-        'pareto_front': pareto_front,
-        'result': result,
-        'use_v7': use_v7,
-        'true_mb': true_mb,
-        'enhanced_solutions': enhanced_solutions,
-        'evaluation_cache': problem.evaluation_cache,
+        "X": result.X,
+        "F": result.F,
+        "pareto_front": pareto_front,
+        "result": result,
+        "use_v7": use_v7,
+        "true_mb": true_mb,
+        "enhanced_solutions": enhanced_solutions,
+        "evaluation_cache": problem.evaluation_cache,
     }

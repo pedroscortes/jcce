@@ -10,9 +10,10 @@ Usage:
     A_diffan = run_diffan(X)               # (d, d) numpy array
 """
 
-import numpy as np
 import time
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
+
+import numpy as np
 
 
 def run_sdcd(
@@ -38,40 +39,46 @@ def run_sdcd(
     """
     import os
     import sys
+
     import pandas as pd
 
     # Fix NumPy 2.0 compatibility for SDCD (uses deprecated aliases)
     for attr, replacement in [
-        ('float_', 'float64'), ('int_', 'int64'), ('complex_', 'complex128'),
-        ('object_', 'object_'), ('bool_', 'bool_'), ('str_', 'str_'),
-        ('long', 'int64'), ('unicode_', 'str_'),
+        ("float_", "float64"),
+        ("int_", "int64"),
+        ("complex_", "complex128"),
+        ("object_", "object_"),
+        ("bool_", "bool_"),
+        ("str_", "str_"),
+        ("long", "int64"),
+        ("unicode_", "str_"),
     ]:
         if not hasattr(np, attr):
             setattr(np, attr, getattr(np, replacement))
 
     # Mock wandb (SDCD dependency, has compatibility issues with our env)
-    os.environ['WANDB_DISABLED'] = 'true'
-    if 'wandb' not in sys.modules:
-        mock_wandb = type(sys)('wandb')
+    os.environ["WANDB_DISABLED"] = "true"
+    if "wandb" not in sys.modules:
+        mock_wandb = type(sys)("wandb")
         mock_wandb.init = lambda *a, **k: None
         mock_wandb.log = lambda *a, **k: None
         mock_wandb.finish = lambda *a, **k: None
-        sys.modules['wandb'] = mock_wandb
+        sys.modules["wandb"] = mock_wandb
 
     from sdcd import SDCD
     from sdcd.utils import create_intervention_dataset
 
     n, d = X.shape
     if feature_names is None:
-        feature_names = [f'x{i}' for i in range(d)]
+        feature_names = [f"x{i}" for i in range(d)]
 
     t0 = time.time()
 
     # Wrap as DataFrame with observational labels
     df = pd.DataFrame(X, columns=feature_names)
-    df['perturbation_label'] = 'obs'
+    df["perturbation_label"] = "obs"
 
-    dataset = create_intervention_dataset(df, perturbation_colname='perturbation_label')
+    dataset = create_intervention_dataset(df, perturbation_colname="perturbation_label")
 
     # Train SDCD
     model = SDCD()
@@ -93,16 +100,18 @@ def run_sdcd(
     A_continuous = np.array(A_continuous).astype(float)
 
     info = {
-        'algo': 'sdcd',
-        'time': elapsed,
-        'n_edges_binary': int(np.sum(A_binary)),
-        'n_edges_continuous': int(np.sum(np.abs(A_continuous) > 0.01)),
-        'A_continuous': A_continuous,
+        "algo": "sdcd",
+        "time": elapsed,
+        "n_edges_binary": int(np.sum(A_binary)),
+        "n_edges_continuous": int(np.sum(np.abs(A_continuous) > 0.01)),
+        "A_continuous": A_continuous,
     }
 
     if verbose:
-        print(f"SDCD: {info['n_edges_binary']} edges (binary), "
-              f"{info['n_edges_continuous']} edges (continuous), {elapsed:.1f}s")
+        print(
+            f"SDCD: {info['n_edges_binary']} edges (binary), "
+            f"{info['n_edges_continuous']} edges (continuous), {elapsed:.1f}s"
+        )
 
     return A_binary, info
 
@@ -130,10 +139,10 @@ def run_diffan(
         A_est: Adjacency matrix (n_features, n_features)
         info: Dict with timing, topological order, etc.
     """
-    import sys
-    import subprocess
-    import tempfile
     import json as _json
+    import subprocess
+    import sys
+    import tempfile
 
     n, d = X.shape
     t0 = time.time()
@@ -142,8 +151,8 @@ def run_diffan(
     # already imported with CUDA visible, device mismatches are unavoidable.
     # Solution: run DiffAN in a subprocess with CUDA hidden from the start.
     with tempfile.TemporaryDirectory() as tmpdir:
-        data_path = f'{tmpdir}/X.npy'
-        result_path = f'{tmpdir}/result.json'
+        data_path = f"{tmpdir}/X.npy"
+        result_path = f"{tmpdir}/result.json"
         np.save(data_path, X.astype(np.float64))
 
         script = f'''
@@ -182,22 +191,25 @@ except Exception as e:
 
 json.dump({{"A": A.tolist(), "order": order}}, open("{result_path}", "w"))
 '''
-        env = {**__import__('os').environ, 'CUDA_VISIBLE_DEVICES': '-1'}
+        env = {**__import__("os").environ, "CUDA_VISIBLE_DEVICES": "-1"}
         proc = subprocess.run(
-            [sys.executable, '-c', script],
-            env=env, capture_output=True, text=True, timeout=1800,
+            [sys.executable, "-c", script],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=1800,
         )
         if verbose and proc.stderr:
             # Print only non-warning lines
-            for line in proc.stderr.split('\n'):
-                if 'DiffAN' in line or 'FAILED' in line or 'fallback' in line:
+            for line in proc.stderr.split("\n"):
+                if "DiffAN" in line or "FAILED" in line or "fallback" in line:
                     print(line)
 
         try:
             with open(result_path) as f:
                 res = _json.load(f)
-            A_est = np.array(res['A'])
-            order = res['order']
+            A_est = np.array(res["A"])
+            order = res["order"]
         except (FileNotFoundError, _json.JSONDecodeError):
             raise RuntimeError(
                 f"DiffAN subprocess failed.\nstdout: {proc.stdout[-500:]}\n"
@@ -209,10 +221,10 @@ json.dump({{"A": A.tolist(), "order": order}}, open("{result_path}", "w"))
     A_est = np.array(A_est).astype(float)
 
     info = {
-        'algo': 'diffan',
-        'time': elapsed,
-        'n_edges': int(np.sum(A_est)),
-        'topological_order': order if isinstance(order, list) else list(order),
+        "algo": "diffan",
+        "time": elapsed,
+        "n_edges": int(np.sum(A_est)),
+        "topological_order": order if isinstance(order, list) else list(order),
     }
 
     if verbose:
@@ -241,5 +253,5 @@ def test_baselines():
         print(f"  DiffAN failed: {e}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_baselines()

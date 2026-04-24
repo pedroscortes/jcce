@@ -4,15 +4,17 @@ Training utilities for CausalVAE experiments.
 This module provides training loops and optimization for all 4 experimental variants.
 """
 
+from typing import Dict, Tuple
+
 import jax
 import jax.numpy as jnp
 import optax
-from typing import Dict, Tuple, Any, Optional
 from flax.training import train_state
 
 
 class TrainState(train_state.TrainState):
     """Extended train state with batch statistics."""
+
     key: jax.random.PRNGKey
 
 
@@ -75,10 +77,7 @@ def create_train_state(
     tx = optax.chain(*optimizer_chain)
 
     return TrainState.create(
-        apply_fn=model.apply,
-        params=variables['params'],
-        tx=tx,
-        key=key_forward
+        apply_fn=model.apply, params=variables["params"], tx=tx, key=key_forward
     )
 
 
@@ -118,17 +117,14 @@ def kl_divergence_with_free_bits(
         >>> print(f"Free bits KL: {kl_free_bits:.6f}")  # >= 0.5 * 10 = 5.0
     """
     # Standard KL divergence per sample
-    kl_per_sample = -0.5 * jnp.sum(
-        1 + log_var - mu**2 - jnp.exp(log_var),
-        axis=-1
-    )
+    kl_per_sample = -0.5 * jnp.sum(1 + log_var - mu**2 - jnp.exp(log_var), axis=-1)
     kl_standard = jnp.mean(kl_per_sample)
 
     # Free bits: enforce minimum KL per dimension
     # KL per dimension (sum over batch, keep dimensions separate)
     kl_per_dim = -0.5 * jnp.sum(
         1 + log_var - mu**2 - jnp.exp(log_var),
-        axis=0  # Sum over batch dimension
+        axis=0,  # Sum over batch dimension
     )
 
     # Apply free bits constraint
@@ -184,11 +180,7 @@ def compute_vae_loss(
         ...                                  beta=1.0, free_bits_lambda=0.5)
     """
     # Forward pass
-    x_recon, info = apply_fn(
-        {'params': params},
-        x, A, topo_order, key,
-        training=True
-    )
+    x_recon, info = apply_fn({"params": params}, x, A, topo_order, key, training=True)
 
     # Reconstruction loss (MSE)
     recon_loss = jnp.mean((x - x_recon) ** 2)
@@ -197,9 +189,7 @@ def compute_vae_loss(
     mu_epsilon = info["mu_epsilon"]
     log_var_epsilon = info["log_var_epsilon"]
 
-    kl_div = kl_divergence_with_free_bits(
-        mu_epsilon, log_var_epsilon, free_bits_lambda
-    )
+    kl_div = kl_divergence_with_free_bits(mu_epsilon, log_var_epsilon, free_bits_lambda)
 
     # Total loss
     loss = recon_loss + beta * kl_div
@@ -243,9 +233,7 @@ def train_step(
 
     # Compute loss and gradients
     (loss, metrics), grads = jax.value_and_grad(compute_vae_loss, has_aux=True)(
-        state.params,
-        state.apply_fn,
-        x, A, topo_order, key, beta, free_bits_lambda
+        state.params, state.apply_fn, x, A, topo_order, key, beta, free_bits_lambda
     )
 
     # Update parameters
@@ -276,11 +264,7 @@ def eval_step(
         metrics: Evaluation metrics
     """
     # Forward pass in eval mode (no dropout, deterministic)
-    x_recon, info = state.apply_fn(
-        {'params': state.params},
-        x, A, topo_order, key,
-        training=False
-    )
+    x_recon, info = state.apply_fn({"params": state.params}, x, A, topo_order, key, training=False)
 
     # Compute metrics
     recon_loss = jnp.mean((x - x_recon) ** 2)
@@ -288,10 +272,7 @@ def eval_step(
     mu_epsilon = info["mu_epsilon"]
     log_var_epsilon = info["log_var_epsilon"]
 
-    kl_div = -0.5 * jnp.sum(
-        1 + log_var_epsilon - mu_epsilon**2 - jnp.exp(log_var_epsilon),
-        axis=-1
-    )
+    kl_div = -0.5 * jnp.sum(1 + log_var_epsilon - mu_epsilon**2 - jnp.exp(log_var_epsilon), axis=-1)
     kl_div = jnp.mean(kl_div)
 
     loss = recon_loss + kl_div
@@ -303,8 +284,13 @@ def eval_step(
     }
 
 
-def get_beta_schedule(epoch: int, total_epochs: int, beta_final: float = 1.0,
-                      warmup_epochs: int = 0, beta_start: float = 0.0) -> float:
+def get_beta_schedule(
+    epoch: int,
+    total_epochs: int,
+    beta_final: float = 1.0,
+    warmup_epochs: int = 0,
+    beta_start: float = 0.0,
+) -> float:
     """
     Compute beta (KL weight) with optional annealing to prevent posterior collapse.
 
@@ -397,10 +383,8 @@ def train_epoch(
     }
 
     for i in range(n_batches):
-        batch = train_data[i * batch_size:(i + 1) * batch_size]
-        state, batch_metrics = train_step(
-            state, batch, A, topo_order, beta, free_bits_lambda
-        )
+        batch = train_data[i * batch_size : (i + 1) * batch_size]
+        state, batch_metrics = train_step(state, batch, A, topo_order, beta, free_bits_lambda)
 
         # Accumulate
         for key in epoch_metrics:
@@ -446,7 +430,7 @@ def evaluate(
     key = jax.random.PRNGKey(0)  # Fixed key for eval
 
     for i in range(n_batches):
-        batch = eval_data[i * batch_size:(i + 1) * batch_size]
+        batch = eval_data[i * batch_size : (i + 1) * batch_size]
         batch_metrics = eval_step(state, batch, A, topo_order, key)
 
         # Accumulate

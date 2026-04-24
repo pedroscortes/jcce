@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """Test DiffAN on GPU and CPU to find working configuration."""
+
 import sys
+
 import numpy as np
-sys.path.insert(0, '/tmp/DiffAN')
+
+sys.path.insert(0, "/tmp/DiffAN")
 
 import torch
+
 print(f"PyTorch: {torch.__version__}")
 print(f"CUDA available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"CUDA device: {torch.cuda.get_device_name(0)}")
 
 # Check if DiffAN has a device parameter
-from diffan.diffan import DiffAN
 import inspect
+
+from diffan.diffan import DiffAN
+
 sig = inspect.signature(DiffAN.__init__)
 print(f"\nDiffAN.__init__ params: {list(sig.parameters.keys())}")
 
@@ -27,7 +33,7 @@ X = np.random.randn(200, 5).astype(np.float32)
 print("\n--- Test 1: CPU float32 tensor ---")
 try:
     model = DiffAN(n_nodes=5, masking=True, residue=True, epochs=100)
-    X_cpu = torch.tensor(X, device='cpu')
+    X_cpu = torch.tensor(X, device="cpu")
     A, order = model.fit(X_cpu)
     print(f"  SUCCESS: {int(A.sum())} edges")
 except Exception as e:
@@ -38,7 +44,7 @@ if torch.cuda.is_available():
     print("\n--- Test 2: CUDA float32 tensor ---")
     try:
         model = DiffAN(n_nodes=5, masking=True, residue=True, epochs=100)
-        X_gpu = torch.tensor(X, device='cuda:0')
+        X_gpu = torch.tensor(X, device="cuda:0")
         A, order = model.fit(X_gpu)
         print(f"  SUCCESS: {int(A.sum())} edges")
     except Exception as e:
@@ -49,13 +55,13 @@ if torch.cuda.is_available():
     try:
         model = DiffAN(n_nodes=5, masking=True, residue=True, epochs=100)
         # Try to move internal model to GPU
-        if hasattr(model, 'model'):
-            model.model = model.model.to('cuda:0')
-            print(f"  Moved model.model to cuda:0")
-        if hasattr(model, 'net'):
-            model.net = model.net.to('cuda:0')
-            print(f"  Moved model.net to cuda:0")
-        X_gpu = torch.tensor(X, device='cuda:0')
+        if hasattr(model, "model"):
+            model.model = model.model.to("cuda:0")
+            print("  Moved model.model to cuda:0")
+        if hasattr(model, "net"):
+            model.net = model.net.to("cuda:0")
+            print("  Moved model.net to cuda:0")
+        X_gpu = torch.tensor(X, device="cuda:0")
         A, order = model.fit(X_gpu)
         print(f"  SUCCESS: {int(A.sum())} edges")
     except Exception as e:

@@ -7,17 +7,13 @@ import unittest
 
 import numpy as np
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from jcce.gbs.classical_mb_baselines import (
-    association_score,
-    fast_iamb,
     fisher_z_test,
     generate_linear_sem_data,
     generate_nonlinear_sem_data,
-    hiton_mb,
     iamb,
-    inter_iamb,
     mb_metrics,
     partial_correlation,
     run_all_mb_algorithms,
@@ -164,8 +160,7 @@ class TestIAMB(unittest.TestCase):
 
         # Should include at least the true MB members (high recall)
         metrics = mb_metrics(pred_mb, true_mb)
-        self.assertGreater(metrics['recall'], 0.5,
-                          f"IAMB recall too low: {metrics}")
+        self.assertGreater(metrics["recall"], 0.5, f"IAMB recall too low: {metrics}")
 
     def test_fork_root(self):
         """IAMB finds children of the fork root."""
@@ -175,7 +170,7 @@ class TestIAMB(unittest.TestCase):
         pred_mb = iamb(X, target=0, alpha=0.05)
 
         metrics = mb_metrics(pred_mb, true_mb)
-        self.assertGreater(metrics['recall'], 0.5)
+        self.assertGreater(metrics["recall"], 0.5)
 
     def test_returns_set(self):
         """IAMB returns a set of integers."""
@@ -201,8 +196,7 @@ class TestAllAlgorithms(unittest.TestCase):
 
         for name, pred_mb in results.items():
             metrics = mb_metrics(pred_mb, true_mb)
-            self.assertGreater(metrics['f1'], 0.0,
-                              f"{name} has zero F1 on chain")
+            self.assertGreater(metrics["f1"], 0.0, f"{name} has zero F1 on chain")
 
     def test_all_algorithms_return_correct_type(self):
         """All algorithms return set[int]."""
@@ -220,15 +214,15 @@ class TestAllAlgorithms(unittest.TestCase):
         pred_mb = {0, 1, 3}  # TP=2 (0,1), FP=1 (3), FN=1 (2)
 
         m = mb_metrics(pred_mb, true_mb)
-        self.assertAlmostEqual(m['precision'], 2/3)
-        self.assertAlmostEqual(m['recall'], 2/3)
-        self.assertAlmostEqual(m['f1'], 2/3)
+        self.assertAlmostEqual(m["precision"], 2 / 3)
+        self.assertAlmostEqual(m["recall"], 2 / 3)
+        self.assertAlmostEqual(m["f1"], 2 / 3)
 
     def test_mb_metrics_empty(self):
         """Empty prediction and true MB give perfect score."""
         m = mb_metrics(set(), set())
-        self.assertEqual(m['f1'], 1.0)
+        self.assertEqual(m["f1"], 1.0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

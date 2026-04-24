@@ -25,12 +25,11 @@ Reference: Roadmap Step 3.3 / Experiment 2 (prompts/gbs_mb_roadmap.md)
 """
 
 import sys
-import time
 
 import numpy as np
 from scipy import linalg
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from jcce.gbs.gbs_utils import (
     dequantized_cooccurrence,
@@ -38,10 +37,10 @@ from jcce.gbs.gbs_utils import (
     encode_moralized_to_gbs,
 )
 
-
 # =============================================================================
 # DAG generators with controlled v-structures
 # =============================================================================
+
 
 def make_vstruct_dag(
     d: int,
@@ -102,7 +101,7 @@ def make_vstruct_dag(
 
     # Add some extra edges (not creating new v-structures)
     # Connect some sources to remaining nodes for richer structure
-    for src in source_nodes[:min(3, len(source_nodes))]:
+    for src in source_nodes[: min(3, len(source_nodes))]:
         if remaining:
             target = rng.choice(remaining)
             if A[src, target] == 0:
@@ -130,7 +129,7 @@ def extract_spouse_pairs(A: np.ndarray, threshold: float = 0.1) -> list[tuple]:
         if len(parents) < 2:
             continue
         for i, pa in enumerate(parents):
-            for pb in parents[i + 1:]:
+            for pb in parents[i + 1 :]:
                 # Check no direct edge between spouses
                 if A_bin[pa, pb] == 0 and A_bin[pb, pa] == 0:
                     spouse_triples.append((pa, pb, child))
@@ -158,16 +157,17 @@ def true_markov_blanket(A: np.ndarray, target: int, threshold: float = 0.1) -> d
     spouses -= parents  # don't double-count nodes that are both parent and spouse
 
     return {
-        'parents': parents,
-        'children': children,
-        'spouses': spouses,
-        'all': (parents | children | spouses) - {target},
+        "parents": parents,
+        "children": children,
+        "spouses": spouses,
+        "all": (parents | children | spouses) - {target},
     }
 
 
 # =============================================================================
 # Co-occurrence methods
 # =============================================================================
+
 
 def gbs_raw_cooccurrence(A: np.ndarray) -> np.ndarray:
     """GBS on raw symmetrized DAG (no moralization)."""
@@ -220,8 +220,7 @@ def _topological_sort(A: np.ndarray, threshold: float = 0.1) -> list:
     remaining = set(range(d))
 
     while remaining:
-        ready = [n for n in remaining
-                 if sum(A_bin[p, n] for p in remaining if p != n) == 0]
+        ready = [n for n in remaining if sum(A_bin[p, n] for p in remaining if p != n) == 0]
         if not ready:
             order.extend(sorted(remaining))
             break
@@ -236,10 +235,11 @@ def _topological_sort(A: np.ndarray, threshold: float = 0.1) -> list:
 # Spouse detection evaluation
 # =============================================================================
 
+
 def evaluate_spouse_detection(
     C: np.ndarray,
     spouse_triples: list[tuple],
-    threshold: str = 'auto',
+    threshold: str = "auto",
 ) -> dict:
     """
     Evaluate whether a co-occurrence/similarity matrix detects spouse pairs.
@@ -256,16 +256,16 @@ def evaluate_spouse_detection(
         dict with 'detection_rate', 'detected', 'total', 'scores'.
     """
     if not spouse_triples:
-        return {'detection_rate': 0.0, 'detected': 0, 'total': 0, 'scores': []}
+        return {"detection_rate": 0.0, "detected": 0, "total": 0, "scores": []}
 
     d = C.shape[0]
 
     # Determine threshold
-    if threshold == 'auto':
+    if threshold == "auto":
         off_diag = C[np.triu_indices(d, k=1)]
         nonzero = off_diag[off_diag > 0]
         thresh = np.median(nonzero) if len(nonzero) > 0 else 0.0
-    elif threshold == 'mean':
+    elif threshold == "mean":
         off_diag = C[np.triu_indices(d, k=1)]
         thresh = np.mean(off_diag)
     else:
@@ -280,11 +280,11 @@ def evaluate_spouse_detection(
             detected += 1
 
     return {
-        'detection_rate': detected / len(spouse_triples) if spouse_triples else 0.0,
-        'detected': detected,
-        'total': len(spouse_triples),
-        'scores': scores,
-        'threshold': thresh,
+        "detection_rate": detected / len(spouse_triples) if spouse_triples else 0.0,
+        "detected": detected,
+        "total": len(spouse_triples),
+        "scores": scores,
+        "threshold": thresh,
     }
 
 
@@ -305,10 +305,9 @@ def evaluate_mb_with_breakdown(
     scores = C[target, :].copy()
     scores[target] = 0
 
-    true_mb = mb_info['all']
+    true_mb = mb_info["all"]
     if not true_mb:
-        return {'overall_f1': 0.0, 'parent_recall': 0.0,
-                'child_recall': 0.0, 'spouse_recall': 0.0}
+        return {"overall_f1": 0.0, "parent_recall": 0.0, "child_recall": 0.0, "spouse_recall": 0.0}
 
     if max_mb_size is None:
         max_mb_size = max(len(true_mb) + 2, d // 3)
@@ -327,28 +326,34 @@ def evaluate_mb_with_breakdown(
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
     # Per-type recall
-    parent_recall = (len(predicted & mb_info['parents']) / len(mb_info['parents'])
-                     if mb_info['parents'] else 1.0)
-    child_recall = (len(predicted & mb_info['children']) / len(mb_info['children'])
-                    if mb_info['children'] else 1.0)
-    spouse_recall = (len(predicted & mb_info['spouses']) / len(mb_info['spouses'])
-                     if mb_info['spouses'] else 1.0)
+    parent_recall = (
+        len(predicted & mb_info["parents"]) / len(mb_info["parents"]) if mb_info["parents"] else 1.0
+    )
+    child_recall = (
+        len(predicted & mb_info["children"]) / len(mb_info["children"])
+        if mb_info["children"]
+        else 1.0
+    )
+    spouse_recall = (
+        len(predicted & mb_info["spouses"]) / len(mb_info["spouses"]) if mb_info["spouses"] else 1.0
+    )
 
     return {
-        'overall_f1': f1,
-        'overall_precision': precision,
-        'overall_recall': recall,
-        'parent_recall': parent_recall,
-        'child_recall': child_recall,
-        'spouse_recall': spouse_recall,
-        'predicted_size': len(predicted),
-        'true_size': len(true_mb),
+        "overall_f1": f1,
+        "overall_precision": precision,
+        "overall_recall": recall,
+        "parent_recall": parent_recall,
+        "child_recall": child_recall,
+        "spouse_recall": spouse_recall,
+        "predicted_size": len(predicted),
+        "true_size": len(true_mb),
     }
 
 
 # =============================================================================
 # Main experiment
 # =============================================================================
+
 
 def run_vstruct_experiment(
     d: int,
@@ -360,18 +365,18 @@ def run_vstruct_experiment(
     """
     Run spouse detection across varying v-structure counts and edge strengths.
     """
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  Spouse Detection Experiment  (d={d})")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
-    methods = ['GBS-raw', 'GBS-moral', 'Partial-corr']
+    methods = ["GBS-raw", "GBS-moral", "Partial-corr"]
 
     all_results = {}
 
     for strength_name, edge_range in edge_ranges.items():
-        print(f"\n{'─'*70}")
+        print(f"\n{'─' * 70}")
         print(f"  Edge strength: {strength_name} {edge_range}")
-        print(f"{'─'*70}")
+        print(f"{'─' * 70}")
 
         for n_vs in n_vstructs_list:
             if 3 * n_vs > d:
@@ -398,31 +403,31 @@ def run_vstruct_experiment(
                 C_pcorr = partial_corr_from_sem(A, n_data=2000, seed=seed)
 
                 co_matrices = {
-                    'GBS-raw': C_raw,
-                    'GBS-moral': C_moral,
-                    'Partial-corr': C_pcorr,
+                    "GBS-raw": C_raw,
+                    "GBS-moral": C_moral,
+                    "Partial-corr": C_pcorr,
                 }
 
                 # Spouse detection
                 for mname, C in co_matrices.items():
                     result = evaluate_spouse_detection(C, spouse_triples)
-                    spouse_rates[mname].append(result['detection_rate'])
+                    spouse_rates[mname].append(result["detection_rate"])
 
                 # MB metrics for collider nodes (most interesting targets)
                 collider_nodes = list(range(2 * n_vs, 3 * n_vs))
                 for target in collider_nodes:
                     mb_info = true_markov_blanket(A, target)
-                    if not mb_info['all']:
+                    if not mb_info["all"]:
                         continue
                     for mname, C in co_matrices.items():
                         res = evaluate_mb_with_breakdown(C, target, mb_info)
-                        mb_f1s[mname].append(res['overall_f1'])
-                        spouse_recalls[mname].append(res['spouse_recall'])
+                        mb_f1s[mname].append(res["overall_f1"])
+                        spouse_recalls[mname].append(res["spouse_recall"])
 
             # Print results for this config
             print(f"\n  k={n_vs} v-structures ({len(spouse_rates['GBS-raw'])} instances):")
             print(f"    {'Method':<15} {'Spouse Det':>10} {'Spouse Rec':>10} {'MB F1':>8}")
-            print(f"    {'-'*48}")
+            print(f"    {'-' * 48}")
 
             for mname in methods:
                 sr = np.mean(spouse_rates[mname]) if spouse_rates[mname] else 0.0
@@ -432,9 +437,13 @@ def run_vstruct_experiment(
 
             all_results[config_key] = {
                 mname: {
-                    'spouse_detection': np.mean(spouse_rates[mname]) if spouse_rates[mname] else 0.0,
-                    'spouse_recall': np.mean(spouse_recalls[mname]) if spouse_recalls[mname] else 0.0,
-                    'mb_f1': np.mean(mb_f1s[mname]) if mb_f1s[mname] else 0.0,
+                    "spouse_detection": np.mean(spouse_rates[mname])
+                    if spouse_rates[mname]
+                    else 0.0,
+                    "spouse_recall": np.mean(spouse_recalls[mname])
+                    if spouse_recalls[mname]
+                    else 0.0,
+                    "mb_f1": np.mean(mb_f1s[mname]) if mb_f1s[mname] else 0.0,
                 }
                 for mname in methods
             }
@@ -457,9 +466,9 @@ def main():
     print("    (A⊥B|{everything else} in a v-structure)")
 
     edge_ranges = {
-        'weak':   (0.3, 0.5),
-        'medium': (0.5, 1.0),
-        'strong': (1.0, 2.0),
+        "weak": (0.3, 0.5),
+        "medium": (0.5, 1.0),
+        "strong": (1.0, 2.0),
     }
 
     all_experiment_results = {}
@@ -479,31 +488,28 @@ def main():
     # ==========================================================================
     # Summary tables
     # ==========================================================================
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  SUMMARY: Spouse Detection Rates")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
-    methods = ['GBS-raw', 'GBS-moral', 'Partial-corr']
+    methods = ["GBS-raw", "GBS-moral", "Partial-corr"]
 
-    print(f"\n{'Config':<30}", end='')
+    print(f"\n{'Config':<30}", end="")
     for m in methods:
-        print(f" | {m:>12}", end='')
+        print(f" | {m:>12}", end="")
     print()
     print("-" * (30 + len(methods) * 16))
 
-    agg = {m: {'spouse_det': [], 'spouse_rec': [], 'mb_f1': []}
-           for m in methods}
+    agg = {m: {"spouse_det": [], "spouse_rec": [], "mb_f1": []} for m in methods}
 
     for config_key in sorted(all_experiment_results.keys()):
         row = f"{config_key:<30}"
         for m in methods:
-            v = all_experiment_results[config_key][m]['spouse_detection']
+            v = all_experiment_results[config_key][m]["spouse_detection"]
             row += f" | {v:>12.3f}"
-            agg[m]['spouse_det'].append(v)
-            agg[m]['spouse_rec'].append(
-                all_experiment_results[config_key][m]['spouse_recall'])
-            agg[m]['mb_f1'].append(
-                all_experiment_results[config_key][m]['mb_f1'])
+            agg[m]["spouse_det"].append(v)
+            agg[m]["spouse_rec"].append(all_experiment_results[config_key][m]["spouse_recall"])
+            agg[m]["mb_f1"].append(all_experiment_results[config_key][m]["mb_f1"])
         print(row)
 
     print("-" * (30 + len(methods) * 16))
@@ -513,20 +519,20 @@ def main():
     print(row)
 
     # Spouse recall summary
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  SUMMARY: Spouse Recall in MB Detection")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
-    print(f"\n{'Config':<30}", end='')
+    print(f"\n{'Config':<30}", end="")
     for m in methods:
-        print(f" | {m:>12}", end='')
+        print(f" | {m:>12}", end="")
     print()
     print("-" * (30 + len(methods) * 16))
 
     for config_key in sorted(all_experiment_results.keys()):
         row = f"{config_key:<30}"
         for m in methods:
-            v = all_experiment_results[config_key][m]['spouse_recall']
+            v = all_experiment_results[config_key][m]["spouse_recall"]
             row += f" | {v:>12.3f}"
         print(row)
 
@@ -537,9 +543,9 @@ def main():
     print(row)
 
     # MB F1 summary
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  SUMMARY: Overall MB F1 (collider nodes)")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     row_f1 = f"{'OVERALL MB F1':<30}"
     for m in methods:
@@ -547,13 +553,13 @@ def main():
     print(row_f1)
 
     # Verdict
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  VERDICT: Moralization Effect")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
-    raw_det = np.mean(agg['GBS-raw']['spouse_det'])
-    moral_det = np.mean(agg['GBS-moral']['spouse_det'])
-    pcorr_det = np.mean(agg['Partial-corr']['spouse_det'])
+    raw_det = np.mean(agg["GBS-raw"]["spouse_det"])
+    moral_det = np.mean(agg["GBS-moral"]["spouse_det"])
+    pcorr_det = np.mean(agg["Partial-corr"]["spouse_det"])
     delta_moral = moral_det - raw_det
 
     print(f"  GBS-raw spouse detection:       {raw_det:.3f}")
@@ -565,16 +571,19 @@ def main():
     if delta_moral > 0.1:
         print("  CONFIRMED: Moralization significantly improves spouse detection.")
         if moral_det > raw_det * 1.5:
-            print(f"  Moralization lifts detection by {delta_moral/raw_det*100:.0f}%"
-                  if raw_det > 0.01 else "  Moralization enables detection from near-zero baseline")
+            print(
+                f"  Moralization lifts detection by {delta_moral / raw_det * 100:.0f}%"
+                if raw_det > 0.01
+                else "  Moralization enables detection from near-zero baseline"
+            )
     elif delta_moral > 0.0:
         print("  MARGINAL: Moralization provides small improvement.")
     else:
         print("  UNEXPECTED: Moralization does not improve spouse detection.")
 
-    raw_sr = np.mean(agg['GBS-raw']['spouse_rec'])
-    moral_sr = np.mean(agg['GBS-moral']['spouse_rec'])
-    pcorr_sr = np.mean(agg['Partial-corr']['spouse_rec'])
+    raw_sr = np.mean(agg["GBS-raw"]["spouse_rec"])
+    moral_sr = np.mean(agg["GBS-moral"]["spouse_rec"])
+    pcorr_sr = np.mean(agg["Partial-corr"]["spouse_rec"])
 
     print(f"\n  GBS-raw spouse recall (in MB):       {raw_sr:.3f}")
     print(f"  GBS-moralized spouse recall (in MB):  {moral_sr:.3f}")
@@ -589,5 +598,5 @@ def main():
         print("  → GBS-moralized is a viable complement to partial-corr")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

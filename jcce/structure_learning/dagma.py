@@ -30,10 +30,10 @@ Advantages over NOTEARS:
 - Exact constraint via barrier method
 """
 
+
 import jax
 import jax.numpy as jnp
 import optax
-from typing import Optional
 
 
 def dagma_acyclicity_constraint(W: jnp.ndarray, s: float = 1.0) -> float:
@@ -103,11 +103,7 @@ def dagma_acyclicity_constraint(W: jnp.ndarray, s: float = 1.0) -> float:
     return h
 
 
-def dagma_penalty_loss(
-    W: jnp.ndarray,
-    lambda_dag: float,
-    s: float = 1.0
-) -> float:
+def dagma_penalty_loss(W: jnp.ndarray, lambda_dag: float, s: float = 1.0) -> float:
     """
     Compute DAGMA penalty term for adding to VAE loss.
 
@@ -157,6 +153,7 @@ def is_dag(W: jnp.ndarray, threshold: float = 1e-3) -> bool:
 # Gradient computation (for reference - JAX auto-handles this)
 # =============================================================================
 
+
 def dagma_acyclicity_gradient(W: jnp.ndarray, s: float = 1.0) -> jnp.ndarray:
     """
     Compute gradient of DAGMA constraint w.r.t. W.
@@ -191,11 +188,12 @@ def dagma_acyclicity_gradient(W: jnp.ndarray, s: float = 1.0) -> jnp.ndarray:
 # Optimization schedules (for path-following approach)
 # =============================================================================
 
+
 def get_lambda_schedule(
     n_epochs: int,
     lambda_init: float = 0.0,
     lambda_final: float = 50.0,
-    schedule_type: str = 'linear'
+    schedule_type: str = "linear",
 ) -> jnp.ndarray:
     """
     Generate schedule for DAGMA penalty coefficient λ.
@@ -219,9 +217,9 @@ def get_lambda_schedule(
         >>> lambdas = get_lambda_schedule(100, 0.0, 50.0, 'linear')
         >>> # lambdas[0] = 0.0, lambdas[-1] = 50.0
     """
-    if schedule_type == 'linear':
+    if schedule_type == "linear":
         return jnp.linspace(lambda_init, lambda_final, n_epochs)
-    elif schedule_type == 'exponential':
+    elif schedule_type == "exponential":
         # Avoid log(0)
         if lambda_init == 0.0:
             lambda_init = 1e-3
@@ -237,6 +235,7 @@ def get_lambda_schedule(
 # Full DAGMA Training Algorithm
 # =============================================================================
 
+
 def learn_with_dagma(
     X: jnp.ndarray,
     key: jax.random.PRNGKey,
@@ -248,7 +247,7 @@ def learn_with_dagma(
     learning_rate: float = 1e-3,
     verbose: bool = True,
     A_prior: jnp.ndarray = None,  # NEW: Prior from GA's A_topology
-    lambda_prior: float = 0.1,    # NEW: Prior constraint weight
+    lambda_prior: float = 0.1,  # NEW: Prior constraint weight
 ) -> jnp.ndarray:
     """
     Learn causal structure using DAGMA algorithm.
@@ -301,7 +300,9 @@ def learn_with_dagma(
         print(f"  α_sparse: {alpha_sparse}")
         if A_prior is not None:
             n_prior_edges = int(jnp.sum(A_prior))
-            print(f"  Prior: {n_prior_edges} edges (λ_prior={lambda_prior:.3f}) [Memetic Component]")
+            print(
+                f"  Prior: {n_prior_edges} edges (λ_prior={lambda_prior:.3f}) [Memetic Component]"
+            )
 
     # Training loop
     for iteration in range(n_iterations):
@@ -331,11 +332,11 @@ def learn_with_dagma(
             total_loss = recon_loss + dag_loss + sparse_loss + prior_loss
 
             return total_loss, {
-                'total': total_loss,
-                'recon': recon_loss,
-                'dag': dag_loss,
-                'sparse': sparse_loss,
-                'prior': prior_loss,
+                "total": total_loss,
+                "recon": recon_loss,
+                "dag": dag_loss,
+                "sparse": sparse_loss,
+                "prior": prior_loss,
             }
 
         # Compute gradients and update
@@ -351,9 +352,11 @@ def learn_with_dagma(
             h_val = dagma_acyclicity_constraint(A, s)
             A_norm = jnp.linalg.norm(A)
             A_max = jnp.max(jnp.abs(A))
-            log_str = (f"  Iter {iteration+1:2d}: Loss={metrics['total']:.4f}, "
-                      f"Recon={metrics['recon']:.4f}, h={h_val:.4f}, "
-                      f"||A||={A_norm:.4f}, max|A|={A_max:.4f}")
+            log_str = (
+                f"  Iter {iteration + 1:2d}: Loss={metrics['total']:.4f}, "
+                f"Recon={metrics['recon']:.4f}, h={h_val:.4f}, "
+                f"||A||={A_norm:.4f}, max|A|={A_max:.4f}"
+            )
             if A_prior is not None:
                 log_str += f", Prior={metrics['prior']:.4f}"
             print(log_str)

@@ -21,17 +21,16 @@ References:
 v6.0: Initial implementation following CAUSAL_EFFECT_ESTIMATION_IMPLEMENTATION_PLAN.md
 """
 
-import jax
-import jax.numpy as jnp
-from jax import random
-from flax import linen as nn
-from typing import Dict, Optional, Tuple, NamedTuple
 from dataclasses import dataclass
+from typing import Dict, NamedTuple, Tuple
 
+import jax.numpy as jnp
+from flax import linen as nn
 
 # ============================================================================
 # Effect Heads Module
 # ============================================================================
+
 
 class EffectHeads(nn.Module):
     """
@@ -49,7 +48,9 @@ class EffectHeads(nn.Module):
     dropout_rate: float = 0.1
 
     @nn.compact
-    def __call__(self, augmented_rep: jnp.ndarray, training: bool = True) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    def __call__(
+        self, augmented_rep: jnp.ndarray, training: bool = True
+    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
         """
         Forward pass through effect heads.
 
@@ -64,20 +65,20 @@ class EffectHeads(nn.Module):
             propensity: (batch_size, 1) - Predicted P(T=1|X,L)
         """
         # Y(0) head - potential outcome without treatment
-        y0 = nn.Dense(self.head_hidden_dim, name='y0_dense1')(augmented_rep)
+        y0 = nn.Dense(self.head_hidden_dim, name="y0_dense1")(augmented_rep)
         y0 = nn.relu(y0)
         y0 = nn.Dropout(rate=self.dropout_rate, deterministic=not training)(y0)
-        y0 = nn.Dense(1, name='y0_dense2')(y0)
+        y0 = nn.Dense(1, name="y0_dense2")(y0)
 
         # Y(1) head - potential outcome with treatment
-        y1 = nn.Dense(self.head_hidden_dim, name='y1_dense1')(augmented_rep)
+        y1 = nn.Dense(self.head_hidden_dim, name="y1_dense1")(augmented_rep)
         y1 = nn.relu(y1)
         y1 = nn.Dropout(rate=self.dropout_rate, deterministic=not training)(y1)
-        y1 = nn.Dense(1, name='y1_dense2')(y1)
+        y1 = nn.Dense(1, name="y1_dense2")(y1)
 
         # Propensity head - P(T=1|X,L)
         # Simpler architecture (single linear layer + sigmoid)
-        propensity_logit = nn.Dense(1, name='propensity_dense')(augmented_rep)
+        propensity_logit = nn.Dense(1, name="propensity_dense")(augmented_rep)
         propensity = nn.sigmoid(propensity_logit)
 
         return y0, y1, propensity
@@ -86,6 +87,7 @@ class EffectHeads(nn.Module):
 # ============================================================================
 # Effect Computation Functions
 # ============================================================================
+
 
 def compute_cate(y0: jnp.ndarray, y1: jnp.ndarray) -> jnp.ndarray:
     """
@@ -133,11 +135,7 @@ def compute_att(cate: jnp.ndarray, T: jnp.ndarray) -> jnp.ndarray:
     """
     treated_mask = T > 0.5
     n_treated = jnp.sum(treated_mask)
-    att = jnp.where(
-        n_treated > 0,
-        jnp.sum(cate * treated_mask) / n_treated,
-        0.0
-    )
+    att = jnp.where(n_treated > 0, jnp.sum(cate * treated_mask) / n_treated, 0.0)
     return att
 
 
@@ -145,11 +143,9 @@ def compute_att(cate: jnp.ndarray, T: jnp.ndarray) -> jnp.ndarray:
 # Loss Function Components
 # ============================================================================
 
+
 def compute_factual_outcome_loss(
-    Y: jnp.ndarray,
-    T: jnp.ndarray,
-    y0: jnp.ndarray,
-    y1: jnp.ndarray
+    Y: jnp.ndarray, T: jnp.ndarray, y0: jnp.ndarray, y1: jnp.ndarray
 ) -> jnp.ndarray:
     """
     Compute factual outcome loss.
@@ -181,9 +177,7 @@ def compute_factual_outcome_loss(
 
 
 def compute_propensity_loss(
-    T: jnp.ndarray,
-    propensity: jnp.ndarray,
-    epsilon: float = 1e-7
+    T: jnp.ndarray, propensity: jnp.ndarray, epsilon: float = 1e-7
 ) -> jnp.ndarray:
     """
     Compute propensity score loss (Binary Cross-Entropy).
@@ -200,9 +194,7 @@ def compute_propensity_loss(
     p = jnp.clip(propensity.squeeze(), epsilon, 1 - epsilon)
 
     # Binary cross-entropy
-    L_propensity = -jnp.mean(
-        T * jnp.log(p) + (1 - T) * jnp.log(1 - p)
-    )
+    L_propensity = -jnp.mean(T * jnp.log(p) + (1 - T) * jnp.log(1 - p))
 
     return L_propensity
 
@@ -214,7 +206,7 @@ def compute_targeted_regularization(
     y1: jnp.ndarray,
     propensity: jnp.ndarray,
     epsilon_param: float = 0.0,
-    clip_coef: float = 10.0
+    clip_coef: float = 10.0,
 ) -> jnp.ndarray:
     """
     Compute targeted regularization loss (DragonNet style).
@@ -263,7 +255,7 @@ def compute_effect_losses(
     y0: jnp.ndarray,
     y1: jnp.ndarray,
     propensity: jnp.ndarray,
-    epsilon_param: float = 0.0
+    epsilon_param: float = 0.0,
 ) -> Dict[str, jnp.ndarray]:
     """
     Compute all effect estimation loss components.
@@ -286,9 +278,7 @@ def compute_effect_losses(
     """
     L_outcome = compute_factual_outcome_loss(Y, T, y0, y1)
     L_propensity = compute_propensity_loss(T, propensity)
-    L_targeted = compute_targeted_regularization(
-        Y, T, y0, y1, propensity, epsilon_param
-    )
+    L_targeted = compute_targeted_regularization(Y, T, y0, y1, propensity, epsilon_param)
 
     # Effect statistics
     cate = compute_cate(y0.squeeze(), y1.squeeze())
@@ -296,12 +286,12 @@ def compute_effect_losses(
     cate_std = jnp.std(cate)
 
     return {
-        'L_outcome': L_outcome,
-        'L_propensity': L_propensity,
-        'L_targeted': L_targeted,
-        'ATE': ate,
-        'CATE_std': cate_std,
-        'CATE': cate
+        "L_outcome": L_outcome,
+        "L_propensity": L_propensity,
+        "L_targeted": L_targeted,
+        "ATE": ate,
+        "CATE_std": cate_std,
+        "CATE": cate,
     }
 
 
@@ -309,11 +299,9 @@ def compute_effect_losses(
 # Treatment Selection Protocol
 # ============================================================================
 
+
 def select_treatment_candidates(
-    A_learned: jnp.ndarray,
-    Y_idx: int,
-    threshold: float = 0.1,
-    max_treatments: int = 5
+    A_learned: jnp.ndarray, Y_idx: int, threshold: float = 0.1, max_treatments: int = 5
 ) -> list:
     """
     Select candidate treatment variables from learned causal structure.
@@ -351,11 +339,7 @@ def select_treatment_candidates(
     return [int(idx) for idx in top_indices]
 
 
-def binarize_treatment(
-    X: jnp.ndarray,
-    treatment_idx: int,
-    method: str = 'median'
-) -> jnp.ndarray:
+def binarize_treatment(X: jnp.ndarray, treatment_idx: int, method: str = "median") -> jnp.ndarray:
     """
     Binarize a continuous treatment variable.
 
@@ -369,12 +353,12 @@ def binarize_treatment(
     """
     treatment_values = X[:, treatment_idx]
 
-    if method == 'median':
+    if method == "median":
         threshold = jnp.median(treatment_values)
-    elif method == 'mean':
+    elif method == "mean":
         threshold = jnp.mean(treatment_values)
-    elif method.startswith('threshold:'):
-        threshold = float(method.split(':')[1])
+    elif method.startswith("threshold:"):
+        threshold = float(method.split(":")[1])
     else:
         raise ValueError(f"Unknown binarization method: {method}")
 
@@ -387,11 +371,8 @@ def binarize_treatment(
 # Bow-Free Constraint (L matrix integration)
 # ============================================================================
 
-def compute_bow_free_penalty(
-    A: jnp.ndarray,
-    U: jnp.ndarray,
-    V: jnp.ndarray
-) -> jnp.ndarray:
+
+def compute_bow_free_penalty(A: jnp.ndarray, U: jnp.ndarray, V: jnp.ndarray) -> jnp.ndarray:
     """
     Compute bow-free penalty to prevent simultaneous direct edge and confounding.
 
@@ -432,9 +413,11 @@ def compute_bow_free_penalty(
 # Training Phase Protocol
 # ============================================================================
 
+
 @dataclass
 class TrainingPhase:
     """Training phase configuration."""
+
     name: str
     effect_weight_scale: float
     structure_lr_scale: float
@@ -468,30 +451,25 @@ def get_training_phase(current_step: int, total_steps: int) -> TrainingPhase:
 
     if progress < 0.30:
         return TrainingPhase(
-            name='warmup',
-            effect_weight_scale=0.0,
-            structure_lr_scale=1.0,
-            confounders_lr_scale=1.0
+            name="warmup", effect_weight_scale=0.0, structure_lr_scale=1.0, confounders_lr_scale=1.0
         )
     elif progress < 0.70:
         return TrainingPhase(
-            name='effects',
+            name="effects",
             effect_weight_scale=0.5,
             structure_lr_scale=0.1,
-            confounders_lr_scale=0.5
+            confounders_lr_scale=0.5,
         )
     else:
         return TrainingPhase(
-            name='joint',
-            effect_weight_scale=1.0,
-            structure_lr_scale=0.1,
-            confounders_lr_scale=0.5
+            name="joint", effect_weight_scale=1.0, structure_lr_scale=0.1, confounders_lr_scale=0.5
         )
 
 
 # ============================================================================
 # Adaptive Curriculum
 # ============================================================================
+
 
 @dataclass
 class AdaptiveCurriculumState:
@@ -506,6 +484,7 @@ class AdaptiveCurriculumState:
     This adapts to different datasets - easy problems transition faster,
     hard problems get more structure learning time.
     """
+
     current_phase: int = 1  # 1=structure, 2=classification, 3=effects
     phase_start_iter: int = 0
 
@@ -561,7 +540,7 @@ def detect_plateau(history: list, window: int, threshold: float) -> bool:
 
     # Compute relative variance (coefficient of variation)
     variance = sum((x - mean_val) ** 2 for x in recent) / len(recent)
-    std_dev = variance ** 0.5
+    std_dev = variance**0.5
     relative_var = std_dev / (abs(mean_val) + 1e-8)
 
     return relative_var < threshold
@@ -623,9 +602,11 @@ def update_adaptive_curriculum(
 
         # Convergence signals (h(A) must be non-negative — negative means DAGMA domain violation)
         structure_converged = (
-            (h_A >= 0.0 and h_A < state.h_A_threshold) or  # Strict convergence (valid h)
-            (detect_plateau(state.recon_history, state.plateau_window, state.plateau_threshold)
-             and h_A_reasonable)  # Plateau only counts if h(A) is reasonable
+            (h_A >= 0.0 and h_A < state.h_A_threshold)  # Strict convergence (valid h)
+            or (
+                detect_plateau(state.recon_history, state.plateau_window, state.plateau_threshold)
+                and h_A_reasonable
+            )  # Plateau only counts if h(A) is reasonable
         )
 
         # Forced transition if we've spent too long in phase 1
@@ -647,9 +628,8 @@ def update_adaptive_curriculum(
     # Phase 2 → 3: Classification → Effects
     elif state.current_phase == 2:
         # Convergence signals
-        classification_converged = (
-            accuracy > state.accuracy_threshold or
-            detect_plateau(state.class_history, state.plateau_window, state.plateau_threshold)
+        classification_converged = accuracy > state.accuracy_threshold or detect_plateau(
+            state.class_history, state.plateau_window, state.plateau_threshold
         )
 
         # Don't transition if structure has degraded significantly
@@ -659,8 +639,11 @@ def update_adaptive_curriculum(
         forced_transition = progress >= state.max_phase2_ratio
 
         # Transition if converged (and min iters met) OR forced
-        if ((classification_converged and structure_stable and iters_in_phase >= state.min_phase_iters)
-            or forced_transition):
+        if (
+            classification_converged
+            and structure_stable
+            and iters_in_phase >= state.min_phase_iters
+        ) or forced_transition:
             state.current_phase = 3
             state.phase_start_iter = current_iter
             if verbose:
@@ -669,13 +652,17 @@ def update_adaptive_curriculum(
 
     # Return weights based on current phase
     if state.current_phase == 1:
-        return state, (1.0, 0.5, 0.0)   # Focus on structure (w_class=0.5 enables classification gradients through A)
+        return state, (
+            1.0,
+            0.5,
+            0.0,
+        )  # Focus on structure (w_class=0.5 enables classification gradients through A)
     elif state.current_phase == 2:
-        return state, (0.3, 1.0, 0.3)   # Focus on classification, introduce effects
+        return state, (0.3, 1.0, 0.3)  # Focus on classification, introduce effects
     else:
         # Maintain structure weight at 0.5 to prevent h(A) degradation
         # Previous (0.1, 0.5, 1.0) allowed DAG constraint to drift
-        return state, (0.5, 0.3, 1.0)   # Focus on effects while maintaining structure
+        return state, (0.5, 0.3, 1.0)  # Focus on effects while maintaining structure
 
 
 def get_phase_weights_fixed(progress: float, phase_splits: tuple = (0.4, 0.8)) -> tuple:
@@ -695,17 +682,22 @@ def get_phase_weights_fixed(progress: float, phase_splits: tuple = (0.4, 0.8)) -
     """
     p1, p2 = phase_splits
     if progress < p1:
-        return (1.0, 0.5, 0.0)   # Phase 1: Structure (w_class=0.5 enables classification gradients through A)
+        return (
+            1.0,
+            0.5,
+            0.0,
+        )  # Phase 1: Structure (w_class=0.5 enables classification gradients through A)
     elif progress < p2:
-        return (0.3, 1.0, 0.3)   # Phase 2: Classification
+        return (0.3, 1.0, 0.3)  # Phase 2: Classification
     else:
         # Maintain structure weight at 0.5 to prevent h(A) degradation
-        return (0.5, 0.3, 1.0)   # Phase 3: Effects (maintain structure)
+        return (0.5, 0.3, 1.0)  # Phase 3: Effects (maintain structure)
 
 
 # ============================================================================
 # Valid Adjustment Set Computation (6-LLM Consensus Fix)
 # ============================================================================
+
 
 def compute_valid_adjustment_sets(
     A_weighted: jnp.ndarray,
@@ -769,7 +761,7 @@ def compute_valid_adjustment_sets(
     return adjustment_sets
 
 
-def _get_descendants(A_binary: 'np.ndarray', node: int) -> set:
+def _get_descendants(A_binary: "np.ndarray", node: int) -> set:
     """
     Get all descendants of a node using BFS on the adjacency matrix.
 
@@ -852,13 +844,12 @@ def get_covariate_indices(
 
 DEFAULT_EFFECT_LAMBDAS = {
     # Effect estimation losses
-    'outcome': 1.0,         # Factual outcome MSE
-    'propensity': 0.1,      # Propensity BCE (lower to prevent domination)
-    'targeted': 1.0,        # Targeted regularization
-
+    "outcome": 1.0,  # Factual outcome MSE
+    "propensity": 0.1,  # Propensity BCE (lower to prevent domination)
+    "targeted": 1.0,  # Targeted regularization
     # Latent confounder losses (from L extension)
-    'nuclear': 0.01,        # Nuclear norm (low-rank)
-    'bow': 0.1,             # Bow-free penalty
+    "nuclear": 0.01,  # Nuclear norm (low-rank)
+    "bow": 0.1,  # Bow-free penalty
 }
 
 
@@ -866,8 +857,10 @@ DEFAULT_EFFECT_LAMBDAS = {
 # Utility Functions
 # ============================================================================
 
+
 class EffectEstimates(NamedTuple):
     """Container for effect estimation results."""
+
     ATE: float
     CATE: jnp.ndarray
     CATE_std: float
@@ -877,9 +870,7 @@ class EffectEstimates(NamedTuple):
 
 
 def estimate_effects_from_outputs(
-    y0: jnp.ndarray,
-    y1: jnp.ndarray,
-    propensity: jnp.ndarray
+    y0: jnp.ndarray, y1: jnp.ndarray, propensity: jnp.ndarray
 ) -> EffectEstimates:
     """
     Compute effect estimates from model outputs.
@@ -897,10 +888,5 @@ def estimate_effects_from_outputs(
     cate_std = float(jnp.std(cate))
 
     return EffectEstimates(
-        ATE=ate,
-        CATE=cate,
-        CATE_std=cate_std,
-        y0=y0,
-        y1=y1,
-        propensity=propensity
+        ATE=ate, CATE=cate, CATE_std=cate_std, y0=y0, y1=y1, propensity=propensity
     )

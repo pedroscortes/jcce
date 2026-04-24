@@ -21,24 +21,21 @@ This implementation uses:
     - Efficient matrix operations for CI tests
 """
 
-import jax
-import jax.numpy as jnp
-from jax import random, jit, vmap
-from typing import Optional, Tuple, Set
 from itertools import combinations
-import numpy as np
+from typing import Optional, Tuple
 
+import jax.numpy as jnp
+import numpy as np
+from jax import jit, random
 
 # ============================================================================
 # Partial Correlation for Conditional Independence Testing
 # ============================================================================
 
+
 @jit
 def partial_correlation_jax(
-    data: jnp.ndarray,
-    i: int,
-    j: int,
-    conditioning_set: jnp.ndarray
+    data: jnp.ndarray, i: int, j: int, conditioning_set: jnp.ndarray
 ) -> float:
     """
     Compute partial correlation between variables i and j given conditioning_set.
@@ -84,12 +81,7 @@ def partial_correlation_jax(
     return partial_corr
 
 
-def fisher_z_test(
-    partial_corr: float,
-    n_samples: int,
-    cond_size: int,
-    alpha: float = 0.05
-) -> bool:
+def fisher_z_test(partial_corr: float, n_samples: int, cond_size: int, alpha: float = 0.05) -> bool:
     """
     Fisher's Z-test for testing partial correlation = 0.
 
@@ -121,6 +113,7 @@ def fisher_z_test(
 
     # Critical value for two-tailed test
     from scipy.stats import norm
+
     z_critical = norm.ppf(1 - alpha / 2)
 
     is_independent = z_stat < z_critical
@@ -128,11 +121,7 @@ def fisher_z_test(
 
 
 def conditional_independence_test(
-    data: jnp.ndarray,
-    i: int,
-    j: int,
-    conditioning_set: jnp.ndarray,
-    alpha: float = 0.05
+    data: jnp.ndarray, i: int, j: int, conditioning_set: jnp.ndarray, alpha: float = 0.05
 ) -> bool:
     """
     Test conditional independence: X_i _||_ X_j | X_S.
@@ -159,11 +148,9 @@ def conditional_independence_test(
 # Skeleton Learning (Edge Removal via CI Tests)
 # ============================================================================
 
+
 def learn_skeleton(
-    data: jnp.ndarray,
-    alpha: float = 0.05,
-    max_cond_size: int = 3,
-    verbose: bool = False
+    data: jnp.ndarray, alpha: float = 0.05, max_cond_size: int = 3, verbose: bool = False
 ) -> Tuple[jnp.ndarray, dict]:
     """
     Learn skeleton (undirected graph) via conditional independence tests.
@@ -208,8 +195,7 @@ def learn_skeleton(
                     continue
 
                 # Test conditioning on subsets of neighbors of i (excluding j)
-                neighbors_i = [k for k in range(n_vars)
-                               if skeleton_np[i, k] == 1 and k != j]
+                neighbors_i = [k for k in range(n_vars) if skeleton_np[i, k] == 1 and k != j]
 
                 found = False
                 if len(neighbors_i) >= cond_size:
@@ -227,8 +213,7 @@ def learn_skeleton(
                     continue
 
                 # Also test conditioning on subsets of neighbors of j (excluding i)
-                neighbors_j = [k for k in range(n_vars)
-                               if skeleton_np[j, k] == 1 and k != i]
+                neighbors_j = [k for k in range(n_vars) if skeleton_np[j, k] == 1 and k != i]
 
                 if len(neighbors_j) >= cond_size:
                     for cond_set_tuple in combinations(neighbors_j, cond_size):
@@ -253,11 +238,8 @@ def learn_skeleton(
 # V-Structure (Collider) Detection
 # ============================================================================
 
-def orient_v_structures(
-    skeleton: jnp.ndarray,
-    sepsets: dict,
-    verbose: bool = False
-) -> jnp.ndarray:
+
+def orient_v_structures(skeleton: jnp.ndarray, sepsets: dict, verbose: bool = False) -> jnp.ndarray:
     """
     Orient v-structures (colliders): X -> Z <- Y.
 
@@ -281,7 +263,7 @@ def orient_v_structures(
     pdag = np.where(pdag == 1, -1, 0)
 
     if verbose:
-        print(f"  Orienting v-structures...")
+        print("  Orienting v-structures...")
 
     n_oriented = 0
 
@@ -319,11 +301,8 @@ def orient_v_structures(
 # Meek Orientation Rules
 # ============================================================================
 
-def apply_meek_rules(
-    pdag: jnp.ndarray,
-    max_iter: int = 100,
-    verbose: bool = False
-) -> jnp.ndarray:
+
+def apply_meek_rules(pdag: jnp.ndarray, max_iter: int = 100, verbose: bool = False) -> jnp.ndarray:
     """
     Apply Meek's orientation rules to propagate edge orientations.
 
@@ -351,7 +330,7 @@ def apply_meek_rules(
     pdag_np = np.array(pdag)
 
     if verbose:
-        print(f"  Applying Meek rules...")
+        print("  Applying Meek rules...")
 
     def _is_directed(a, b):
         return pdag_np[a, b] == 1 and pdag_np[b, a] == 0
@@ -401,8 +380,7 @@ def apply_meek_rules(
                 if a == d or not _is_undirected(a, d):
                     continue
                 # Find b, c: both -> d, both -- a, b not adj c
-                parents_d = [v for v in range(n_vars)
-                             if v != a and v != d and _is_directed(v, d)]
+                parents_d = [v for v in range(n_vars) if v != a and v != d and _is_directed(v, d)]
                 for idx_b in range(len(parents_d)):
                     for idx_c in range(idx_b + 1, len(parents_d)):
                         b, c = parents_d[idx_b], parents_d[idx_c]
@@ -445,6 +423,7 @@ def apply_meek_rules(
 # Main PC Algorithm
 # ============================================================================
 
+
 def learn_with_pc(
     data: jnp.ndarray,
     key: random.PRNGKey,
@@ -475,9 +454,9 @@ def learn_with_pc(
         A: (n_vars, n_vars) adjacency matrix (0/1)
     """
     if verbose:
-        print(f"\n{'='*60}")
-        print(f"PC ALGORITHM")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("PC ALGORITHM")
+        print(f"{'=' * 60}")
 
     # Phase 1: Skeleton learning
     skeleton, sepsets = learn_skeleton(data, alpha, max_cond_size, verbose)
@@ -516,6 +495,6 @@ def learn_with_pc(
     if verbose:
         n_edges = int(jnp.sum(A))
         print(f"  Final DAG: {n_edges} directed edges")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     return A

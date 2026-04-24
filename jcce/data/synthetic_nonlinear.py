@@ -15,17 +15,14 @@ Used for:
 3. Understanding when processors help vs hurt
 """
 
-import jax
+from typing import Literal, Tuple
+
 import jax.numpy as jnp
 from jax import random
-import numpy as np
-from typing import Tuple, Optional, Literal
 
 
 def generate_dag_erdos_renyi(
-    n_vars: int,
-    edge_prob: float = 0.3,
-    key: random.PRNGKey = None
+    n_vars: int, edge_prob: float = 0.3, key: random.PRNGKey = None
 ) -> jnp.ndarray:
     """
     Generate random DAG using Erdős-Rényi model.
@@ -68,7 +65,7 @@ def generate_dag_chain(n_vars: int) -> jnp.ndarray:
     """
     A = jnp.zeros((n_vars, n_vars))
     for i in range(n_vars - 1):
-        A = A.at[i, i+1].set(1.0)
+        A = A.at[i, i + 1].set(1.0)
     return A
 
 
@@ -92,7 +89,7 @@ def generate_dag_fork(n_vars: int) -> jnp.ndarray:
 def generate_nonlinear_scm_data(
     A: jnp.ndarray,
     n_samples: int,
-    nonlinearity: Literal['polynomial', 'sigmoidal', 'multiplicative', 'mixed'] = 'sigmoidal',
+    nonlinearity: Literal["polynomial", "sigmoidal", "multiplicative", "mixed"] = "sigmoidal",
     noise_scale: float = 0.5,
     key: random.PRNGKey = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
@@ -136,27 +133,27 @@ def generate_nonlinear_scm_data(
         else:
             # Non-linear function of parents
             X_parents = X[:, parents]  # (n_samples, n_parents)
-            W_parents = A[parents, j]   # (n_parents,) weights
+            W_parents = A[parents, j]  # (n_parents,) weights
 
-            if nonlinearity == 'polynomial':
+            if nonlinearity == "polynomial":
                 # X_j = Σ W_i × X_i² + ε
-                X_j = jnp.sum(W_parents * (X_parents ** 2), axis=1) + noise[:, j]
+                X_j = jnp.sum(W_parents * (X_parents**2), axis=1) + noise[:, j]
 
-            elif nonlinearity == 'sigmoidal':
+            elif nonlinearity == "sigmoidal":
                 # X_j = tanh(Σ W_i × X_i) + ε
                 linear_combination = jnp.sum(W_parents * X_parents, axis=1)
                 X_j = jnp.tanh(linear_combination) + noise[:, j]
 
-            elif nonlinearity == 'multiplicative':
+            elif nonlinearity == "multiplicative":
                 # X_j = (Π X_i^W_i) + ε
                 # Use log-exp trick for numerical stability
                 log_product = jnp.sum(W_parents * jnp.log(jnp.abs(X_parents) + 1e-6), axis=1)
                 X_j = jnp.exp(log_product) + noise[:, j]
 
-            elif nonlinearity == 'mixed':
+            elif nonlinearity == "mixed":
                 # Mix of polynomial and sigmoidal
                 linear_combination = jnp.sum(W_parents * X_parents, axis=1)
-                polynomial_part = jnp.sum(W_parents * (X_parents ** 2), axis=1)
+                polynomial_part = jnp.sum(W_parents * (X_parents**2), axis=1)
                 X_j = 0.5 * jnp.tanh(linear_combination) + 0.5 * polynomial_part + noise[:, j]
 
             else:
@@ -170,8 +167,8 @@ def generate_nonlinear_scm_data(
 def generate_nonlinear_classification_data(
     n_samples: int = 500,
     n_vars: int = 5,
-    graph_type: Literal['chain', 'fork', 'erdos_renyi'] = 'chain',
-    nonlinearity: Literal['polynomial', 'sigmoidal', 'multiplicative', 'mixed'] = 'sigmoidal',
+    graph_type: Literal["chain", "fork", "erdos_renyi"] = "chain",
+    nonlinearity: Literal["polynomial", "sigmoidal", "multiplicative", "mixed"] = "sigmoidal",
     noise_scale: float = 0.5,
     key: random.PRNGKey = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -197,11 +194,11 @@ def generate_nonlinear_classification_data(
     # Generate DAG structure (n_vars + 1 variables, last is target)
     n_total = n_vars + 1
 
-    if graph_type == 'chain':
+    if graph_type == "chain":
         A_full = generate_dag_chain(n_total)
-    elif graph_type == 'fork':
+    elif graph_type == "fork":
         A_full = generate_dag_fork(n_total)
-    elif graph_type == 'erdos_renyi':
+    elif graph_type == "erdos_renyi":
         key, dag_key = random.split(key)
         A_full = generate_dag_erdos_renyi(n_total, edge_prob=0.3, key=dag_key)
     else:
@@ -215,9 +212,7 @@ def generate_nonlinear_classification_data(
 
     # Generate continuous data
     key, data_key = random.split(key)
-    X_full, _ = generate_nonlinear_scm_data(
-        A_full, n_samples, nonlinearity, noise_scale, data_key
-    )
+    X_full, _ = generate_nonlinear_scm_data(A_full, n_samples, nonlinearity, noise_scale, data_key)
 
     # Split into features and target
     X = X_full[:, :-1]  # Features
@@ -236,10 +231,11 @@ def generate_nonlinear_classification_data(
 # Quick Test Functions
 # ============================================================================
 
+
 def test_nonlinear_scm():
     """Quick test of non-linear SCM generator."""
     print("Testing Non-Linear SCM Generator")
-    print("="*60)
+    print("=" * 60)
 
     # Generate chain DAG
     n_vars = 5
@@ -248,25 +244,25 @@ def test_nonlinear_scm():
     print(f"Edges: {int(jnp.sum(jnp.abs(A) > 0))}")
 
     # Test different non-linearities
-    for nonlinearity in ['polynomial', 'sigmoidal', 'multiplicative', 'mixed']:
+    for nonlinearity in ["polynomial", "sigmoidal", "multiplicative", "mixed"]:
         print(f"\nNonlinearity: {nonlinearity}")
         X, _ = generate_nonlinear_scm_data(A, n_samples=100, nonlinearity=nonlinearity)
         print(f"  Data shape: {X.shape}")
         print(f"  Mean: {jnp.mean(X):.3f}, Std: {jnp.std(X):.3f}")
 
     # Test classification data
-    print(f"\nClassification Data:")
+    print("\nClassification Data:")
     X, Y, A_true = generate_nonlinear_classification_data(
-        n_samples=200, n_vars=4, graph_type='chain', nonlinearity='sigmoidal'
+        n_samples=200, n_vars=4, graph_type="chain", nonlinearity="sigmoidal"
     )
     print(f"  X: {X.shape}")
     print(f"  Y: {Y.shape}, classes: {jnp.unique(Y)}")
     print(f"  Y distribution: {jnp.bincount(Y)}")
     print(f"  Ground truth DAG edges: {int(jnp.sum(jnp.abs(A_true) > 0))}")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("[OK] All tests passed!")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_nonlinear_scm()

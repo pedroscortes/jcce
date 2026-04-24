@@ -9,14 +9,15 @@ Validates that:
 5. Performance improvement over loop-based version
 """
 
+import os
+import sys
+import time
+
 import jax
 import jax.numpy as jnp
 from jax import random
-import time
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 def _recon_loop(batch_data, A_curr, proc_params, processor, A_conf=None):
@@ -35,8 +36,10 @@ def _recon_loop(batch_data, A_curr, proc_params, processor, A_conf=None):
 
         X_weighted = batch_data * weights[jnp.newaxis, :]
 
-        if processor.__class__.__name__ == 'GNNAdapter':
-            A_norm = A_curr[:n_v, :n_v] / (jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8)
+        if processor.__class__.__name__ == "GNNAdapter":
+            A_norm = A_curr[:n_v, :n_v] / (
+                jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
+            )
             output = processor.forward(X_weighted, proc_params[j], A=A_norm)
         else:
             output = processor.forward(X_weighted, proc_params[j])
@@ -44,9 +47,7 @@ def _recon_loop(batch_data, A_curr, proc_params, processor, A_conf=None):
         if A_conf is not None:
             confound_weights = jnp.abs(A_conf[:n_v, j])
             confound_weights = confound_weights.at[j].set(0.0)
-            confound_contribution = jnp.sum(
-                batch_data * confound_weights[jnp.newaxis, :], axis=1
-            )
+            confound_contribution = jnp.sum(batch_data * confound_weights[jnp.newaxis, :], axis=1)
             output = output + confound_contribution
 
         mse = jnp.mean((batch_data[:, j] - output) ** 2)
@@ -71,11 +72,15 @@ def _recon_vmap(batch_data, A_curr, proc_params, processor, A_conf=None):
     _arr_keys = sorted(k for k, v in _example_p.items() if isinstance(v, jnp.ndarray))
     _stacked = {k: jnp.stack([proc_params[j][k] for j in range(n_v)]) for k in _arr_keys}
 
-    if processor.__class__.__name__ == 'GNNAdapter':
-        A_norm = A_curr[:n_v, :n_v] / (jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8)
+    if processor.__class__.__name__ == "GNNAdapter":
+        A_norm = A_curr[:n_v, :n_v] / (
+            jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
+        )
+
         def _recon_fwd(X_w_j, arrays_j):
             return processor.forward(X_w_j, {**_meta, **arrays_j}, A=A_norm)
     else:
+
         def _recon_fwd(X_w_j, arrays_j):
             return processor.forward(X_w_j, {**_meta, **arrays_j})
 
@@ -98,7 +103,7 @@ def test_vmap_correctness():
 
     from jcce.structure_learning.jcce_learner import create_processor
 
-    for proc_type in ['elm', 'mlp']:
+    for proc_type in ["elm", "mlp"]:
         n_v = 5
         n_batch = 32
         n_total = n_v + 1
@@ -115,7 +120,9 @@ def test_vmap_correctness():
         loss_loop = _recon_loop(data, A, proc_params, processor)
         loss_vmap = _recon_vmap(data, A, proc_params, processor)
         diff = abs(float(loss_loop) - float(loss_vmap))
-        print(f"  {proc_type:12s} (no confound): loop={float(loss_loop):.8f}  vmap={float(loss_vmap):.8f}  diff={diff:.2e}")
+        print(
+            f"  {proc_type:12s} (no confound): loop={float(loss_loop):.8f}  vmap={float(loss_vmap):.8f}  diff={diff:.2e}"
+        )
         assert diff < 1e-4, f"Mismatch for {proc_type}: {diff}"
 
         # Test with confound matrix
@@ -123,7 +130,9 @@ def test_vmap_correctness():
         loss_loop_c = _recon_loop(data, A, proc_params, processor, A_conf)
         loss_vmap_c = _recon_vmap(data, A, proc_params, processor, A_conf)
         diff_c = abs(float(loss_loop_c) - float(loss_vmap_c))
-        print(f"  {proc_type:12s} (w/ confound): loop={float(loss_loop_c):.8f}  vmap={float(loss_vmap_c):.8f}  diff={diff_c:.2e}")
+        print(
+            f"  {proc_type:12s} (w/ confound): loop={float(loss_loop_c):.8f}  vmap={float(loss_vmap_c):.8f}  diff={diff_c:.2e}"
+        )
         assert diff_c < 1e-4, f"Confound mismatch for {proc_type}: {diff_c}"
 
     print("  PASSED\n")
@@ -137,7 +146,7 @@ def test_vmap_gradients():
 
     from jcce.structure_learning.jcce_learner import create_processor
 
-    for proc_type in ['elm', 'mlp']:
+    for proc_type in ["elm", "mlp"]:
         n_v = 5
         n_batch = 32
         n_total = n_v + 1
@@ -159,8 +168,10 @@ def test_vmap_gradients():
         has_nan_loop = bool(jnp.any(jnp.isnan(grad_loop)))
         has_nan_vmap = bool(jnp.any(jnp.isnan(grad_vmap)))
 
-        print(f"  {proc_type:12s}: loop_grad_norm={loop_norm:.4f}  vmap_grad_norm={vmap_norm:.4f}  "
-              f"max_diff={grad_diff:.2e}  nan_loop={has_nan_loop}  nan_vmap={has_nan_vmap}")
+        print(
+            f"  {proc_type:12s}: loop_grad_norm={loop_norm:.4f}  vmap_grad_norm={vmap_norm:.4f}  "
+            f"max_diff={grad_diff:.2e}  nan_loop={has_nan_loop}  nan_vmap={has_nan_vmap}"
+        )
 
         assert not has_nan_vmap, f"vmap gradient has NaN for {proc_type}"
         assert grad_diff < 1e-3, f"Gradient mismatch for {proc_type}: {grad_diff}"
@@ -181,7 +192,7 @@ def test_vmap_jit_compatible():
     n_total = n_v + 1
     key = random.PRNGKey(42)
 
-    processor = create_processor('elm', random.PRNGKey(0))
+    processor = create_processor("elm", random.PRNGKey(0))
     data = random.normal(key, (n_batch, n_v))
     A = random.normal(key, (n_total, n_total)) * 0.2
     proc_params = [processor.init_params(n_v) for _ in range(n_v)]
@@ -206,7 +217,7 @@ def test_vmap_jit_compatible():
         A_test = A + random.normal(random.PRNGKey(i), A.shape) * 0.01
         loss = jitted_recon(A_test)
 
-    print(f"  5 JIT'd calls completed")
+    print("  5 JIT'd calls completed")
     print("  PASSED\n")
 
 
@@ -226,7 +237,7 @@ def test_vmap_performance():
         n_total = n_v + 1
         key = random.PRNGKey(42)
 
-        processor = create_processor('elm', random.PRNGKey(0))
+        processor = create_processor("elm", random.PRNGKey(0))
         data = random.normal(key, (n_batch, n_v))
         A = random.normal(key, (n_total, n_total)) * 0.2
         proc_params = [processor.init_params(n_v) for _ in range(n_v)]
@@ -272,11 +283,15 @@ def test_vmap_performance():
             vmap_grad_jit(A).block_until_ready()
         vmap_grad_time = (time.perf_counter() - t0) / n_runs
 
-        fwd_ratio = loop_time / vmap_time if vmap_time > 0 else float('inf')
-        grad_ratio = loop_grad_time / vmap_grad_time if vmap_grad_time > 0 else float('inf')
+        fwd_ratio = loop_time / vmap_time if vmap_time > 0 else float("inf")
+        grad_ratio = loop_grad_time / vmap_grad_time if vmap_grad_time > 0 else float("inf")
 
-        print(f"  n_v={n_v:2d} fwd:  loop={loop_time*1000:.3f}ms  vmap={vmap_time*1000:.3f}ms  ratio={fwd_ratio:.2f}x")
-        print(f"  n_v={n_v:2d} grad: loop={loop_grad_time*1000:.3f}ms  vmap={vmap_grad_time*1000:.3f}ms  ratio={grad_ratio:.2f}x")
+        print(
+            f"  n_v={n_v:2d} fwd:  loop={loop_time * 1000:.3f}ms  vmap={vmap_time * 1000:.3f}ms  ratio={fwd_ratio:.2f}x"
+        )
+        print(
+            f"  n_v={n_v:2d} grad: loop={loop_grad_time * 1000:.3f}ms  vmap={vmap_grad_time * 1000:.3f}ms  ratio={grad_ratio:.2f}x"
+        )
 
     print("  DONE\n")
 
@@ -294,7 +309,7 @@ def test_edge_cases():
     n_total = n_v + 1
     key = random.PRNGKey(42)
 
-    processor = create_processor('elm', random.PRNGKey(0))
+    processor = create_processor("elm", random.PRNGKey(0))
     data = random.normal(key, (n_batch, n_v))
     proc_params = [processor.init_params(n_v) for _ in range(n_v)]
 
@@ -325,7 +340,7 @@ def test_edge_cases():
     print("  PASSED\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("VMAP RECONSTRUCTION VALIDATION TEST SUITE")
     print("=" * 60 + "\n")

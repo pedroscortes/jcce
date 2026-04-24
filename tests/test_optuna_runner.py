@@ -5,26 +5,25 @@ Tests PC warm-start seeding, post-hoc CV integration, multi-GPU launcher,
 hypervolume computation, and edge stability.
 """
 
-import pytest
-import numpy as np
 import jax.numpy as jnp
+import numpy as np
 import optuna
+import pytest
 
 from jcce.structure_learning.experiment_runner import (
     create_pc_seed_trials,
     enqueue_seed_trials,
-    run_posthoc_cv,
     run_full_optuna_pipeline,
 )
 from scripts.compare_nsga2_vs_optuna import (
-    compute_hypervolume_2d,
     compute_edge_stability,
+    compute_hypervolume_2d,
 )
-
 
 # ============================================================================
 # Helpers
 # ============================================================================
+
 
 def _make_tiny_data(n_samples=50, n_vars=5, seed=42):
     """Create tiny synthetic data."""
@@ -38,6 +37,7 @@ def _make_tiny_data(n_samples=50, n_vars=5, seed=42):
 # Test: PC warm-start seed trials
 # ============================================================================
 
+
 class TestPCSeedTrials:
     def test_creates_seed_configs(self):
         """PC warm-start generates valid seed configs for each processor."""
@@ -45,7 +45,9 @@ class TestPCSeedTrials:
         X_jax = jnp.array(X)
 
         pc_A_init, seed_configs = create_pc_seed_trials(
-            X_jax, n_seeds=5, verbose=False,
+            X_jax,
+            n_seeds=5,
+            verbose=False,
         )
 
         # PC should return a matrix
@@ -58,25 +60,32 @@ class TestPCSeedTrials:
         # Each config should have processor_type and GOLEM params
         proc_types_seen = set()
         for config in seed_configs:
-            assert 'processor_type' in config
-            assert 'lambda_1' in config
-            assert 'lambda_2' in config
-            assert 'lr' in config
-            proc_types_seen.add(config['processor_type'])
+            assert "processor_type" in config
+            assert "lambda_1" in config
+            assert "lambda_2" in config
+            assert "lr" in config
+            proc_types_seen.add(config["processor_type"])
 
         assert len(proc_types_seen) == 5
 
     def test_enqueue_seed_trials(self):
         """Seed configs can be enqueued into a study."""
         study = optuna.create_study(
-            directions=['maximize', 'maximize'],
+            directions=["maximize", "maximize"],
             sampler=optuna.samplers.RandomSampler(seed=42),
         )
 
         seed_configs = [
-            {'processor_type': 'elm', 'lambda_1': 0.02, 'lambda_2': 0.01,
-             'lr': 0.001, 'lambda_class': 1.0, 'elm_hidden_dim': 64,
-             'elm_n_hidden_nodes': 64, 'elm_activation': 'relu'},
+            {
+                "processor_type": "elm",
+                "lambda_1": 0.02,
+                "lambda_2": 0.01,
+                "lr": 0.001,
+                "lambda_class": 1.0,
+                "elm_hidden_dim": 64,
+                "elm_n_hidden_nodes": 64,
+                "elm_activation": "relu",
+            },
         ]
 
         n_enqueued = enqueue_seed_trials(study, seed_configs, verbose=False)
@@ -86,6 +95,7 @@ class TestPCSeedTrials:
 # ============================================================================
 # Test: Hypervolume computation
 # ============================================================================
+
 
 class TestHypervolume:
     def test_empty_returns_zero(self):
@@ -131,6 +141,7 @@ class TestHypervolume:
 # Test: Edge stability
 # ============================================================================
 
+
 class TestEdgeStability:
     def test_empty_solutions(self):
         """No solutions → zero stability."""
@@ -144,10 +155,7 @@ class TestEdgeStability:
         A = np.zeros((n, n))
         A[0, 1] = 0.5  # Edge 0→1
 
-        solutions = [
-            {'metrics': {'structure_A_est': A.copy()}}
-            for _ in range(5)
-        ]
+        solutions = [{"metrics": {"structure_A_est": A.copy()}} for _ in range(5)]
 
         stability = compute_edge_stability(solutions, n_vars=5, threshold=0.1)
         assert stability[0, 1] == 1.0
@@ -161,7 +169,7 @@ class TestEdgeStability:
             A = np.zeros((n, n))
             if i < 3:
                 A[2, 3] = 0.5
-            solutions.append({'metrics': {'structure_A_est': A}})
+            solutions.append({"metrics": {"structure_A_est": A}})
 
         stability = compute_edge_stability(solutions, n_vars=5, threshold=0.1)
         assert abs(stability[2, 3] - 0.6) < 1e-10
@@ -171,6 +179,7 @@ class TestEdgeStability:
 # Test: Full pipeline (minimal e2e)
 # ============================================================================
 
+
 class TestFullPipeline:
     @pytest.mark.slow
     def test_minimal_pipeline_no_cv(self):
@@ -178,8 +187,11 @@ class TestFullPipeline:
         X, Y = _make_tiny_data(n_samples=50, n_vars=5)
 
         result = run_full_optuna_pipeline(
-            X=X, Y=Y, n_vars=5,
-            n_trials=3, max_iter=10,
+            X=X,
+            Y=Y,
+            n_vars=5,
+            n_trials=3,
+            max_iter=10,
             use_v7=True,
             verbose=True,
             jax_key_seed=42,
@@ -187,12 +199,12 @@ class TestFullPipeline:
             run_cv=False,
         )
 
-        assert 'enhanced_solutions' in result
-        assert 'pipeline_time' in result
-        assert 'pc_A_init' in result
-        assert result['pc_A_init'] is None  # No PC warm-start
-        assert 'cv_results' in result
-        assert result['cv_results'] == []  # No CV
+        assert "enhanced_solutions" in result
+        assert "pipeline_time" in result
+        assert "pc_A_init" in result
+        assert result["pc_A_init"] is None  # No PC warm-start
+        assert "cv_results" in result
+        assert result["cv_results"] == []  # No CV
 
     @pytest.mark.slow
     def test_minimal_pipeline_with_pc(self):
@@ -200,8 +212,11 @@ class TestFullPipeline:
         X, Y = _make_tiny_data(n_samples=50, n_vars=5)
 
         result = run_full_optuna_pipeline(
-            X=X, Y=Y, n_vars=5,
-            n_trials=3, max_iter=10,
+            X=X,
+            Y=Y,
+            n_vars=5,
+            n_trials=3,
+            max_iter=10,
             use_v7=True,
             verbose=True,
             jax_key_seed=42,
@@ -209,5 +224,5 @@ class TestFullPipeline:
             run_cv=False,
         )
 
-        assert result['pc_A_init'] is not None
-        assert result['pc_A_init'].shape == (6, 6)
+        assert result["pc_A_init"] is not None
+        assert result["pc_A_init"].shape == (6, 6)

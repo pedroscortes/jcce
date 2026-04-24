@@ -15,21 +15,24 @@ All processors follow the same interface:
 - Standard Flax nn.Module API
 """
 
+from typing import Any, Dict, Optional
+
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from typing import Dict, Any, Optional
+
+from jcce.models.elm import ELMProcessor as _ELMProcessorBase
+
+# Import GNN and ELM
+from jcce.models.gnn import CausalGNN
 
 # Import existing Mamba implementation
 from jcce.models.mamba import MambaProcessor as _MambaProcessorBase
-# Import GNN and ELM
-from jcce.models.gnn import CausalGNN
-from jcce.models.elm import ELMProcessor as _ELMProcessorBase
-
 
 # ============================================================================
 # Mamba Processor Wrapper
 # ============================================================================
+
 
 class MambaProcessorWrapper(nn.Module):
     """
@@ -47,10 +50,7 @@ class MambaProcessorWrapper(nn.Module):
 
     @nn.compact
     def __call__(
-        self,
-        z: jnp.ndarray,
-        A: Optional[jnp.ndarray] = None,
-        training: bool = False
+        self, z: jnp.ndarray, A: Optional[jnp.ndarray] = None, training: bool = False
     ) -> jnp.ndarray:
         """
         Process latent factors using Mamba.
@@ -67,7 +67,7 @@ class MambaProcessorWrapper(nn.Module):
         z_expanded = z[..., None]  # (B, N, 1)
 
         # Project to d_model
-        z_projected = nn.Dense(self.d_model, name='input_projection')(z_expanded)
+        z_projected = nn.Dense(self.d_model, name="input_projection")(z_expanded)
 
         # Apply Mamba processor
         mamba = _MambaProcessorBase(
@@ -85,6 +85,7 @@ class MambaProcessorWrapper(nn.Module):
 # ============================================================================
 # Transformer Processor
 # ============================================================================
+
 
 class TransformerProcessor(nn.Module):
     """
@@ -111,10 +112,7 @@ class TransformerProcessor(nn.Module):
 
     @nn.compact
     def __call__(
-        self,
-        z: jnp.ndarray,
-        A: Optional[jnp.ndarray] = None,
-        training: bool = False
+        self, z: jnp.ndarray, A: Optional[jnp.ndarray] = None, training: bool = False
     ) -> jnp.ndarray:
         """
         Process latent factors using transformer.
@@ -133,13 +131,11 @@ class TransformerProcessor(nn.Module):
         # Project to d_model
         # (B, N) → (B, N, D)
         x = z[..., None]  # Add feature dimension
-        x = nn.Dense(self.d_model, name='input_projection')(x)
+        x = nn.Dense(self.d_model, name="input_projection")(x)
 
         # Add positional encoding (simple learned embeddings)
         pos_embed = self.param(
-            'pos_embed',
-            nn.initializers.normal(stddev=0.02),
-            (1, n_vars, self.d_model)
+            "pos_embed", nn.initializers.normal(stddev=0.02), (1, n_vars, self.d_model)
         )
         x = x + pos_embed
 
@@ -164,20 +160,20 @@ class TransformerProcessor(nn.Module):
                 qkv_features=self.d_model,
                 out_features=self.d_model,
                 dropout_rate=self.dropout_rate if training else 0.0,
-                name=f'attention_{layer_idx}'
+                name=f"attention_{layer_idx}",
             )(x, x, mask=attn_mask, deterministic=not training)
 
             # Residual + LayerNorm
-            x = nn.LayerNorm(name=f'ln1_{layer_idx}')(x + attn_out)
+            x = nn.LayerNorm(name=f"ln1_{layer_idx}")(x + attn_out)
 
             # Feed-forward network
-            ff_out = nn.Dense(self.d_ff, name=f'ff1_{layer_idx}')(x)
+            ff_out = nn.Dense(self.d_ff, name=f"ff1_{layer_idx}")(x)
             ff_out = nn.gelu(ff_out)
             ff_out = nn.Dropout(rate=self.dropout_rate, deterministic=not training)(ff_out)
-            ff_out = nn.Dense(self.d_model, name=f'ff2_{layer_idx}')(ff_out)
+            ff_out = nn.Dense(self.d_model, name=f"ff2_{layer_idx}")(ff_out)
 
             # Residual + LayerNorm
-            x = nn.LayerNorm(name=f'ln2_{layer_idx}')(x + ff_out)
+            x = nn.LayerNorm(name=f"ln2_{layer_idx}")(x + ff_out)
 
         return x  # (B, N, D)
 
@@ -185,6 +181,7 @@ class TransformerProcessor(nn.Module):
 # ============================================================================
 # LSTM Processor
 # ============================================================================
+
 
 class LSTMProcessor(nn.Module):
     """
@@ -207,10 +204,7 @@ class LSTMProcessor(nn.Module):
 
     @nn.compact
     def __call__(
-        self,
-        z: jnp.ndarray,
-        A: Optional[jnp.ndarray] = None,
-        training: bool = False
+        self, z: jnp.ndarray, A: Optional[jnp.ndarray] = None, training: bool = False
     ) -> jnp.ndarray:
         """
         Process latent factors using LSTM.
@@ -229,14 +223,14 @@ class LSTMProcessor(nn.Module):
         x = z[..., None]
 
         # Project to hidden_size
-        x = nn.Dense(self.hidden_size, name='input_projection')(x)
+        x = nn.Dense(self.hidden_size, name="input_projection")(x)
 
         # Stack LSTM layers
         for layer_idx in range(self.n_layers):
             if self.bidirectional:
                 # Forward LSTM
                 lstm_cell_fwd = nn.LSTMCell(features=self.hidden_size)
-                lstm_fwd = nn.RNN(lstm_cell_fwd, name=f'lstm_fwd_{layer_idx}')
+                lstm_fwd = nn.RNN(lstm_cell_fwd, name=f"lstm_fwd_{layer_idx}")
                 carry_fwd = lstm_cell_fwd.initialize_carry(
                     jax.random.PRNGKey(0), (batch_size, self.hidden_size)
                 )
@@ -244,7 +238,7 @@ class LSTMProcessor(nn.Module):
 
                 # Backward LSTM (reverse sequence)
                 lstm_cell_bwd = nn.LSTMCell(features=self.hidden_size)
-                lstm_bwd = nn.RNN(lstm_cell_bwd, name=f'lstm_bwd_{layer_idx}')
+                lstm_bwd = nn.RNN(lstm_cell_bwd, name=f"lstm_bwd_{layer_idx}")
                 carry_bwd = lstm_cell_bwd.initialize_carry(
                     jax.random.PRNGKey(0), (batch_size, self.hidden_size)
                 )
@@ -257,12 +251,12 @@ class LSTMProcessor(nn.Module):
 
                 # Project back to hidden_size for next layer
                 if layer_idx < self.n_layers - 1:
-                    x = nn.Dense(self.hidden_size, name=f'projection_{layer_idx}')(x)
+                    x = nn.Dense(self.hidden_size, name=f"projection_{layer_idx}")(x)
 
             else:
                 # Unidirectional LSTM
                 lstm_cell = nn.LSTMCell(features=self.hidden_size)
-                lstm = nn.RNN(lstm_cell, name=f'lstm_{layer_idx}')
+                lstm = nn.RNN(lstm_cell, name=f"lstm_{layer_idx}")
                 carry = lstm_cell.initialize_carry(
                     jax.random.PRNGKey(0), (batch_size, self.hidden_size)
                 )
@@ -278,6 +272,7 @@ class LSTMProcessor(nn.Module):
 # ============================================================================
 # GRU Processor
 # ============================================================================
+
 
 class GRUProcessor(nn.Module):
     """
@@ -299,10 +294,7 @@ class GRUProcessor(nn.Module):
 
     @nn.compact
     def __call__(
-        self,
-        z: jnp.ndarray,
-        A: Optional[jnp.ndarray] = None,
-        training: bool = False
+        self, z: jnp.ndarray, A: Optional[jnp.ndarray] = None, training: bool = False
     ) -> jnp.ndarray:
         """
         Process latent factors using GRU.
@@ -321,14 +313,14 @@ class GRUProcessor(nn.Module):
         x = z[..., None]
 
         # Project to hidden_size
-        x = nn.Dense(self.hidden_size, name='input_projection')(x)
+        x = nn.Dense(self.hidden_size, name="input_projection")(x)
 
         # Stack GRU layers
         for layer_idx in range(self.n_layers):
             if self.bidirectional:
                 # Forward GRU
                 gru_cell_fwd = nn.GRUCell(features=self.hidden_size)
-                gru_fwd = nn.RNN(gru_cell_fwd, name=f'gru_fwd_{layer_idx}')
+                gru_fwd = nn.RNN(gru_cell_fwd, name=f"gru_fwd_{layer_idx}")
                 carry_fwd = gru_cell_fwd.initialize_carry(
                     jax.random.PRNGKey(0), (batch_size, self.hidden_size)
                 )
@@ -336,7 +328,7 @@ class GRUProcessor(nn.Module):
 
                 # Backward GRU (reverse sequence)
                 gru_cell_bwd = nn.GRUCell(features=self.hidden_size)
-                gru_bwd = nn.RNN(gru_cell_bwd, name=f'gru_bwd_{layer_idx}')
+                gru_bwd = nn.RNN(gru_cell_bwd, name=f"gru_bwd_{layer_idx}")
                 carry_bwd = gru_cell_bwd.initialize_carry(
                     jax.random.PRNGKey(0), (batch_size, self.hidden_size)
                 )
@@ -349,12 +341,12 @@ class GRUProcessor(nn.Module):
 
                 # Project back to hidden_size for next layer
                 if layer_idx < self.n_layers - 1:
-                    x = nn.Dense(self.hidden_size, name=f'projection_{layer_idx}')(x)
+                    x = nn.Dense(self.hidden_size, name=f"projection_{layer_idx}")(x)
 
             else:
                 # Unidirectional GRU
                 gru_cell = nn.GRUCell(features=self.hidden_size)
-                gru = nn.RNN(gru_cell, name=f'gru_{layer_idx}')
+                gru = nn.RNN(gru_cell, name=f"gru_{layer_idx}")
                 carry = gru_cell.initialize_carry(
                     jax.random.PRNGKey(0), (batch_size, self.hidden_size)
                 )
@@ -371,6 +363,7 @@ class GRUProcessor(nn.Module):
 # GNN Processor Wrapper
 # ============================================================================
 
+
 class GNNProcessorWrapper(nn.Module):
     """
     Wrapper for CausalGNN to match unified interface.
@@ -386,15 +379,12 @@ class GNNProcessorWrapper(nn.Module):
 
     hidden_dim: int = 64
     n_layers: int = 2
-    gnn_type: str = 'gat'
-    aggregation: str = 'mean'
+    gnn_type: str = "gat"
+    aggregation: str = "mean"
 
     @nn.compact
     def __call__(
-        self,
-        z: jnp.ndarray,
-        A: Optional[jnp.ndarray] = None,
-        training: bool = False
+        self, z: jnp.ndarray, A: Optional[jnp.ndarray] = None, training: bool = False
     ) -> jnp.ndarray:
         """
         Process latent factors using GNN.
@@ -412,7 +402,7 @@ class GNNProcessorWrapper(nn.Module):
 
         # Map gnn_type to use_attention flag for CausalGNN
         # CausalGNN uses use_attention=True for GAT, False for other types
-        use_attention = (self.gnn_type == 'gat')
+        use_attention = self.gnn_type == "gat"
 
         # Use CausalGNN
         gnn = CausalGNN(
@@ -429,6 +419,7 @@ class GNNProcessorWrapper(nn.Module):
 # ELM Processor Wrapper
 # ============================================================================
 
+
 class ELMProcessorWrapper(nn.Module):
     """
     Wrapper for ELMProcessor to match unified interface.
@@ -444,14 +435,11 @@ class ELMProcessorWrapper(nn.Module):
 
     hidden_dim: int = 32
     n_hidden_nodes: int = 128
-    activation: str = 'tanh'
+    activation: str = "tanh"
 
     @nn.compact
     def __call__(
-        self,
-        z: jnp.ndarray,
-        A: Optional[jnp.ndarray] = None,
-        training: bool = False
+        self, z: jnp.ndarray, A: Optional[jnp.ndarray] = None, training: bool = False
     ) -> jnp.ndarray:
         """
         Process latent factors using ELM.
@@ -478,6 +466,7 @@ class ELMProcessorWrapper(nn.Module):
 # Factory Function
 # ============================================================================
 
+
 def create_processor(config: Dict[str, Any]) -> nn.Module:
     """
     Factory function to create processor based on configuration.
@@ -500,55 +489,55 @@ def create_processor(config: Dict[str, Any]) -> nn.Module:
         ... }
         >>> processor = create_processor(config)
     """
-    processor_type = config['processor_type']
+    processor_type = config["processor_type"]
 
-    if processor_type == 'mamba':
+    if processor_type == "mamba":
         return MambaProcessorWrapper(
-            d_model=config.get('d_model', 128),
-            d_state=config.get('d_state', 16),
-            d_conv=config.get('d_conv', 4),
-            expand=config.get('expand', 2),
-            n_layers=config.get('n_layers', 2),
+            d_model=config.get("d_model", 128),
+            d_state=config.get("d_state", 16),
+            d_conv=config.get("d_conv", 4),
+            expand=config.get("expand", 2),
+            n_layers=config.get("n_layers", 2),
         )
 
-    elif processor_type == 'transformer':
+    elif processor_type == "transformer":
         return TransformerProcessor(
-            d_model=config.get('d_model', 128),
-            n_heads=config.get('n_heads', 4),
-            n_layers=config.get('n_layers', 2),
-            d_ff=config.get('d_ff', 512),
-            dropout_rate=config.get('dropout', 0.1),
+            d_model=config.get("d_model", 128),
+            n_heads=config.get("n_heads", 4),
+            n_layers=config.get("n_layers", 2),
+            d_ff=config.get("d_ff", 512),
+            dropout_rate=config.get("dropout", 0.1),
         )
 
-    elif processor_type == 'lstm':
+    elif processor_type == "lstm":
         return LSTMProcessor(
-            hidden_size=config.get('hidden_size', 128),
-            n_layers=config.get('n_layers', 2),
-            bidirectional=config.get('bidirectional', False),
-            dropout_rate=config.get('dropout', 0.1),
+            hidden_size=config.get("hidden_size", 128),
+            n_layers=config.get("n_layers", 2),
+            bidirectional=config.get("bidirectional", False),
+            dropout_rate=config.get("dropout", 0.1),
         )
 
-    elif processor_type == 'gru':
+    elif processor_type == "gru":
         return GRUProcessor(
-            hidden_size=config.get('hidden_size', 128),
-            n_layers=config.get('n_layers', 2),
-            bidirectional=config.get('bidirectional', False),
-            dropout_rate=config.get('dropout', 0.1),
+            hidden_size=config.get("hidden_size", 128),
+            n_layers=config.get("n_layers", 2),
+            bidirectional=config.get("bidirectional", False),
+            dropout_rate=config.get("dropout", 0.1),
         )
 
-    elif processor_type == 'gnn':
+    elif processor_type == "gnn":
         return GNNProcessorWrapper(
-            hidden_dim=config.get('hidden_dim', 64),
-            n_layers=config.get('n_layers', 2),
-            gnn_type=config.get('gnn_type', 'gat'),
-            aggregation=config.get('aggregation', 'mean'),
+            hidden_dim=config.get("hidden_dim", 64),
+            n_layers=config.get("n_layers", 2),
+            gnn_type=config.get("gnn_type", "gat"),
+            aggregation=config.get("aggregation", "mean"),
         )
 
-    elif processor_type == 'elm':
+    elif processor_type == "elm":
         return ELMProcessorWrapper(
-            hidden_dim=config.get('hidden_dim', 32),
-            n_hidden_nodes=config.get('n_hidden_nodes', 128),
-            activation=config.get('activation', 'tanh'),
+            hidden_dim=config.get("hidden_dim", 32),
+            n_hidden_nodes=config.get("n_hidden_nodes", 128),
+            activation=config.get("activation", "tanh"),
         )
 
     else:
@@ -570,29 +559,29 @@ def get_processor_output_dim(config: Dict[str, Any]) -> int:
         >>> get_processor_output_dim(config)
         256
     """
-    processor_type = config['processor_type']
+    processor_type = config["processor_type"]
 
-    if processor_type == 'mamba':
-        return config.get('d_model', 128)
+    if processor_type == "mamba":
+        return config.get("d_model", 128)
 
-    elif processor_type == 'transformer':
-        return config.get('d_model', 128)
+    elif processor_type == "transformer":
+        return config.get("d_model", 128)
 
-    elif processor_type == 'lstm':
-        hidden_size = config.get('hidden_size', 128)
-        bidirectional = config.get('bidirectional', False)
+    elif processor_type == "lstm":
+        hidden_size = config.get("hidden_size", 128)
+        bidirectional = config.get("bidirectional", False)
         return hidden_size * (2 if bidirectional else 1)
 
-    elif processor_type == 'gru':
-        hidden_size = config.get('hidden_size', 128)
-        bidirectional = config.get('bidirectional', False)
+    elif processor_type == "gru":
+        hidden_size = config.get("hidden_size", 128)
+        bidirectional = config.get("bidirectional", False)
         return hidden_size * (2 if bidirectional else 1)
 
-    elif processor_type == 'gnn':
-        return config.get('hidden_dim', 64)
+    elif processor_type == "gnn":
+        return config.get("hidden_dim", 64)
 
-    elif processor_type == 'elm':
-        return config.get('hidden_dim', 32)
+    elif processor_type == "elm":
+        return config.get("hidden_dim", 32)
 
     else:
         raise ValueError(f"Unknown processor type: {processor_type}")

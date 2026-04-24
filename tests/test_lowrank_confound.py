@@ -7,19 +7,18 @@ with GOLEM v7 (backward compatibility, JIT, gradients).
 
 import jax
 import jax.numpy as jnp
-from jax import random
 import numpy as np
-import pytest
+from jax import random
 
 from jcce.structure_learning.jcce_learner import (
-    init_lowrank_confound,
     compute_confound_nll,
+    init_lowrank_confound,
 )
-
 
 # ============================================================================
 # 1. Initialization
 # ============================================================================
+
 
 def test_init_shapes():
     """B is (d, k), log_var is scalar."""
@@ -44,6 +43,7 @@ def test_omega_is_psd():
 # 2. Woodbury correctness
 # ============================================================================
 
+
 def test_woodbury_inverse_correct():
     """Ω @ Ω⁻¹ ≈ I (Woodbury formula matches direct inverse)."""
     key = random.PRNGKey(1)
@@ -64,8 +64,10 @@ def test_woodbury_inverse_correct():
     Omega_inv_woodbury = s2_inv * jnp.eye(d, dtype=jnp.float64) - s2_inv * (B @ M_inv @ B.T)
 
     np.testing.assert_allclose(
-        Omega_inv_direct, Omega_inv_woodbury, atol=1e-5,
-        err_msg="Woodbury inverse doesn't match direct inverse"
+        Omega_inv_direct,
+        Omega_inv_woodbury,
+        atol=1e-5,
+        err_msg="Woodbury inverse doesn't match direct inverse",
     )
 
 
@@ -87,14 +89,17 @@ def test_log_det_correct():
     logdet_lemma = (d - k) * log_var + logdet_M
 
     np.testing.assert_allclose(
-        float(logdet_direct), float(logdet_lemma), atol=1e-4,
-        err_msg="Log-det via lemma doesn't match direct computation"
+        float(logdet_direct),
+        float(logdet_lemma),
+        atol=1e-4,
+        err_msg="Log-det via lemma doesn't match direct computation",
     )
 
 
 # ============================================================================
 # 3. NLL properties
 # ============================================================================
+
 
 def test_nll_gradient_flows():
     """jax.grad returns finite gradients for B and log_var."""
@@ -138,6 +143,7 @@ def test_nll_prefers_correct_B():
 # 4. JIT compatibility
 # ============================================================================
 
+
 def test_jit_compatible():
     """jax.jit(compute_confound_nll) compiles and produces same result."""
     key = random.PRNGKey(5)
@@ -150,8 +156,7 @@ def test_jit_compatible():
     nll_jit = jax.jit(compute_confound_nll)(R, B, log_var)
 
     np.testing.assert_allclose(
-        float(nll_eager), float(nll_jit), atol=1e-6,
-        err_msg="JIT result differs from eager"
+        float(nll_eager), float(nll_jit), atol=1e-6, err_msg="JIT result differs from eager"
     )
 
 
@@ -159,15 +164,18 @@ def test_jit_compatible():
 # 5. Backward compatibility
 # ============================================================================
 
+
 def test_legacy_path_unchanged():
     """n_latent_confounders=0 uses A_confound path (no B_confound in params)."""
     # This tests the signature accepts 0 without error — actual GOLEM call
     # is too heavy for unit test, so we just verify the function signature.
     import inspect
+
     from jcce.structure_learning.jcce_learner import learn_structure
+
     sig = inspect.signature(learn_structure)
-    assert 'n_latent_confounders' in sig.parameters
-    assert sig.parameters['n_latent_confounders'].default == 5
+    assert "n_latent_confounders" in sig.parameters
+    assert sig.parameters["n_latent_confounders"].default == 5
 
 
 def test_metrics_backward_compat_keys():
@@ -182,9 +190,7 @@ def test_metrics_backward_compat_keys():
     Omega_offdiag = Omega.at[jnp.diag_indices(d)].set(0.0)
 
     # Verify Ω_offdiag is symmetric (as expected from B@B.T)
-    np.testing.assert_allclose(
-        np.array(Omega_offdiag), np.array(Omega_offdiag.T), atol=1e-7
-    )
+    np.testing.assert_allclose(np.array(Omega_offdiag), np.array(Omega_offdiag.T), atol=1e-7)
     # Verify it can be thresholded to binary (same as A_confound usage)
     threshold = 0.05
     binary = (jnp.abs(Omega_offdiag) > threshold).astype(jnp.float32)
@@ -196,6 +202,7 @@ def test_metrics_backward_compat_keys():
 # ============================================================================
 # 6. Bow-free with Omega
 # ============================================================================
+
 
 def test_bow_free_with_omega():
     """Bow-free penalty uses Ω_offdiag, not raw B."""

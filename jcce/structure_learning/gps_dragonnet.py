@@ -24,23 +24,22 @@ Reference:
 Author: JCCE v13.5 (with variable type detection)
 """
 
+from typing import Dict, Literal, Optional, Tuple
+
 import jax
 import jax.numpy as jnp
 from jax import random
-from typing import Dict, Tuple, Optional, List, Literal
-import warnings
-import numpy as np
-
 
 # =============================================================================
 # Variable Type Detection
 # =============================================================================
 
+
 def detect_variable_type(
     x: jnp.ndarray,
     binary_threshold: int = 2,
     categorical_threshold: int = 10,
-) -> Literal['binary', 'categorical', 'continuous']:
+) -> Literal["binary", "categorical", "continuous"]:
     """
     Detect variable type based on number of unique values.
 
@@ -57,16 +56,16 @@ def detect_variable_type(
     n_unique = len(unique_values)
 
     if n_unique <= binary_threshold:
-        return 'binary'
+        return "binary"
     elif n_unique <= categorical_threshold:
         # Check if values are approximately integers (ordinal/categorical)
         is_integer_like = jnp.allclose(x, jnp.round(x), atol=1e-6)
         if is_integer_like:
-            return 'categorical'
+            return "categorical"
         else:
-            return 'continuous'
+            return "continuous"
     else:
-        return 'continuous'
+        return "continuous"
 
 
 def get_variable_types(
@@ -91,12 +90,14 @@ def get_variable_types(
         types[i] = var_type
 
     if verbose:
-        type_counts = {'binary': 0, 'categorical': 0, 'continuous': 0}
+        type_counts = {"binary": 0, "categorical": 0, "continuous": 0}
         for t in types.values():
             type_counts[t] += 1
-        print(f"  Variable types: {type_counts['binary']} binary, "
-              f"{type_counts['categorical']} categorical, "
-              f"{type_counts['continuous']} continuous")
+        print(
+            f"  Variable types: {type_counts['binary']} binary, "
+            f"{type_counts['categorical']} categorical, "
+            f"{type_counts['continuous']} continuous"
+        )
 
     return types
 
@@ -104,6 +105,7 @@ def get_variable_types(
 # =============================================================================
 # Binary Treatment Effect Estimation (Standard Propensity Score)
 # =============================================================================
+
 
 def init_binary_propensity_params(
     key: random.PRNGKey,
@@ -129,26 +131,26 @@ def init_binary_propensity_params(
     params = {}
 
     # Shared representation layers
-    params['shared_w1'] = xavier_init(keys[0], (n_covariates, hidden_dim))
-    params['shared_b1'] = jnp.zeros(hidden_dim)
-    params['shared_w2'] = xavier_init(keys[1], (hidden_dim, hidden_dim))
-    params['shared_b2'] = jnp.zeros(hidden_dim)
+    params["shared_w1"] = xavier_init(keys[0], (n_covariates, hidden_dim))
+    params["shared_b1"] = jnp.zeros(hidden_dim)
+    params["shared_w2"] = xavier_init(keys[1], (hidden_dim, hidden_dim))
+    params["shared_b2"] = jnp.zeros(hidden_dim)
 
     # Propensity head (logistic regression on representation)
-    params['prop_w'] = xavier_init(keys[2], (hidden_dim, 1))
-    params['prop_b'] = jnp.zeros(1)
+    params["prop_w"] = xavier_init(keys[2], (hidden_dim, 1))
+    params["prop_b"] = jnp.zeros(1)
 
     # Outcome head for T=0
-    params['y0_w1'] = xavier_init(keys[3], (hidden_dim, hidden_dim // 2))
-    params['y0_b1'] = jnp.zeros(hidden_dim // 2)
-    params['y0_w2'] = xavier_init(keys[4], (hidden_dim // 2, 1))
-    params['y0_b2'] = jnp.zeros(1)
+    params["y0_w1"] = xavier_init(keys[3], (hidden_dim, hidden_dim // 2))
+    params["y0_b1"] = jnp.zeros(hidden_dim // 2)
+    params["y0_w2"] = xavier_init(keys[4], (hidden_dim // 2, 1))
+    params["y0_b2"] = jnp.zeros(1)
 
     # Outcome head for T=1
-    params['y1_w1'] = xavier_init(keys[5], (hidden_dim, hidden_dim // 2))
-    params['y1_b1'] = jnp.zeros(hidden_dim // 2)
-    params['y1_w2'] = xavier_init(keys[6], (hidden_dim // 2, 1))
-    params['y1_b2'] = jnp.zeros(1)
+    params["y1_w1"] = xavier_init(keys[5], (hidden_dim, hidden_dim // 2))
+    params["y1_b1"] = jnp.zeros(hidden_dim // 2)
+    params["y1_w2"] = xavier_init(keys[6], (hidden_dim // 2, 1))
+    params["y1_b2"] = jnp.zeros(1)
 
     return params
 
@@ -170,24 +172,24 @@ def binary_dragonnet_forward(
         y1_pred: (batch,) E[Y|T=1, X]
     """
     # Shared representation
-    h = covariates @ params['shared_w1'] + params['shared_b1']
+    h = covariates @ params["shared_w1"] + params["shared_b1"]
     h = jax.nn.relu(h)
-    h = h @ params['shared_w2'] + params['shared_b2']
+    h = h @ params["shared_w2"] + params["shared_b2"]
     shared_repr = jax.nn.relu(h)
 
     # Propensity (logistic)
-    logit = (shared_repr @ params['prop_w'] + params['prop_b']).squeeze(-1)
+    logit = (shared_repr @ params["prop_w"] + params["prop_b"]).squeeze(-1)
     propensity = jax.nn.sigmoid(logit)
 
     # Outcome for T=0
-    h0 = shared_repr @ params['y0_w1'] + params['y0_b1']
+    h0 = shared_repr @ params["y0_w1"] + params["y0_b1"]
     h0 = jax.nn.relu(h0)
-    y0_pred = (h0 @ params['y0_w2'] + params['y0_b2']).squeeze(-1)
+    y0_pred = (h0 @ params["y0_w2"] + params["y0_b2"]).squeeze(-1)
 
     # Outcome for T=1
-    h1 = shared_repr @ params['y1_w1'] + params['y1_b1']
+    h1 = shared_repr @ params["y1_w1"] + params["y1_b1"]
     h1 = jax.nn.relu(h1)
-    y1_pred = (h1 @ params['y1_w2'] + params['y1_b2']).squeeze(-1)
+    y1_pred = (h1 @ params["y1_w2"] + params["y1_b2"]).squeeze(-1)
 
     return propensity, y0_pred, y1_pred
 
@@ -216,13 +218,12 @@ def compute_binary_dragonnet_loss_jit(
 
     # Propensity BCE (binary cross-entropy)
     prop_bce = -jnp.mean(
-        treatment * jnp.log(propensity + 1e-8) +
-        (1 - treatment) * jnp.log(1 - propensity + 1e-8)
+        treatment * jnp.log(propensity + 1e-8) + (1 - treatment) * jnp.log(1 - propensity + 1e-8)
     )
 
     # Targeted regularization (encourage balanced representations)
     # This is the DragonNet contribution - helps with covariate shift
-    eps = (outcome - y_pred)  # Residual
+    eps = outcome - y_pred  # Residual
     t1_weight = treatment / (propensity + 1e-8)
     t0_weight = (1 - treatment) / (1 - propensity + 1e-8)
     t1_weight = jnp.clip(t1_weight, 0, weight_clip)
@@ -271,8 +272,7 @@ def compute_xx_effect_binary(
     treatment_raw = data[:, treatment_idx]
     outcome_raw = data[:, outcome_idx]
 
-    covariate_indices = [i for i in range(n_features)
-                         if i != treatment_idx and i != outcome_idx]
+    covariate_indices = [i for i in range(n_features) if i != treatment_idx and i != outcome_idx]
     covariates_raw = data[:, covariate_indices]
 
     # 2. Ensure treatment is binary (0/1)
@@ -311,14 +311,14 @@ def compute_xx_effect_binary(
         losses.append(float(loss))
 
         if verbose and (i + 1) % 10 == 0:
-            print(f"    Iter {i+1}: loss={loss:.4f}")
+            print(f"    Iter {i + 1}: loss={loss:.4f}")
 
         # Early stopping
         if i > 20 and len(losses) > 5:
             recent_improvement = losses[-5] - losses[-1]
             if recent_improvement < 1e-4:
                 if verbose:
-                    print(f"    Early stopping at iter {i+1}")
+                    print(f"    Early stopping at iter {i + 1}")
                 break
 
     # 7. Compute ATE
@@ -345,16 +345,16 @@ def compute_xx_effect_binary(
     ate = ate_simple
 
     metrics = {
-        'ate_simple': ate_simple,
-        'ate_aipw': ate_aipw,
-        'final_loss': losses[-1] if losses else 0,
-        'n_iterations': len(losses),
-        'treatment_type': 'binary',
-        'outcome_mean': outcome_mean,
-        'outcome_std': outcome_std,
-        'propensity_mean': float(jnp.mean(propensity)),
-        'n_treated': int(jnp.sum(treatment)),
-        'n_control': int(jnp.sum(1 - treatment)),
+        "ate_simple": ate_simple,
+        "ate_aipw": ate_aipw,
+        "final_loss": losses[-1] if losses else 0,
+        "n_iterations": len(losses),
+        "treatment_type": "binary",
+        "outcome_mean": outcome_mean,
+        "outcome_std": outcome_std,
+        "propensity_mean": float(jnp.mean(propensity)),
+        "n_treated": int(jnp.sum(treatment)),
+        "n_control": int(jnp.sum(1 - treatment)),
     }
 
     return ate, metrics
@@ -363,6 +363,7 @@ def compute_xx_effect_binary(
 # =============================================================================
 # Categorical Treatment Effect Estimation
 # =============================================================================
+
 
 def compute_xx_effect_categorical(
     data: jnp.ndarray,
@@ -403,8 +404,7 @@ def compute_xx_effect_categorical(
     treatment_raw = data[:, treatment_idx]
     outcome_raw = data[:, outcome_idx]
 
-    covariate_indices = [i for i in range(n_features)
-                         if i != treatment_idx and i != outcome_idx]
+    covariate_indices = [i for i in range(n_features) if i != treatment_idx and i != outcome_idx]
     covariates_raw = data[:, covariate_indices]
 
     # 2. Get unique categories
@@ -427,9 +427,7 @@ def compute_xx_effect_categorical(
     # 5. Create one-hot encoding for treatment
     treatment_onehot = jnp.zeros((n_samples, n_cats))
     for k, cat in enumerate(unique_cats):
-        treatment_onehot = treatment_onehot.at[:, k].set(
-            (treatment_raw == cat).astype(jnp.float32)
-        )
+        treatment_onehot = treatment_onehot.at[:, k].set((treatment_raw == cat).astype(jnp.float32))
 
     # 6. Simple regression approach: outcome ~ covariates + treatment_dummies
     # Use a small neural network for outcome prediction
@@ -444,22 +442,22 @@ def compute_xx_effect_categorical(
     n_input = covariates.shape[1] + n_cats
 
     params = {
-        'w1': xavier_init(keys[0], (n_input, hidden_dim)),
-        'b1': jnp.zeros(hidden_dim),
-        'w2': xavier_init(keys[1], (hidden_dim, hidden_dim // 2)),
-        'b2': jnp.zeros(hidden_dim // 2),
-        'w3': xavier_init(keys[2], (hidden_dim // 2, 1)),
-        'b3': jnp.zeros(1),
+        "w1": xavier_init(keys[0], (n_input, hidden_dim)),
+        "b1": jnp.zeros(hidden_dim),
+        "w2": xavier_init(keys[1], (hidden_dim, hidden_dim // 2)),
+        "b2": jnp.zeros(hidden_dim // 2),
+        "w3": xavier_init(keys[2], (hidden_dim // 2, 1)),
+        "b3": jnp.zeros(1),
     }
 
     @jax.jit
     def forward(params, covariates, treatment_onehot):
         x = jnp.concatenate([covariates, treatment_onehot], axis=1)
-        h = x @ params['w1'] + params['b1']
+        h = x @ params["w1"] + params["b1"]
         h = jax.nn.relu(h)
-        h = h @ params['w2'] + params['b2']
+        h = h @ params["w2"] + params["b2"]
         h = jax.nn.relu(h)
-        y = (h @ params['w3'] + params['b3']).squeeze(-1)
+        y = (h @ params["w3"] + params["b3"]).squeeze(-1)
         return y
 
     @jax.jit
@@ -467,6 +465,7 @@ def compute_xx_effect_categorical(
         def loss_fn(p):
             y_pred = forward(p, covariates, treatment_onehot)
             return jnp.mean((y_pred - outcome) ** 2)
+
         loss, grads = jax.value_and_grad(loss_fn)(params)
         params = jax.tree.map(lambda p, g: p - lr * g, params, grads)
         return params, loss
@@ -477,7 +476,7 @@ def compute_xx_effect_categorical(
         losses.append(float(loss))
 
         if verbose and (i + 1) % 10 == 0:
-            print(f"    Iter {i+1}: loss={loss:.4f}")
+            print(f"    Iter {i + 1}: loss={loss:.4f}")
 
         if i > 20 and len(losses) > 5:
             if losses[-5] - losses[-1] < 1e-4:
@@ -499,20 +498,21 @@ def compute_xx_effect_categorical(
     ate = y_by_cat[cat_max] - y_by_cat[cat_min]
 
     # Also compute per-level effects relative to baseline (lowest category)
-    level_effects = {f'cat_{cat}': y_by_cat[cat] - y_by_cat[cat_min]
-                     for cat in sorted(y_by_cat.keys())}
+    level_effects = {
+        f"cat_{cat}": y_by_cat[cat] - y_by_cat[cat_min] for cat in sorted(y_by_cat.keys())
+    }
 
     metrics = {
-        'ate': ate,
-        'final_loss': losses[-1] if losses else 0,
-        'n_iterations': len(losses),
-        'treatment_type': 'categorical',
-        'n_categories': n_cats,
-        'categories': [float(c) for c in unique_cats],
-        'outcome_by_category': y_by_cat,
-        'level_effects': level_effects,
-        'outcome_mean': outcome_mean,
-        'outcome_std': outcome_std,
+        "ate": ate,
+        "final_loss": losses[-1] if losses else 0,
+        "n_iterations": len(losses),
+        "treatment_type": "categorical",
+        "n_categories": n_cats,
+        "categories": [float(c) for c in unique_cats],
+        "outcome_by_category": y_by_cat,
+        "level_effects": level_effects,
+        "outcome_mean": outcome_mean,
+        "outcome_std": outcome_std,
     }
 
     return ate, metrics
@@ -521,6 +521,7 @@ def compute_xx_effect_categorical(
 # =============================================================================
 # Unified Effect Computation (Auto-detects Treatment Type)
 # =============================================================================
+
 
 def compute_xx_effect_unified(
     data: jnp.ndarray,
@@ -564,7 +565,7 @@ def compute_xx_effect_unified(
         print(f"    Treatment X{treatment_idx}: detected as {treatment_type}")
 
     # Dispatch to appropriate method
-    if treatment_type == 'binary':
+    if treatment_type == "binary":
         ate, metrics = compute_xx_effect_binary(
             data=data,
             treatment_idx=treatment_idx,
@@ -575,7 +576,7 @@ def compute_xx_effect_unified(
             lr=lr,
             verbose=verbose,
         )
-    elif treatment_type == 'categorical':
+    elif treatment_type == "categorical":
         ate, metrics = compute_xx_effect_categorical(
             data=data,
             treatment_idx=treatment_idx,
@@ -599,7 +600,7 @@ def compute_xx_effect_unified(
         )
 
     # Add treatment type to metrics
-    metrics['detected_treatment_type'] = treatment_type
+    metrics["detected_treatment_type"] = treatment_type
 
     return ate, metrics
 
@@ -607,6 +608,7 @@ def compute_xx_effect_unified(
 # =============================================================================
 # Data Preprocessing
 # =============================================================================
+
 
 def compute_skewness(x: jnp.ndarray) -> float:
     """Compute skewness of array."""
@@ -617,7 +619,7 @@ def compute_skewness(x: jnp.ndarray) -> float:
 
 def preprocess_treatment(
     treatment: jnp.ndarray,
-    method: str = 'auto',
+    method: str = "auto",
 ) -> Tuple[jnp.ndarray, Dict]:
     """
     Preprocess continuous treatment for GPS estimation.
@@ -632,26 +634,26 @@ def preprocess_treatment(
     """
     treatment = jnp.asarray(treatment).flatten()
 
-    if method == 'auto':
+    if method == "auto":
         skew = compute_skewness(treatment)
         # Use log transform for highly skewed data
         if abs(skew) > 1.0 and jnp.min(treatment) >= 0:
-            method = 'log_standardize'
+            method = "log_standardize"
         else:
-            method = 'standardize'
+            method = "standardize"
 
-    if method == 'log_standardize':
+    if method == "log_standardize":
         # Log(x + 1) transform for skewed non-negative data
         treatment_log = jnp.log1p(treatment)
         mean = jnp.mean(treatment_log)
         std = jnp.std(treatment_log) + 1e-8
         treatment_processed = (treatment_log - mean) / std
         transform_info = {
-            'method': 'log_standardize',
-            'log_mean': float(mean),
-            'log_std': float(std),
+            "method": "log_standardize",
+            "log_mean": float(mean),
+            "log_std": float(std),
         }
-    elif method == 'rank':
+    elif method == "rank":
         # Rank-based inverse normal transform (most robust)
         n = len(treatment)
         ranks = jnp.argsort(jnp.argsort(treatment))
@@ -659,17 +661,17 @@ def preprocess_treatment(
         quantiles = (ranks + 0.5) / n
         treatment_processed = jax.scipy.stats.norm.ppf(quantiles)
         transform_info = {
-            'method': 'rank',
-            'original_order': ranks,
+            "method": "rank",
+            "original_order": ranks,
         }
     else:  # standardize
         mean = jnp.mean(treatment)
         std = jnp.std(treatment) + 1e-8
         treatment_processed = (treatment - mean) / std
         transform_info = {
-            'method': 'standardize',
-            'mean': float(mean),
-            'std': float(std),
+            "method": "standardize",
+            "mean": float(mean),
+            "std": float(std),
         }
 
     return treatment_processed, transform_info
@@ -725,7 +727,7 @@ def handle_zero_inflation(
         non_zero_mean = jnp.where(
             jnp.sum(~zero_mask) > 0,
             jnp.sum(values * (~zero_mask)) / (jnp.sum(~zero_mask) + 1e-8),
-            0.0
+            0.0,
         )
         values_transformed = jnp.where(zero_mask, non_zero_mean, values)
         return values_transformed, zero_indicator, True
@@ -736,6 +738,7 @@ def handle_zero_inflation(
 # =============================================================================
 # GPS-DragonNet Architecture
 # =============================================================================
+
 
 def init_gps_dragonnet_params(
     key: random.PRNGKey,
@@ -772,27 +775,27 @@ def init_gps_dragonnet_params(
     params = {}
 
     # Shared representation layers (2 layers)
-    params['shared_w1'] = xavier_init(keys[0], (n_covariates, hidden_dim))
-    params['shared_b1'] = jnp.zeros(hidden_dim)
-    params['shared_w2'] = xavier_init(keys[1], (hidden_dim, hidden_dim))
-    params['shared_b2'] = jnp.zeros(hidden_dim)
+    params["shared_w1"] = xavier_init(keys[0], (n_covariates, hidden_dim))
+    params["shared_b1"] = jnp.zeros(hidden_dim)
+    params["shared_w2"] = xavier_init(keys[1], (hidden_dim, hidden_dim))
+    params["shared_b2"] = jnp.zeros(hidden_dim)
 
     # GPS head: outputs μ and log_σ² for P(T|X) ~ N(μ, σ²)
-    params['gps_mu_w'] = xavier_init(keys[2], (hidden_dim, 1))
-    params['gps_mu_b'] = jnp.zeros(1)
-    params['gps_logvar_w'] = xavier_init(keys[3], (hidden_dim, 1))
-    params['gps_logvar_b'] = jnp.zeros(1)  # Initialize to log(1) = 0
+    params["gps_mu_w"] = xavier_init(keys[2], (hidden_dim, 1))
+    params["gps_mu_b"] = jnp.zeros(1)
+    params["gps_logvar_w"] = xavier_init(keys[3], (hidden_dim, 1))
+    params["gps_logvar_b"] = jnp.zeros(1)  # Initialize to log(1) = 0
 
     # Treatment embedding (for dose-response)
-    params['treatment_embed_w'] = xavier_init(keys[4], (1, treatment_embed_dim))
-    params['treatment_embed_b'] = jnp.zeros(treatment_embed_dim)
+    params["treatment_embed_w"] = xavier_init(keys[4], (1, treatment_embed_dim))
+    params["treatment_embed_b"] = jnp.zeros(treatment_embed_dim)
 
     # Outcome head: takes (representation, treatment_embedding) → Y
     outcome_input_dim = hidden_dim + treatment_embed_dim
-    params['outcome_w1'] = xavier_init(keys[5], (outcome_input_dim, hidden_dim))
-    params['outcome_b1'] = jnp.zeros(hidden_dim)
-    params['outcome_w2'] = xavier_init(keys[6], (hidden_dim, 1))
-    params['outcome_b2'] = jnp.zeros(1)
+    params["outcome_w1"] = xavier_init(keys[5], (outcome_input_dim, hidden_dim))
+    params["outcome_b1"] = jnp.zeros(hidden_dim)
+    params["outcome_w2"] = xavier_init(keys[6], (hidden_dim, 1))
+    params["outcome_b2"] = jnp.zeros(1)
 
     return params
 
@@ -817,27 +820,27 @@ def gps_dragonnet_forward(
         shared_repr: (batch, hidden) shared representation
     """
     # Shared representation
-    h = covariates @ params['shared_w1'] + params['shared_b1']
+    h = covariates @ params["shared_w1"] + params["shared_b1"]
     h = jax.nn.relu(h)
-    h = h @ params['shared_w2'] + params['shared_b2']
+    h = h @ params["shared_w2"] + params["shared_b2"]
     shared_repr = jax.nn.relu(h)
 
     # GPS head: μ(X), log_σ²(X)
-    gps_mu = (shared_repr @ params['gps_mu_w'] + params['gps_mu_b']).squeeze(-1)
-    gps_logvar = (shared_repr @ params['gps_logvar_w'] + params['gps_logvar_b']).squeeze(-1)
+    gps_mu = (shared_repr @ params["gps_mu_w"] + params["gps_mu_b"]).squeeze(-1)
+    gps_logvar = (shared_repr @ params["gps_logvar_w"] + params["gps_logvar_b"]).squeeze(-1)
     # Clip log_var for numerical stability
     gps_logvar = jnp.clip(gps_logvar, -5, 5)
 
     # Treatment embedding (dose-response)
     t_input = treatment.reshape(-1, 1)
-    t_embed = t_input @ params['treatment_embed_w'] + params['treatment_embed_b']
+    t_embed = t_input @ params["treatment_embed_w"] + params["treatment_embed_b"]
     t_embed = jax.nn.tanh(t_embed)  # Bounded embedding
 
     # Outcome head
     outcome_input = jnp.concatenate([shared_repr, t_embed], axis=1)
-    h_out = outcome_input @ params['outcome_w1'] + params['outcome_b1']
+    h_out = outcome_input @ params["outcome_w1"] + params["outcome_b1"]
     h_out = jax.nn.relu(h_out)
-    y_pred = (h_out @ params['outcome_w2'] + params['outcome_b2']).squeeze(-1)
+    y_pred = (h_out @ params["outcome_w2"] + params["outcome_b2"]).squeeze(-1)
 
     return y_pred, gps_mu, gps_logvar, shared_repr
 
@@ -880,19 +883,14 @@ def compute_gps_dragonnet_loss_jit(
     Use compute_gps_dragonnet_loss for full metrics (not JIT-compatible).
     """
     # Forward pass
-    y_pred, gps_mu, gps_logvar, shared_repr = gps_dragonnet_forward(
-        covariates, treatment, params
-    )
+    y_pred, gps_mu, gps_logvar, shared_repr = gps_dragonnet_forward(covariates, treatment, params)
 
     # Outcome MSE
     outcome_mse = jnp.mean((y_pred - outcome) ** 2)
 
     # GPS Negative Log-Likelihood
     gps_std = jnp.exp(0.5 * gps_logvar)
-    gps_nll = jnp.mean(
-        0.5 * gps_logvar +
-        0.5 * ((treatment - gps_mu) / (gps_std + 1e-6)) ** 2
-    )
+    gps_nll = jnp.mean(0.5 * gps_logvar + 0.5 * ((treatment - gps_mu) / (gps_std + 1e-6)) ** 2)
 
     # Targeted Regularization
     t_median = jnp.median(treatment)
@@ -942,9 +940,7 @@ def compute_gps_dragonnet_loss(
         metrics: Dict with 'ate', 'ate_aipw', 'gps_nll', 'outcome_mse', etc.
     """
     # Forward pass
-    y_pred, gps_mu, gps_logvar, shared_repr = gps_dragonnet_forward(
-        covariates, treatment, params
-    )
+    y_pred, gps_mu, gps_logvar, shared_repr = gps_dragonnet_forward(covariates, treatment, params)
 
     # ========== Outcome MSE ==========
     outcome_mse = jnp.mean((y_pred - outcome) ** 2)
@@ -952,10 +948,7 @@ def compute_gps_dragonnet_loss(
     # ========== GPS Negative Log-Likelihood ==========
     gps_std = jnp.exp(0.5 * gps_logvar)
     # NLL of Gaussian
-    gps_nll = jnp.mean(
-        0.5 * gps_logvar +
-        0.5 * ((treatment - gps_mu) / (gps_std + 1e-6)) ** 2
-    )
+    gps_nll = jnp.mean(0.5 * gps_logvar + 0.5 * ((treatment - gps_mu) / (gps_std + 1e-6)) ** 2)
 
     # ========== AIPW for Continuous Treatment ==========
     # GPS values
@@ -1002,14 +995,14 @@ def compute_gps_dragonnet_loss(
 
     # Convert to Python floats (NOT JIT compatible!)
     metrics = {
-        'outcome_mse': float(outcome_mse),
-        'gps_nll': float(gps_nll),
-        'targeted_loss': float(targeted_loss),
-        'total_loss': float(total_loss),
-        'ate_simple': float(ate_simple),
-        'ate_aipw': float(ate_aipw),
-        'mean_weight': float(jnp.mean(weights)),
-        'max_weight': float(jnp.max(weights)),
+        "outcome_mse": float(outcome_mse),
+        "gps_nll": float(gps_nll),
+        "targeted_loss": float(targeted_loss),
+        "total_loss": float(total_loss),
+        "ate_simple": float(ate_simple),
+        "ate_aipw": float(ate_aipw),
+        "mean_weight": float(jnp.mean(weights)),
+        "max_weight": float(jnp.max(weights)),
     }
 
     return total_loss, metrics
@@ -1018,6 +1011,7 @@ def compute_gps_dragonnet_loss(
 # =============================================================================
 # Main Effect Computation Functions
 # =============================================================================
+
 
 def compute_xx_effect_gps(
     data: jnp.ndarray,
@@ -1054,12 +1048,11 @@ def compute_xx_effect_gps(
     treatment_raw = data[:, treatment_idx]
     outcome_raw = data[:, outcome_idx]
 
-    covariate_indices = [i for i in range(n_features)
-                         if i != treatment_idx and i != outcome_idx]
+    covariate_indices = [i for i in range(n_features) if i != treatment_idx and i != outcome_idx]
     covariates_raw = data[:, covariate_indices]
 
     # 2. Preprocess treatment (handle skewness)
-    treatment, treatment_info = preprocess_treatment(treatment_raw, method='auto')
+    treatment, treatment_info = preprocess_treatment(treatment_raw, method="auto")
 
     # 3. Standardize outcome
     outcome, outcome_mean, outcome_std = preprocess_outcome(outcome_raw)
@@ -1093,20 +1086,18 @@ def compute_xx_effect_gps(
         losses.append(float(loss))
 
         if verbose and (i + 1) % 10 == 0:
-            print(f"    Iter {i+1}: loss={loss:.4f}")
+            print(f"    Iter {i + 1}: loss={loss:.4f}")
 
         # Early stopping
         if i > 20 and len(losses) > 5:
             recent_improvement = losses[-5] - losses[-1]
             if recent_improvement < 1e-4:
                 if verbose:
-                    print(f"    Early stopping at iter {i+1}")
+                    print(f"    Early stopping at iter {i + 1}")
                 break
 
     # 6. Compute final effect at contrast quantiles
-    _, final_metrics = compute_gps_dragonnet_loss(
-        covariates, treatment, outcome, params
-    )
+    _, final_metrics = compute_gps_dragonnet_loss(covariates, treatment, outcome, params)
 
     # Compute effect at specific quantiles
     t_low = jnp.percentile(treatment, contrast_quantiles[0] * 100)
@@ -1120,16 +1111,16 @@ def compute_xx_effect_gps(
 
     # Compile metrics
     metrics = {
-        'ate_aipw': final_metrics['ate_aipw'],
-        'ate_quantile': ate_quantile,
-        'outcome_mse': final_metrics['outcome_mse'],
-        'gps_nll': final_metrics['gps_nll'],
-        'final_loss': losses[-1] if losses else 0,
-        'n_iterations': len(losses),
-        'treatment_transform': treatment_info['method'],
-        'outcome_mean': outcome_mean,
-        'outcome_std': outcome_std,
-        'contrast_quantiles': contrast_quantiles,
+        "ate_aipw": final_metrics["ate_aipw"],
+        "ate_quantile": ate_quantile,
+        "outcome_mse": final_metrics["outcome_mse"],
+        "gps_nll": final_metrics["gps_nll"],
+        "final_loss": losses[-1] if losses else 0,
+        "n_iterations": len(losses),
+        "treatment_transform": treatment_info["method"],
+        "outcome_mean": outcome_mean,
+        "outcome_std": outcome_std,
+        "contrast_quantiles": contrast_quantiles,
     }
 
     # Return quantile-based effect (more stable than AIPW for small samples)
@@ -1175,7 +1166,7 @@ def compute_xy_effect_gps(
     covariates_raw = data[:, covariate_indices]
 
     # 2. Preprocess treatment
-    treatment, treatment_info = preprocess_treatment(treatment_raw, method='auto')
+    treatment, treatment_info = preprocess_treatment(treatment_raw, method="auto")
 
     # 3. Standardize Y (key difference from original DragonNet!)
     outcome, outcome_mean, outcome_std = preprocess_outcome(Y)
@@ -1207,18 +1198,16 @@ def compute_xy_effect_gps(
         losses.append(float(loss))
 
         if verbose and (i + 1) % 10 == 0:
-            print(f"    Iter {i+1}: loss={loss:.4f}")
+            print(f"    Iter {i + 1}: loss={loss:.4f}")
 
         if i > 20 and len(losses) > 5:
             if losses[-5] - losses[-1] < 1e-4:
                 if verbose:
-                    print(f"    Early stopping at iter {i+1}")
+                    print(f"    Early stopping at iter {i + 1}")
                 break
 
     # 5. Compute effect at quantiles
-    _, final_metrics = compute_gps_dragonnet_loss(
-        covariates, treatment, outcome, params
-    )
+    _, final_metrics = compute_gps_dragonnet_loss(covariates, treatment, outcome, params)
 
     t_low = jnp.percentile(treatment, contrast_quantiles[0] * 100)
     t_high = jnp.percentile(treatment, contrast_quantiles[1] * 100)
@@ -1229,16 +1218,16 @@ def compute_xy_effect_gps(
     ate_quantile = float(jnp.mean(y_high) - jnp.mean(y_low))
 
     metrics = {
-        'ate_aipw': final_metrics['ate_aipw'],
-        'ate_quantile': ate_quantile,
-        'outcome_mse': final_metrics['outcome_mse'],
-        'gps_nll': final_metrics['gps_nll'],
-        'final_loss': losses[-1] if losses else 0,
-        'n_iterations': len(losses),
-        'treatment_transform': treatment_info['method'],
-        'outcome_mean': outcome_mean,
-        'outcome_std': outcome_std,
-        'contrast_quantiles': contrast_quantiles,
+        "ate_aipw": final_metrics["ate_aipw"],
+        "ate_quantile": ate_quantile,
+        "outcome_mse": final_metrics["outcome_mse"],
+        "gps_nll": final_metrics["gps_nll"],
+        "final_loss": losses[-1] if losses else 0,
+        "n_iterations": len(losses),
+        "treatment_transform": treatment_info["method"],
+        "outcome_mean": outcome_mean,
+        "outcome_std": outcome_std,
+        "contrast_quantiles": contrast_quantiles,
     }
 
     return ate_quantile, metrics
@@ -1247,6 +1236,7 @@ def compute_xy_effect_gps(
 # =============================================================================
 # Batch Computation for Efficiency
 # =============================================================================
+
 
 def compute_all_xx_effects_unified(
     data: jnp.ndarray,
@@ -1301,7 +1291,7 @@ def compute_all_xx_effects_unified(
         print(f"  Computing X->X effects for {len(edges)} significant edges...")
         type_summary = {}
         for i, j in edges:
-            t = var_types.get(i, 'unknown')
+            t = var_types.get(i, "unknown")
             type_summary[t] = type_summary.get(t, 0) + 1
         print(f"    Treatment types: {type_summary}")
 
@@ -1320,15 +1310,15 @@ def compute_all_xx_effects_unified(
                 treatment_type=treatment_type,
                 verbose=False,
             )
-            effects[f'X{i}->X{j}'] = ate
+            effects[f"X{i}->X{j}"] = ate
 
             if verbose and (idx + 1) % 10 == 0:
-                print(f"    Computed {idx+1}/{len(edges)} effects...")
+                print(f"    Computed {idx + 1}/{len(edges)} effects...")
 
         except Exception as e:
             if verbose:
                 print(f"    [WARN] X{i}->X{j} failed: {e}")
-            effects[f'X{i}->X{j}'] = 0.0
+            effects[f"X{i}->X{j}"] = 0.0
 
     if verbose:
         print(f"    {len(edges)} X→X effects computed successfully")
@@ -1434,11 +1424,11 @@ def compute_all_xy_effects_gps(
                 hidden_dim=hidden_dim,
                 verbose=False,
             )
-            effects[f'X{i}->Y'] = ate
+            effects[f"X{i}->Y"] = ate
 
         except Exception as e:
             if verbose:
                 print(f"    [WARN] X{i}->Y failed: {e}")
-            effects[f'X{i}->Y'] = 0.0
+            effects[f"X{i}->Y"] = 0.0
 
     return effects

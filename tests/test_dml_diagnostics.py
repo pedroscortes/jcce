@@ -2,12 +2,13 @@
 
 import numpy as np
 import pytest
+
 from jcce.validation.dml_crossfitting import (
     DMLCrossFitter,
     DMLDiagnostics,
-    create_simple_nuisance_functions,
     create_gbm_nuisance_functions,
     create_nuisance_functions,
+    create_simple_nuisance_functions,
 )
 
 
@@ -24,8 +25,8 @@ def _make_data(n=200, d=5, seed=42):
 # Task 22: DML Diagnostics
 # ============================================================
 
-class TestDMLDiagnostics:
 
+class TestDMLDiagnostics:
     def test_diagnostics_returned(self):
         """estimate_ate returns diagnostics in result."""
         X, T, Y = _make_data()
@@ -76,23 +77,28 @@ class TestDMLDiagnostics:
         dml = DMLCrossFitter(n_splits=3)
         result = dml.estimate_ate(X, T, Y, train_fn, predict_fn)
         d = result.to_dict()
-        assert 'diagnostics' in d
-        assert 'propensity_min' in d['diagnostics']
-        assert 'mean_smd' in d['diagnostics']
-        assert 'outcome_r2_mean' in d['diagnostics']
+        assert "diagnostics" in d
+        assert "propensity_min" in d["diagnostics"]
+        assert "mean_smd" in d["diagnostics"]
+        assert "outcome_r2_mean" in d["diagnostics"]
 
     def test_diagnostics_summary(self):
         """Summary string is produced without error."""
         diag = DMLDiagnostics(
-            propensity_min=0.05, propensity_max=0.95,
-            propensity_mean=0.5, pct_clipped=0.02,
-            mean_smd=0.08, max_smd=0.15, n_imbalanced=1,
-            outcome_r2_mean=0.7, propensity_logloss_mean=0.5,
+            propensity_min=0.05,
+            propensity_max=0.95,
+            propensity_mean=0.5,
+            pct_clipped=0.02,
+            mean_smd=0.08,
+            max_smd=0.15,
+            n_imbalanced=1,
+            outcome_r2_mean=0.7,
+            propensity_logloss_mean=0.5,
         )
         s = diag.summary()
-        assert 'Propensity' in s
-        assert 'Balance' in s
-        assert 'Nuisance' in s
+        assert "Propensity" in s
+        assert "Balance" in s
+        assert "Nuisance" in s
 
     def test_high_clipping_detected(self):
         """When propensity is extreme, clipping is detected."""
@@ -109,8 +115,8 @@ class TestDMLDiagnostics:
 # Task 23: Nonlinear Nuisance Models
 # ============================================================
 
-class TestGBMNuisance:
 
+class TestGBMNuisance:
     def test_gbm_factory_returns_callables(self):
         """create_gbm_nuisance_functions returns (train_fn, predict_fn)."""
         train_fn, predict_fn = create_gbm_nuisance_functions()
@@ -138,18 +144,18 @@ class TestGBMNuisance:
 
     def test_create_nuisance_factory_linear(self):
         """Factory with method='linear' returns linear functions."""
-        train_fn, predict_fn = create_nuisance_functions(method='linear')
+        train_fn, predict_fn = create_nuisance_functions(method="linear")
         assert callable(train_fn)
 
     def test_create_nuisance_factory_gbm(self):
         """Factory with method='gbm' returns GBM functions."""
-        train_fn, predict_fn = create_nuisance_functions(method='gbm')
+        train_fn, predict_fn = create_nuisance_functions(method="gbm")
         assert callable(train_fn)
 
     def test_create_nuisance_factory_invalid(self):
         """Factory with invalid method raises ValueError."""
         with pytest.raises(ValueError, match="Unknown nuisance method"):
-            create_nuisance_functions(method='xgboost')
+            create_nuisance_functions(method="xgboost")
 
     def test_gbm_with_custom_params(self):
         """GBM factory accepts custom hyperparameters."""

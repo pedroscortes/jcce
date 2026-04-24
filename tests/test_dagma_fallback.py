@@ -10,20 +10,20 @@ These tests verify the fixes for:
 - v16.3: >50% of evals stuck at h(A)=0.5 due to zero-gradient fallback
 """
 
+import os
+import sys
+
 import jax
 import jax.numpy as jnp
-import numpy as np
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jcce.structure_learning.jcce_learner import dag_constraint
-
 
 # =============================================================================
 # Bug 2: DAGMA fallback offset
 # =============================================================================
+
 
 def test_dagma_fallback_small_d():
     """DAGMA fallback should stay in reasonable range for small d (e.g., 11)."""
@@ -130,6 +130,7 @@ def test_dagma_fallback_feasibility_threshold():
 # Bug 3: Negative h(A) from main DAGMA formula
 # =============================================================================
 
+
 def test_dagma_no_negative_h():
     """h(A) should never be negative — clamp to 0."""
     print("\n" + "=" * 60)
@@ -180,6 +181,7 @@ def test_dagma_negative_clamp_preserves_gradient():
 # Bug 1: NSGA-II result v7 config propagation
 # =============================================================================
 
+
 def test_nsga2_result_contains_v7_keys():
     """evaluate_genome_unified result should contain v7 effect config keys when use_v7=True."""
     print("\n" + "=" * 60)
@@ -191,36 +193,40 @@ def test_nsga2_result_contains_v7_keys():
     # We verify the keys exist in a mock result built the same way.
 
     v7_config_keys = [
-        'effect_hidden_dim', 'lambda_effect', 'effect_embed_dim',
-        'effect_warmup_iter', 'lambda_confound_sparse', 'lambda_bow',
+        "effect_hidden_dim",
+        "lambda_effect",
+        "effect_embed_dim",
+        "effect_warmup_iter",
+        "lambda_confound_sparse",
+        "lambda_bow",
     ]
 
     # Simulate the config dict as built by evaluate_genome_unified
     config = {
-        'effect_hidden_dim': 64,
-        'effect_embed_dim': 16,
-        'lambda_effect': 1.0,
-        'effect_warmup_iter': 20,
-        'lambda_confound_sparse': 0.001,
-        'lambda_bow_v7': 0.01,
+        "effect_hidden_dim": 64,
+        "effect_embed_dim": 16,
+        "lambda_effect": 1.0,
+        "effect_warmup_iter": 20,
+        "lambda_confound_sparse": 0.001,
+        "lambda_bow_v7": 0.01,
     }
     golem_overrides = {}
 
     # Simulate the result dict construction (mirrors nsga2_search.py lines 1025-1031)
     result = {}
-    result['effect_hidden_dim'] = config.get('effect_hidden_dim', 64)
-    result['lambda_effect'] = golem_overrides.get('lambda_effect', config.get('lambda_effect', 1.0))
-    result['effect_embed_dim'] = config.get('effect_embed_dim', 16)
-    result['effect_warmup_iter'] = config.get('effect_warmup_iter', 20)
-    result['lambda_confound_sparse'] = config.get('lambda_confound_sparse', 0.001)
-    result['lambda_bow'] = golem_overrides.get('lambda_bow', config.get('lambda_bow_v7', 0.01))
+    result["effect_hidden_dim"] = config.get("effect_hidden_dim", 64)
+    result["lambda_effect"] = golem_overrides.get("lambda_effect", config.get("lambda_effect", 1.0))
+    result["effect_embed_dim"] = config.get("effect_embed_dim", 16)
+    result["effect_warmup_iter"] = config.get("effect_warmup_iter", 20)
+    result["lambda_confound_sparse"] = config.get("lambda_confound_sparse", 0.001)
+    result["lambda_bow"] = golem_overrides.get("lambda_bow", config.get("lambda_bow_v7", 0.01))
 
     for key in v7_config_keys:
         assert key in result, f"Missing key '{key}' in result dict"
         print(f"  {key} = {result[key]}")
 
     # Verify CV v7 detection would succeed
-    use_v7 = 'effect_hidden_dim' in result or 'lambda_effect' in result
+    use_v7 = "effect_hidden_dim" in result or "lambda_effect" in result
     assert use_v7, "CV should detect v7 from result keys"
     print("  CV use_v7 detection: True")
     print("  PASSED")
@@ -234,18 +240,25 @@ def test_cv_v7_detection_logic():
 
     # Case 1: v7 keys present (after fix)
     hyperparams_v7 = {
-        'lambda_1': 0.02, 'lambda_2': 0.01, 'lambda_class': 1.0, 'lr': 0.001,
-        'effect_hidden_dim': 64, 'lambda_effect': 1.0,
+        "lambda_1": 0.02,
+        "lambda_2": 0.01,
+        "lambda_class": 1.0,
+        "lr": 0.001,
+        "effect_hidden_dim": 64,
+        "lambda_effect": 1.0,
     }
-    use_v7 = 'effect_hidden_dim' in hyperparams_v7 or 'lambda_effect' in hyperparams_v7
+    use_v7 = "effect_hidden_dim" in hyperparams_v7 or "lambda_effect" in hyperparams_v7
     assert use_v7 is True, "Should detect v7 when effect keys present"
     print("  With effect keys: use_v7 = True")
 
     # Case 2: v7 keys absent (old bug behavior)
     hyperparams_v4 = {
-        'lambda_1': 0.02, 'lambda_2': 0.01, 'lambda_class': 1.0, 'lr': 0.001,
+        "lambda_1": 0.02,
+        "lambda_2": 0.01,
+        "lambda_class": 1.0,
+        "lr": 0.001,
     }
-    use_v7 = 'effect_hidden_dim' in hyperparams_v4 or 'lambda_effect' in hyperparams_v4
+    use_v7 = "effect_hidden_dim" in hyperparams_v4 or "lambda_effect" in hyperparams_v4
     assert use_v7 is False, "Should not detect v7 when effect keys absent"
     print("  Without effect keys: use_v7 = False")
 
@@ -257,6 +270,7 @@ def test_cv_v7_detection_logic():
 # trace(A²) only sees diagonal (≈0 for no self-loops) → h=0.5, grad=0
 # Fix: sum(A²)/(d*s) sees all edges → non-zero gradient signal
 # =============================================================================
+
 
 def test_v163_fallback_not_constant():
     """v16.3: Fallback h(A) should vary with edge weights, not be constant 0.5."""
@@ -304,12 +318,18 @@ def test_v163_fallback_gradient_nonzero():
         off_diag_norm = float(jnp.linalg.norm(off_diag_grad))
         off_diag_mean = float(jnp.mean(jnp.abs(off_diag_grad)))
 
-        print(f"  d={d}: |grad| = {grad_norm:.4f}, off-diag |grad| = {off_diag_norm:.4f}, mean |grad_ij| = {off_diag_mean:.6f}")
+        print(
+            f"  d={d}: |grad| = {grad_norm:.4f}, off-diag |grad| = {off_diag_norm:.4f}, mean |grad_ij| = {off_diag_mean:.6f}"
+        )
 
         # OLD BUG: off_diag_norm = 0.0 (gradient dead zone)
         # FIX: off_diag_norm >> 0 (each edge gets 2*A[i,j]/(d*s) gradient)
-        assert off_diag_norm > 0.1, f"Off-diagonal gradient norm should be >> 0, got {off_diag_norm} (dead zone bug?)"
-        assert off_diag_mean > 1e-4, f"Mean off-diagonal gradient should be > 0, got {off_diag_mean}"
+        assert off_diag_norm > 0.1, (
+            f"Off-diagonal gradient norm should be >> 0, got {off_diag_norm} (dead zone bug?)"
+        )
+        assert off_diag_mean > 1e-4, (
+            f"Mean off-diagonal gradient should be > 0, got {off_diag_mean}"
+        )
 
     print("  PASSED")
 
@@ -330,11 +350,15 @@ def test_v163_fallback_gradient_pushes_weights_down():
     # so gradient descent moves A[i,j] in the negative direction (toward 0)
     mask = 1.0 - jnp.eye(d)
     off_diag_grad = grad * mask
-    positive_grad_frac = float(jnp.mean((off_diag_grad > 0).astype(jnp.float32) * mask) / jnp.mean(mask))
+    positive_grad_frac = float(
+        jnp.mean((off_diag_grad > 0).astype(jnp.float32) * mask) / jnp.mean(mask)
+    )
 
     print(f"  Fraction of off-diag gradients > 0: {positive_grad_frac:.2%}")
     # All off-diagonal should have positive gradient (for positive A)
-    assert positive_grad_frac > 0.95, f"Most gradients should be positive for positive A, got {positive_grad_frac:.2%}"
+    assert positive_grad_frac > 0.95, (
+        f"Most gradients should be positive for positive A, got {positive_grad_frac:.2%}"
+    )
     print("  PASSED")
 
 
@@ -384,7 +408,7 @@ def test_v163_optimization_escapes_fallback():
 # Main
 # =============================================================================
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("v16.2 + v16.3 Bug Fix Tests")
     print("=" * 60)
 

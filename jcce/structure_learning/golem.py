@@ -76,7 +76,7 @@ def golem_likelihood_ev(X: jnp.ndarray, B: jnp.ndarray) -> float:
     residuals = X - X @ B
 
     # RSS: ||X - X·B||²_F / n = (1/n) Σᵢⱼ (Xᵢⱼ - (X·B)ᵢⱼ)²
-    rss = jnp.sum(residuals ** 2) / n
+    rss = jnp.sum(residuals**2) / n
 
     # Log RSS term (averaged over dimensions)
     # From paper: (d/2) log(RSS/n) where RSS/n is the average squared residual
@@ -120,7 +120,7 @@ def golem_likelihood_nv(X: jnp.ndarray, B: jnp.ndarray) -> float:
     residuals = X - X @ B
 
     # Column-wise squared norms: ||Xᵢ - (X·B)ᵢ||² / n
-    column_squared_norms = jnp.sum(residuals ** 2, axis=0) / n  # (d,)
+    column_squared_norms = jnp.sum(residuals**2, axis=0) / n  # (d,)
 
     # Sum of log column norms
     # From paper: (1/2) Σᵢ log(||Xᵢ - XB_ᵢ||²/n)
@@ -155,15 +155,12 @@ def golem_acyclicity_constraint(B: jnp.ndarray) -> float:
     """
     # Same as NOTEARS
     from jcce.structure_learning.notears import notears_acyclicity_constraint
+
     return notears_acyclicity_constraint(B)
 
 
 def golem_score(
-    X: jnp.ndarray,
-    B: jnp.ndarray,
-    lambda_1: float,
-    lambda_2: float,
-    equal_variances: bool = True
+    X: jnp.ndarray, B: jnp.ndarray, lambda_1: float, lambda_2: float, equal_variances: bool = True
 ) -> float:
     """
     Compute GOLEM's overall score function.
@@ -222,6 +219,7 @@ def is_dag(B: jnp.ndarray, threshold: float = 1e-3) -> bool:
 # Full GOLEM Training Algorithm
 # =============================================================================
 
+
 def learn_with_golem(
     X: jnp.ndarray,
     key: jax.random.PRNGKey,
@@ -230,7 +228,7 @@ def learn_with_golem(
     lambda_final: float = 20.0,
     alpha_sparse: float = 0.001,
     learning_rate: float = 1e-3,
-    variant: str = 'ev',
+    variant: str = "ev",
     verbose: bool = True,
     A_prior: jnp.ndarray = None,
     lambda_prior: float = 0.1,
@@ -278,7 +276,9 @@ def learn_with_golem(
         print(f"  α_sparse: {alpha_sparse}")
         if A_prior is not None:
             n_prior_edges = int(jnp.sum(A_prior))
-            print(f"  Prior: {n_prior_edges} edges (λ_prior={lambda_prior:.3f}) [Memetic Component]")
+            print(
+                f"  Prior: {n_prior_edges} edges (λ_prior={lambda_prior:.3f}) [Memetic Component]"
+            )
 
     # Training loop
     for epoch in range(n_epochs):
@@ -287,7 +287,7 @@ def learn_with_golem(
         # Define loss function
         def loss_fn(B_param):
             # Likelihood score
-            if variant == 'ev':
+            if variant == "ev":
                 likelihood = golem_likelihood_ev(X, B_param)
             else:  # nv
                 likelihood = golem_likelihood_nv(X, B_param)
@@ -311,11 +311,11 @@ def learn_with_golem(
             total_loss = likelihood + dag_loss + sparse_loss + prior_loss
 
             return total_loss, {
-                'total': total_loss,
-                'likelihood': likelihood,
-                'dag': dag_loss,
-                'sparse': sparse_loss,
-                'prior': prior_loss,
+                "total": total_loss,
+                "likelihood": likelihood,
+                "dag": dag_loss,
+                "sparse": sparse_loss,
+                "prior": prior_loss,
             }
 
         # Compute gradients and update
@@ -331,9 +331,11 @@ def learn_with_golem(
             h_val = golem_acyclicity_constraint(B)
             B_norm = jnp.linalg.norm(B)
             B_max = jnp.max(jnp.abs(B))
-            log_str = (f"  Epoch {epoch+1:3d}: Loss={metrics['total']:.4f}, "
-                      f"Likelihood={metrics['likelihood']:.4f}, h={h_val:.4f}, "
-                      f"||B||={B_norm:.4f}, max|B|={B_max:.4f}")
+            log_str = (
+                f"  Epoch {epoch + 1:3d}: Loss={metrics['total']:.4f}, "
+                f"Likelihood={metrics['likelihood']:.4f}, h={h_val:.4f}, "
+                f"||B||={B_norm:.4f}, max|B|={B_max:.4f}"
+            )
             if A_prior is not None:
                 log_str += f", Prior={metrics['prior']:.4f}"
             print(log_str)

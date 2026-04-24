@@ -1,13 +1,12 @@
 """Tests for TOPSIS ranking."""
 
 import numpy as np
-import pytest
 
 from jcce.analysis.topsis_ranking import topsis_rank
 
 
 def _make_sol(bacc, sparsity):
-    return {'metrics': {'balanced_accuracy': bacc, 'mb_sparsity': sparsity}}
+    return {"metrics": {"balanced_accuracy": bacc, "mb_sparsity": sparsity}}
 
 
 class TestTopsisRank:
@@ -16,9 +15,9 @@ class TestTopsisRank:
     def test_basic_ranking(self):
         """Best BAcc + sparsity solution should rank first."""
         solutions = [
-            _make_sol(0.9, 0.8),   # good on both
-            _make_sol(0.5, 0.3),   # bad on both
-            _make_sol(0.7, 0.6),   # medium
+            _make_sol(0.9, 0.8),  # good on both
+            _make_sol(0.5, 0.3),  # bad on both
+            _make_sol(0.7, 0.6),  # medium
         ]
         indices, scores = topsis_rank(solutions)
         assert indices[0] == 0
@@ -43,8 +42,8 @@ class TestTopsisRank:
     def test_custom_weights(self):
         """Heavier weight on BAcc should prefer high-BAcc solution."""
         solutions = [
-            _make_sol(0.9, 0.2),   # high BAcc, low sparsity
-            _make_sol(0.5, 0.9),   # low BAcc, high sparsity
+            _make_sol(0.9, 0.2),  # high BAcc, low sparsity
+            _make_sol(0.5, 0.9),  # low BAcc, high sparsity
         ]
         # Weight BAcc heavily
         indices, _ = topsis_rank(solutions, weights=[0.9, 0.1])
@@ -58,12 +57,12 @@ class TestTopsisRank:
         """Minimize criterion should prefer lower values."""
         solutions = [
             _make_sol(0.8, 10.0),  # high "cost"
-            _make_sol(0.8, 2.0),   # low "cost"
+            _make_sol(0.8, 2.0),  # low "cost"
         ]
         # Second criterion is a cost to minimize
         indices, scores = topsis_rank(
             solutions,
-            criteria=['balanced_accuracy', 'mb_sparsity'],
+            criteria=["balanced_accuracy", "mb_sparsity"],
             beneficial=[True, False],
         )
         assert indices[0] == 1

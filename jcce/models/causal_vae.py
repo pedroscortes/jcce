@@ -11,9 +11,9 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 
-from jcce.models.encoder import Encoder, reparameterize
-from jcce.models.decoder import Decoder
 from jcce.models.causal_layer import implicit_causal_layer
+from jcce.models.decoder import Decoder
+from jcce.models.encoder import Encoder, reparameterize
 
 
 class CausalVAE(nn.Module):
@@ -41,12 +41,8 @@ class CausalVAE(nn.Module):
 
     def setup(self):
         """Initialize encoder and decoder."""
-        self.encoder = Encoder(
-            latent_dim=self.latent_dim, hidden_dims=self.encoder_hidden_dims
-        )
-        self.decoder = Decoder(
-            output_dim=self.output_dim, hidden_dims=self.decoder_hidden_dims
-        )
+        self.encoder = Encoder(latent_dim=self.latent_dim, hidden_dims=self.encoder_hidden_dims)
+        self.decoder = Decoder(output_dim=self.output_dim, hidden_dims=self.decoder_hidden_dims)
 
     def __call__(
         self,
@@ -107,9 +103,7 @@ class CausalVAE(nn.Module):
 
         return x_reconstructed, info
 
-    def encode(
-        self, x: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def encode(self, x: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         """
         Encode observations to exogenous noise distribution parameters.
 
@@ -203,7 +197,7 @@ def causal_vae_elbo_loss(
         ()
     """
     # Import here to avoid circular dependency
-    from jcce.models.vae import reconstruction_loss, kl_divergence
+    from jcce.models.vae import kl_divergence, reconstruction_loss
 
     # Reconstruction loss
     recon_loss = reconstruction_loss(x, x_reconstructed, loss_type=reconstruction_type)

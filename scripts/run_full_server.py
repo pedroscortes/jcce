@@ -27,17 +27,15 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-
 
 # ============================================================================
 # Job definition
 # ============================================================================
+
 
 @dataclass
 class Job:
@@ -55,6 +53,7 @@ class Job:
 # ============================================================================
 # GPU Scheduler
 # ============================================================================
+
 
 class GPUScheduler:
     """Simple 2-GPU round-robin scheduler with job queue."""
@@ -83,15 +82,15 @@ class GPUScheduler:
             raise RuntimeError("No free GPU slot")
 
         job.log_path = os.path.join(log_dir, f"{job.name}.log")
-        log_file = open(job.log_path, 'w')
+        log_file = open(job.log_path, "w")
 
-        env = {**os.environ, 'CUDA_VISIBLE_DEVICES': str(gpu_id), **job.extra_env}
+        env = {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu_id), **job.extra_env}
         proc = subprocess.Popen(
             job.command,
             env=env,
             stdout=log_file,
             stderr=subprocess.STDOUT,
-            cwd=os.path.join(os.path.dirname(__file__), '..'),
+            cwd=os.path.join(os.path.dirname(__file__), ".."),
         )
 
         self.slots[gpu_id] = (job, proc, time.time())
@@ -141,22 +140,33 @@ class GPUScheduler:
 # Job definitions
 # ============================================================================
 
-ALL_DATASETS = ['lucas', 'heart_disease', 'breast_cancer', 'diabetes', 'sachs', 'asia', 'child', 'neuropathic_pain', 'alarm', 'insurance']
+ALL_DATASETS = [
+    "lucas",
+    "heart_disease",
+    "breast_cancer",
+    "diabetes",
+    "sachs",
+    "asia",
+    "child",
+    "neuropathic_pain",
+    "alarm",
+    "insurance",
+]
 
 OPTUNA_CONFIGS = {
-    'lucas':              {'n_trials': 100, 'max_iter': 300},
-    'heart_disease':      {'n_trials': 100, 'max_iter': 150},
-    'breast_cancer':      {'n_trials': 100, 'max_iter': 150},
-    'diabetes':           {'n_trials': 100, 'max_iter': 100},
-    'sachs':              {'n_trials': 100, 'max_iter': 150},
-    'asia':               {'n_trials': 100, 'max_iter': 100},
-    'child':              {'n_trials': 100, 'max_iter': 150},
-    'neuropathic_pain':   {'n_trials': 100, 'max_iter': 150},
-    'alarm':              {'n_trials': 100, 'max_iter': 150},
-    'insurance':          {'n_trials': 100, 'max_iter': 150},
+    "lucas": {"n_trials": 100, "max_iter": 300},
+    "heart_disease": {"n_trials": 100, "max_iter": 150},
+    "breast_cancer": {"n_trials": 100, "max_iter": 150},
+    "diabetes": {"n_trials": 100, "max_iter": 100},
+    "sachs": {"n_trials": 100, "max_iter": 150},
+    "asia": {"n_trials": 100, "max_iter": 100},
+    "child": {"n_trials": 100, "max_iter": 150},
+    "neuropathic_pain": {"n_trials": 100, "max_iter": 150},
+    "alarm": {"n_trials": 100, "max_iter": 150},
+    "insurance": {"n_trials": 100, "max_iter": 150},
 }
 
-QUICK_OPTUNA = {'n_trials': 5, 'max_iter': 20}
+QUICK_OPTUNA = {"n_trials": 5, "max_iter": 20}
 
 
 def _build_group_jobs(
@@ -174,17 +184,26 @@ def _build_group_jobs(
             if ds not in OPTUNA_CONFIGS:
                 continue
             cfg = QUICK_OPTUNA if quick else OPTUNA_CONFIGS[ds]
-            jobs.append(Job(
-                name=f"optuna_{ds}",
-                group=1,
-                command=[
-                    'uv', 'run', 'python', 'scripts/run_optuna_pipeline.py',
-                    '--dataset', ds,
-                    '--n-trials', str(cfg['n_trials']),
-                    '--max-iter', str(cfg['max_iter']),
-                    '--seed', str(seed),
-                ],
-            ))
+            jobs.append(
+                Job(
+                    name=f"optuna_{ds}",
+                    group=1,
+                    command=[
+                        "uv",
+                        "run",
+                        "python",
+                        "scripts/run_optuna_pipeline.py",
+                        "--dataset",
+                        ds,
+                        "--n-trials",
+                        str(cfg["n_trials"]),
+                        "--max-iter",
+                        str(cfg["max_iter"]),
+                        "--seed",
+                        str(seed),
+                    ],
+                )
+            )
 
     # Group 2: NSGA-II baseline (4 datasets)
     if group == 2:
@@ -192,28 +211,37 @@ def _build_group_jobs(
             if ds not in OPTUNA_CONFIGS:
                 continue
             cmd = [
-                'uv', 'run', 'python', 'scripts/run_ablation_study.py',
-                '--ablation', 'B6',
-                '--dataset', ds,
+                "uv",
+                "run",
+                "python",
+                "scripts/run_ablation_study.py",
+                "--ablation",
+                "B6",
+                "--dataset",
+                ds,
             ]
             if quick:
-                cmd.append('--quick')
-            jobs.append(Job(
-                name=f"nsga2_{ds}",
-                group=2,
-                command=cmd,
-            ))
+                cmd.append("--quick")
+            jobs.append(
+                Job(
+                    name=f"nsga2_{ds}",
+                    group=2,
+                    command=cmd,
+                )
+            )
 
     # Group 3: Phase C synthetic (sequential, 1 GPU)
     if group == 3:
-        cmd = ['uv', 'run', 'python', 'scripts/run_phase_c_server.py']
+        cmd = ["uv", "run", "python", "scripts/run_phase_c_server.py"]
         if quick:
-            cmd.append('--quick')
-        jobs.append(Job(
-            name="phase_c_synthetic",
-            group=3,
-            command=cmd,
-        ))
+            cmd.append("--quick")
+        jobs.append(
+            Job(
+                name="phase_c_synthetic",
+                group=3,
+                command=cmd,
+            )
+        )
 
     # Group 4: Phase C real (C1/C2/C5 per dataset)
     if group == 4:
@@ -221,17 +249,26 @@ def _build_group_jobs(
             if ds not in OPTUNA_CONFIGS:
                 continue
             cmd = [
-                'uv', 'run', 'python', 'scripts/run_phase_c_server.py',
-                '--dataset', ds,
-                '--experiments', 'c1', 'c2', 'c5',
+                "uv",
+                "run",
+                "python",
+                "scripts/run_phase_c_server.py",
+                "--dataset",
+                ds,
+                "--experiments",
+                "c1",
+                "c2",
+                "c5",
             ]
             if quick:
-                cmd.append('--quick')
-            jobs.append(Job(
-                name=f"phase_c_real_{ds}",
-                group=4,
-                command=cmd,
-            ))
+                cmd.append("--quick")
+            jobs.append(
+                Job(
+                    name=f"phase_c_real_{ds}",
+                    group=4,
+                    command=cmd,
+                )
+            )
 
     # Group 6: Definitive Optuna (structural DML + PCGrad)
     # Replaces Group 1 results with the improved effect estimation
@@ -240,20 +277,32 @@ def _build_group_jobs(
             if ds not in OPTUNA_CONFIGS:
                 continue
             cfg = QUICK_OPTUNA if quick else OPTUNA_CONFIGS[ds]
-            jobs.append(Job(
-                name=f"optuna_dml_{ds}",
-                group=6,
-                command=[
-                    'uv', 'run', 'python', 'scripts/run_optuna_pipeline.py',
-                    '--dataset', ds,
-                    '--n-trials', str(cfg['n_trials']),
-                    '--max-iter', str(cfg['max_iter']),
-                    '--seed', str(seed),
-                    '--golem-override', 'use_structural_dml=True',
-                    '--golem-override', 'use_dragonnet=False',
-                    '--golem-override', 'use_pcgrad=True',
-                ],
-            ))
+            jobs.append(
+                Job(
+                    name=f"optuna_dml_{ds}",
+                    group=6,
+                    command=[
+                        "uv",
+                        "run",
+                        "python",
+                        "scripts/run_optuna_pipeline.py",
+                        "--dataset",
+                        ds,
+                        "--n-trials",
+                        str(cfg["n_trials"]),
+                        "--max-iter",
+                        str(cfg["max_iter"]),
+                        "--seed",
+                        str(seed),
+                        "--golem-override",
+                        "use_structural_dml=True",
+                        "--golem-override",
+                        "use_dragonnet=False",
+                        "--golem-override",
+                        "use_pcgrad=True",
+                    ],
+                )
+            )
 
     # Group 7: Definitive NSGA-II (structural DML + PCGrad + fixed sparsity)
     if group == 7:
@@ -261,72 +310,103 @@ def _build_group_jobs(
             if ds not in OPTUNA_CONFIGS:
                 continue
             cmd = [
-                'uv', 'run', 'python', 'scripts/run_ablation_study.py',
-                '--ablation', 'B6',
-                '--dataset', ds,
-                '--golem-override', 'use_structural_dml=True',
-                '--golem-override', 'use_dragonnet=False',
-                '--golem-override', 'use_pcgrad=True',
+                "uv",
+                "run",
+                "python",
+                "scripts/run_ablation_study.py",
+                "--ablation",
+                "B6",
+                "--dataset",
+                ds,
+                "--golem-override",
+                "use_structural_dml=True",
+                "--golem-override",
+                "use_dragonnet=False",
+                "--golem-override",
+                "use_pcgrad=True",
             ]
             if quick:
-                cmd.append('--quick')
-            jobs.append(Job(
-                name=f"nsga2_dml_{ds}",
-                group=7,
-                command=cmd,
-            ))
+                cmd.append("--quick")
+            jobs.append(
+                Job(
+                    name=f"nsga2_dml_{ds}",
+                    group=7,
+                    command=cmd,
+                )
+            )
 
     # Group 8: Real-data ablations via Optuna (faster than NSGA-II)
     # Tests component impact on 3 datasets with 30 Optuna trials each
     if group == 8:
-        ablation_datasets = [ds for ds in ['lucas', 'sachs', 'diabetes'] if ds in datasets]
+        ablation_datasets = [ds for ds in ["lucas", "sachs", "diabetes"] if ds in datasets]
         abl_trials = 10 if quick else 30
         abl_iter = 50 if quick else 150
 
         # Each ablation config: (name, golem_overrides)
         ablation_configs = [
-            ('B6_baseline', {}),  # Full system (reference)
-            ('A1_no_curriculum', {'use_adaptive_curriculum': False}),
-            ('A1b_fixed_thirds', {'use_adaptive_curriculum': False, 'curriculum_phase_splits': '(0.333,0.667)'}),
-            ('A2_no_bow', {'lambda_bow': 0.0}),
-            ('A3_no_effects', {'lambda_effect': 0.0, 'use_amortized_effects': False}),
-            ('A8_pcgrad', {'use_pcgrad': True}),
-            ('A9_struct_dml', {'use_structural_dml': True, 'use_dragonnet': False}),
-            ('A9A8_dml_pcgrad', {'use_structural_dml': True, 'use_dragonnet': False, 'use_pcgrad': True}),
+            ("B6_baseline", {}),  # Full system (reference)
+            ("A1_no_curriculum", {"use_adaptive_curriculum": False}),
+            (
+                "A1b_fixed_thirds",
+                {"use_adaptive_curriculum": False, "curriculum_phase_splits": "(0.333,0.667)"},
+            ),
+            ("A2_no_bow", {"lambda_bow": 0.0}),
+            ("A3_no_effects", {"lambda_effect": 0.0, "use_amortized_effects": False}),
+            ("A8_pcgrad", {"use_pcgrad": True}),
+            ("A9_struct_dml", {"use_structural_dml": True, "use_dragonnet": False}),
+            (
+                "A9A8_dml_pcgrad",
+                {"use_structural_dml": True, "use_dragonnet": False, "use_pcgrad": True},
+            ),
         ]
 
         for ds in ablation_datasets:
-            cfg = OPTUNA_CONFIGS.get(ds, {'n_trials': abl_trials, 'max_iter': abl_iter})
+            cfg = OPTUNA_CONFIGS.get(ds, {"n_trials": abl_trials, "max_iter": abl_iter})
             for abl_name, overrides in ablation_configs:
                 cmd = [
-                    'uv', 'run', 'python', 'scripts/run_optuna_pipeline.py',
-                    '--dataset', ds,
-                    '--n-trials', str(abl_trials),
-                    '--max-iter', str(min(abl_iter, cfg['max_iter'])),
-                    '--seed', '42',
-                    '--results-dir', f'results/ablation_v16/{abl_name}',
+                    "uv",
+                    "run",
+                    "python",
+                    "scripts/run_optuna_pipeline.py",
+                    "--dataset",
+                    ds,
+                    "--n-trials",
+                    str(abl_trials),
+                    "--max-iter",
+                    str(min(abl_iter, cfg["max_iter"])),
+                    "--seed",
+                    "42",
+                    "--results-dir",
+                    f"results/ablation_v16/{abl_name}",
                 ]
                 for k, v in overrides.items():
-                    cmd.extend(['--golem-override', f'{k}={v}'])
-                jobs.append(Job(
-                    name=f"abl_{abl_name}_{ds}",
-                    group=8,
-                    command=cmd,
-                ))
+                    cmd.extend(["--golem-override", f"{k}={v}"])
+                jobs.append(
+                    Job(
+                        name=f"abl_{abl_name}_{ds}",
+                        group=8,
+                        command=cmd,
+                    )
+                )
 
     # Group 9: Baselines with fair 70/30 split + validation
     if group == 9:
         cmd = [
-            'uv', 'run', 'python', 'scripts/run_unified_baselines.py',
-            '--all',
+            "uv",
+            "run",
+            "python",
+            "scripts/run_unified_baselines.py",
+            "--all",
         ]
         if quick:
-            cmd.append('--quick')
-        jobs.append(Job(
-            name="baselines_all",
-            group=9,
-            command=cmd,
-        ))
+            cmd.append("--quick")
+        jobs.append(
+            Job(
+                name="baselines_all",
+                group=9,
+                command=cmd,
+            )
+        )
 
     # Group 10: Semiparametric efficiency coverage experiment
     if group == 10:
@@ -334,18 +414,28 @@ def _build_group_jobs(
             for n in [500, 1000, 2000]:
                 n_reps = 10 if quick else 50
                 mi = 50 if quick else 150
-                jobs.append(Job(
-                    name=f"coverage_c{config_id}_n{n}",
-                    group=10,
-                    command=[
-                        'uv', 'run', 'python', 'scripts/theory/coverage_experiment.py',
-                        '--config', str(config_id),
-                        '--n_samples', str(n),
-                        '--n_reps', str(n_reps),
-                        '--max_iter', str(mi),
-                        '--processor', 'elm',
-                    ],
-                ))
+                jobs.append(
+                    Job(
+                        name=f"coverage_c{config_id}_n{n}",
+                        group=10,
+                        command=[
+                            "uv",
+                            "run",
+                            "python",
+                            "scripts/theory/coverage_experiment.py",
+                            "--config",
+                            str(config_id),
+                            "--n_samples",
+                            str(n),
+                            "--n_reps",
+                            str(n_reps),
+                            "--max_iter",
+                            str(mi),
+                            "--processor",
+                            "elm",
+                        ],
+                    )
+                )
 
     # Group 11: Post-article experiments (processor comparison + scalability validation)
     # Revised 2026-04-15: slimmed down to minimum experiments that inform decisions
@@ -354,36 +444,53 @@ def _build_group_jobs(
         # Only 4 processors (DAG-Attention vs Transformer, CausalMamba vs Mamba)
         # Only 3 datasets (LUCAS + Sachs have ground truth, Heart is real clinical)
         # Existing MLP/ELM/GNN results from Groups 8+7 serve as baselines
-        for ds in ['lucas', 'sachs', 'heart_disease']:
+        for ds in ["lucas", "sachs", "heart_disease"]:
             if ds not in [d for d in datasets if d in OPTUNA_CONFIGS]:
                 continue
             mi = 50 if quick else 150
             ns = 1 if quick else 3
-            jobs.append(Job(
-                name=f"proc_gate_{ds}",
-                group=11,
-                command=[
-                    'uv', 'run', 'python', 'scripts/theory/test_new_processors_server.py',
-                    '--dataset', ds,
-                    '--max-iter', str(mi),
-                    '--n-seeds', str(ns),
-                ],
-            ))
+            jobs.append(
+                Job(
+                    name=f"proc_gate_{ds}",
+                    group=11,
+                    command=[
+                        "uv",
+                        "run",
+                        "python",
+                        "scripts/theory/test_new_processors_server.py",
+                        "--dataset",
+                        ds,
+                        "--max-iter",
+                        str(mi),
+                        "--n-seeds",
+                        str(ns),
+                    ],
+                )
+            )
 
         # 11b: Two-stage optimization — single dataset is sufficient for go/no-go
         # LUCAS only (d=11, ground truth, fast). If it works here, test more later.
         mi = 50 if quick else 150
         ns = 1 if quick else 3
-        jobs.append(Job(
-            name=f"two_stage_lucas",
-            group=11,
-            command=[
-                'uv', 'run', 'python', 'scripts/theory/test_two_stage_server.py',
-                '--dataset', 'lucas',
-                '--max-iter', str(mi),
-                '--n-seeds', str(ns),
-            ] + (['--quick'] if quick else []),
-        ))
+        jobs.append(
+            Job(
+                name="two_stage_lucas",
+                group=11,
+                command=[
+                    "uv",
+                    "run",
+                    "python",
+                    "scripts/theory/test_two_stage_server.py",
+                    "--dataset",
+                    "lucas",
+                    "--max-iter",
+                    str(mi),
+                    "--n-seeds",
+                    str(ns),
+                ]
+                + (["--quick"] if quick else []),
+            )
+        )
 
         # 11c: Phase-aware Hyperband — single dataset is sufficient
         # LUCAS only. We already know from local tests that standard Hyperband
@@ -391,38 +498,62 @@ def _build_group_jobs(
         # produce better rank correlation than the simulation.
         nt = 8 if quick else 20
         mi = 50 if quick else 150
-        jobs.append(Job(
-            name=f"hyperband_lucas",
-            group=11,
-            command=[
-                'uv', 'run', 'python', 'scripts/theory/test_hyperband_server.py',
-                '--dataset', 'lucas',
-                '--n-trials', str(nt),
-                '--max-iter', str(mi),
-            ] + (['--quick'] if quick else []),
-        ))
+        jobs.append(
+            Job(
+                name="hyperband_lucas",
+                group=11,
+                command=[
+                    "uv",
+                    "run",
+                    "python",
+                    "scripts/theory/test_hyperband_server.py",
+                    "--dataset",
+                    "lucas",
+                    "--n-trials",
+                    str(nt),
+                    "--max-iter",
+                    str(mi),
+                ]
+                + (["--quick"] if quick else []),
+            )
+        )
 
     # Group 5: E.1 scaling
     # Disable XLA command buffers to prevent GPU memory fragmentation at d>=50
     if group == 5:
         cmd = [
-            'uv', 'run', 'python', 'scripts/experiment_e1_scaling.py',
-            '--dims', '10', '20', '50', '100',
-            '--n-trials', '15',
-            '--n-samples', '500',
-            '--max-iter', '100',
+            "uv",
+            "run",
+            "python",
+            "scripts/experiment_e1_scaling.py",
+            "--dims",
+            "10",
+            "20",
+            "50",
+            "100",
+            "--n-trials",
+            "15",
+            "--n-samples",
+            "500",
+            "--max-iter",
+            "100",
         ]
         if quick:
             cmd = [
-                'uv', 'run', 'python', 'scripts/experiment_e1_scaling.py',
-                '--quick',
+                "uv",
+                "run",
+                "python",
+                "scripts/experiment_e1_scaling.py",
+                "--quick",
             ]
-        jobs.append(Job(
-            name="e1_scaling",
-            group=5,
-            command=cmd,
-            extra_env={'XLA_FLAGS': '--xla_gpu_enable_command_buffer='},
-        ))
+        jobs.append(
+            Job(
+                name="e1_scaling",
+                group=5,
+                command=cmd,
+                extra_env={"XLA_FLAGS": "--xla_gpu_enable_command_buffer="},
+            )
+        )
 
     return jobs
 
@@ -444,27 +575,29 @@ def build_jobs(
 # Main
 # ============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description='Master orchestration for full JCCE experiment suite'
+        description="Master orchestration for full JCCE experiment suite"
     )
-    parser.add_argument('--groups', type=int, nargs='+',
-                        default=[1, 2, 3, 4, 5],
-                        help='Job groups to run (1-5)')
-    parser.add_argument('--datasets', type=str, nargs='+',
-                        default=ALL_DATASETS,
-                        choices=ALL_DATASETS,
-                        help='Datasets to include')
-    parser.add_argument('--quick', action='store_true',
-                        help='Quick test mode (5 trials, 20 iters)')
-    parser.add_argument('--dry-run', action='store_true',
-                        help='Print commands without executing')
-    parser.add_argument('--n-gpus', type=int, default=2,
-                        help='Number of GPUs available')
-    parser.add_argument('--seed', type=int, default=42,
-                        help='Random seed')
-    parser.add_argument('--poll-interval', type=float, default=10.0,
-                        help='Seconds between status checks')
+    parser.add_argument(
+        "--groups", type=int, nargs="+", default=[1, 2, 3, 4, 5], help="Job groups to run (1-5)"
+    )
+    parser.add_argument(
+        "--datasets",
+        type=str,
+        nargs="+",
+        default=ALL_DATASETS,
+        choices=ALL_DATASETS,
+        help="Datasets to include",
+    )
+    parser.add_argument("--quick", action="store_true", help="Quick test mode (5 trials, 20 iters)")
+    parser.add_argument("--dry-run", action="store_true", help="Print commands without executing")
+    parser.add_argument("--n-gpus", type=int, default=2, help="Number of GPUs available")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--poll-interval", type=float, default=10.0, help="Seconds between status checks"
+    )
     args = parser.parse_args()
 
     # Build job queue
@@ -480,11 +613,11 @@ def main():
         return
 
     # Output directory
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    mode = 'quick' if args.quick else 'full'
-    log_dir = os.path.join('results', f'full_run_{mode}_{timestamp}')
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    mode = "quick" if args.quick else "full"
+    log_dir = os.path.join("results", f"full_run_{mode}_{timestamp}")
 
-    print(f"JCCE Full Experiment Suite")
+    print("JCCE Full Experiment Suite")
     print(f"  Mode: {'QUICK' if args.quick else 'FULL'}")
     print(f"  Groups: {args.groups} (in this order)")
     print(f"  Datasets: {args.datasets}")
@@ -512,9 +645,9 @@ def main():
     failed: List[Job] = []
     start_time = time.time()
 
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"Starting execution at {datetime.now().strftime('%H:%M:%S')}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     while queue or scheduler.n_running() > 0:
         # Submit jobs to free GPUs
@@ -532,9 +665,7 @@ def main():
             break
 
         # Wait for any job to finish
-        gpu_id, job, returncode = scheduler.wait_any(
-            poll_interval=args.poll_interval
-        )
+        gpu_id, job, returncode = scheduler.wait_any(poll_interval=args.poll_interval)
 
         mins = int(job.wall_time // 60)
         secs = int(job.wall_time % 60)
@@ -543,16 +674,15 @@ def main():
             print(f"\n[DONE] {job.name} ({mins}m{secs}s) on GPU {gpu_id}")
         else:
             failed.append(job)
-            print(f"\n[FAIL] {job.name} (rc={returncode}, {mins}m{secs}s) "
-                  f"on GPU {gpu_id}")
+            print(f"\n[FAIL] {job.name} (rc={returncode}, {mins}m{secs}s) on GPU {gpu_id}")
             print(f"  Check log: {job.log_path}")
 
     total_time = time.time() - start_time
 
     # Summary
-    print(f"\n{'='*70}")
-    print(f"EXECUTION SUMMARY")
-    print(f"{'='*70}")
+    print(f"\n{'=' * 70}")
+    print("EXECUTION SUMMARY")
+    print(f"{'=' * 70}")
     print(f"Total time: {int(total_time // 3600)}h {int((total_time % 3600) // 60)}m")
     print(f"Completed: {len(completed)}/{len(jobs)}")
     if failed:
@@ -560,7 +690,7 @@ def main():
         for job in failed:
             print(f"  - {job.name} (rc={job.returncode})")
 
-    print(f"\nPer-job times:")
+    print("\nPer-job times:")
     for job in completed + failed:
         status = "OK" if job.returncode == 0 else f"FAIL(rc={job.returncode})"
         mins = int(job.wall_time // 60)
@@ -568,31 +698,31 @@ def main():
 
     # Write summary JSON
     summary = {
-        'mode': 'quick' if args.quick else 'full',
-        'groups': args.groups,
-        'datasets': args.datasets,
-        'n_gpus': args.n_gpus,
-        'seed': args.seed,
-        'total_time_s': total_time,
-        'n_completed': len(completed),
-        'n_failed': len(failed),
-        'jobs': [
+        "mode": "quick" if args.quick else "full",
+        "groups": args.groups,
+        "datasets": args.datasets,
+        "n_gpus": args.n_gpus,
+        "seed": args.seed,
+        "total_time_s": total_time,
+        "n_completed": len(completed),
+        "n_failed": len(failed),
+        "jobs": [
             {
-                'name': job.name,
-                'group': job.group,
-                'command': ' '.join(job.command),
-                'returncode': job.returncode,
-                'wall_time_s': job.wall_time,
-                'log_path': job.log_path,
+                "name": job.name,
+                "group": job.group,
+                "command": " ".join(job.command),
+                "returncode": job.returncode,
+                "wall_time_s": job.wall_time,
+                "log_path": job.log_path,
             }
             for job in completed + failed
         ],
     }
-    summary_path = os.path.join(log_dir, 'summary.json')
-    with open(summary_path, 'w') as f:
+    summary_path = os.path.join(log_dir, "summary.json")
+    with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
     print(f"\nSummary saved to {summary_path}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

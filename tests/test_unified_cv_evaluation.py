@@ -14,17 +14,17 @@ import pytest
 
 from jcce.validation.unified_cv_evaluation import (
     UnifiedCVResult,
-    _compute_jaccard,
-    _compute_mb_jaccard_mean,
     _compute_edge_frequency,
-    _compute_shd,
+    _compute_jaccard,
     _compute_mb_f1,
+    _compute_mb_jaccard_mean,
+    _compute_shd,
 )
-
 
 # =============================================================================
 # 1. UnifiedCVResult Tests
 # =============================================================================
+
 
 class TestUnifiedCVResult:
     """Test the UnifiedCVResult dataclass."""
@@ -66,18 +66,18 @@ class TestUnifiedCVResult:
         """Verify to_dict returns all keys."""
         result = self._make_result()
         d = result.to_dict()
-        assert 'accuracy_mean' in d
-        assert 'f1_std' in d
-        assert 'mb_per_fold' in d
-        assert 'edge_frequency' in d
-        assert d['n_folds'] == 5
+        assert "accuracy_mean" in d
+        assert "f1_std" in d
+        assert "mb_per_fold" in d
+        assert "edge_frequency" in d
+        assert d["n_folds"] == 5
 
     def test_result_summary_string(self):
         """Verify summary produces non-empty string."""
         result = self._make_result()
         s = result.summary()
-        assert 'UNIFIED CV EVALUATION' in s
-        assert '0.812' in s or '0.8120' in s
+        assert "UNIFIED CV EVALUATION" in s
+        assert "0.812" in s or "0.8120" in s
 
     def test_result_with_ground_truth(self):
         """Verify SHD and MB F1 fields."""
@@ -85,16 +85,17 @@ class TestUnifiedCVResult:
         result.shd_per_fold = [5, 6, 4, 7, 5]
         result.mb_f1_per_fold = [0.8, 0.7, 0.8, 0.6, 0.8]
         d = result.to_dict()
-        assert 'shd_per_fold' in d
-        assert 'mb_f1_per_fold' in d
+        assert "shd_per_fold" in d
+        assert "mb_f1_per_fold" in d
         s = result.summary()
-        assert 'SHD' in s
-        assert 'MB F1' in s
+        assert "SHD" in s
+        assert "MB F1" in s
 
 
 # =============================================================================
 # 2. Helper Function Tests
 # =============================================================================
+
 
 class TestJaccardSimilarity:
     """Test Jaccard similarity computation."""
@@ -107,7 +108,7 @@ class TestJaccardSimilarity:
 
     def test_partial_overlap(self):
         # Intersection={1}, Union={0,1,2} → 1/3
-        assert _compute_jaccard({0, 1}, {1, 2}) == pytest.approx(1/3)
+        assert _compute_jaccard({0, 1}, {1, 2}) == pytest.approx(1 / 3)
 
     def test_empty_sets(self):
         assert _compute_jaccard(set(), set()) == 1.0
@@ -131,7 +132,7 @@ class TestMBJaccardMean:
         mbs = [[0, 1], [0, 1, 2], [0, 1]]
         # Pairs: (0,1)=2/3, (0,2)=1.0, (1,2)=2/3
         # Mean = (2/3 + 1.0 + 2/3) / 3 = 7/9
-        assert _compute_mb_jaccard_mean(mbs) == pytest.approx(7/9, rel=1e-6)
+        assert _compute_mb_jaccard_mean(mbs) == pytest.approx(7 / 9, rel=1e-6)
 
     def test_single_fold(self):
         assert _compute_mb_jaccard_mean([[0, 1]]) == 1.0
@@ -149,7 +150,7 @@ class TestEdgeFrequency:
         A1 = np.array([[0, 0.5], [0, 0]])
         A2 = np.array([[0, 0], [0, 0]])
         freq = _compute_edge_frequency([A1, A1, A2])
-        assert freq[(0, 1)] == pytest.approx(2/3)
+        assert freq[(0, 1)] == pytest.approx(2 / 3)
 
     def test_empty(self):
         freq = _compute_edge_frequency([])
@@ -186,7 +187,7 @@ class TestMBF1:
     def test_partial(self):
         # Predicted={0,4}, True={0,4,8}
         # TP=2, Precision=2/2=1.0, Recall=2/3, F1=2*(1.0*2/3)/(1.0+2/3)
-        expected_f1 = 2 * (1.0 * 2/3) / (1.0 + 2/3)
+        expected_f1 = 2 * (1.0 * 2 / 3) / (1.0 + 2 / 3)
         assert _compute_mb_f1([0, 4], [0, 4, 8]) == pytest.approx(expected_f1)
 
     def test_both_empty(self):
@@ -207,6 +208,7 @@ class TestMBF1:
 try:
     import jax
     import jax.numpy as jnp
+
     HAS_JAX = True
 except ImportError:
     HAS_JAX = False
@@ -235,17 +237,18 @@ class TestEvaluateParetoCVBasic:
         n_features = X.shape[1]
 
         hyperparams = {
-            'lambda_1': 0.02,
-            'lambda_2': 0.01,
-            'lambda_class': 1.0,
-            'lr': 0.001,
+            "lambda_1": 0.02,
+            "lambda_2": 0.01,
+            "lambda_class": 1.0,
+            "lr": 0.001,
         }
         A_init = np.zeros((n_features + 1, n_features + 1), dtype=np.float32)
 
         result = evaluate_pareto_solution_cv(
-            X=X, Y=Y,
+            X=X,
+            Y=Y,
             hyperparams=hyperparams,
-            processor_type='elm',
+            processor_type="elm",
             A_init=A_init,
             n_folds=3,
             golem_max_iter=10,  # Very few iterations for speed
@@ -268,17 +271,18 @@ class TestEvaluateParetoCVBasic:
         n_features = X.shape[1]
 
         hyperparams = {
-            'lambda_1': 0.02,
-            'lambda_2': 0.01,
-            'lambda_class': 1.0,
-            'lr': 0.001,
+            "lambda_1": 0.02,
+            "lambda_2": 0.01,
+            "lambda_class": 1.0,
+            "lr": 0.001,
         }
         A_init = np.zeros((n_features + 1, n_features + 1), dtype=np.float32)
 
         result = evaluate_pareto_solution_cv(
-            X=X, Y=Y,
+            X=X,
+            Y=Y,
             hyperparams=hyperparams,
-            processor_type='mlp',
+            processor_type="mlp",
             A_init=A_init,
             n_folds=3,
             golem_max_iter=10,
@@ -301,17 +305,18 @@ class TestEvaluateParetoCVBasic:
         n_features = X.shape[1]
 
         hyperparams = {
-            'lambda_1': 0.02,
-            'lambda_2': 0.01,
-            'lambda_class': 1.0,
-            'lr': 0.001,
+            "lambda_1": 0.02,
+            "lambda_2": 0.01,
+            "lambda_class": 1.0,
+            "lr": 0.001,
         }
         A_init = np.zeros((n_features + 1, n_features + 1), dtype=np.float32)
 
         result = evaluate_pareto_solution_cv(
-            X=X, Y=Y,
+            X=X,
+            Y=Y,
             hyperparams=hyperparams,
-            processor_type='elm',
+            processor_type="elm",
             A_init=A_init,
             n_folds=3,
             golem_max_iter=10,
@@ -338,17 +343,18 @@ class TestEvaluateParetoCVBasic:
         true_mb = [0, 2]
 
         hyperparams = {
-            'lambda_1': 0.02,
-            'lambda_2': 0.01,
-            'lambda_class': 1.0,
-            'lr': 0.001,
+            "lambda_1": 0.02,
+            "lambda_2": 0.01,
+            "lambda_class": 1.0,
+            "lr": 0.001,
         }
         A_init = np.zeros((n_features + 1, n_features + 1), dtype=np.float32)
 
         result = evaluate_pareto_solution_cv(
-            X=X, Y=Y,
+            X=X,
+            Y=Y,
             hyperparams=hyperparams,
-            processor_type='elm',
+            processor_type="elm",
             A_init=A_init,
             n_folds=3,
             golem_max_iter=10,

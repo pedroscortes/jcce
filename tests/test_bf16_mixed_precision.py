@@ -9,14 +9,14 @@ Validates that:
 5. Backward compatibility: default use_bf16=False unchanged
 """
 
-import jax
+import os
+import sys
+import time
+
 import jax.numpy as jnp
 from jax import random
-import time
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jcce.structure_learning.jcce_learner import (
     create_processor,
@@ -43,27 +43,39 @@ def test_bf16_correctness():
     X, Y = _make_test_data(k1)
     n_features = X.shape[1]
 
-    processor_fp32 = create_processor('elm', key=k2, n_features=n_features)
-    processor_bf16 = create_processor('elm', key=k2, n_features=n_features)
+    processor_fp32 = create_processor("elm", key=k2, n_features=n_features)
+    processor_bf16 = create_processor("elm", key=k2, n_features=n_features)
 
     # Run with fp32
     A_fp32, _, _, metrics_fp32 = learn_structure(
-        data=X, Y=Y, Y_idx=n_features, processor=processor_fp32,
-        key=k3, processor_type='elm',
-        max_iter=30, verbose=0, use_bf16=False,
+        data=X,
+        Y=Y,
+        Y_idx=n_features,
+        processor=processor_fp32,
+        key=k3,
+        processor_type="elm",
+        max_iter=30,
+        verbose=0,
+        use_bf16=False,
         use_validation_split=False,
     )
 
     # Run with bf16
     A_bf16, _, _, metrics_bf16 = learn_structure(
-        data=X, Y=Y, Y_idx=n_features, processor=processor_bf16,
-        key=k3, processor_type='elm',
-        max_iter=30, verbose=0, use_bf16=True,
+        data=X,
+        Y=Y,
+        Y_idx=n_features,
+        processor=processor_bf16,
+        key=k3,
+        processor_type="elm",
+        max_iter=30,
+        verbose=0,
+        use_bf16=True,
         use_validation_split=False,
     )
 
-    loss_fp32 = metrics_fp32['final_loss']
-    loss_bf16 = metrics_bf16['final_loss']
+    loss_fp32 = metrics_fp32["final_loss"]
+    loss_bf16 = metrics_bf16["final_loss"]
     diff = abs(loss_fp32 - loss_bf16)
 
     print(f"  fp32 final loss: {loss_fp32:.6f}")
@@ -93,19 +105,25 @@ def test_bf16_gradients():
     X = random.normal(k1, (n_samples, n_features))
     Y = (X[:, 0] > 0).astype(jnp.float32).reshape(-1, 1)
 
-    processor = create_processor('elm', key=k2, n_features=n_features)
+    processor = create_processor("elm", key=k2, n_features=n_features)
 
     # Run a short training and check final metrics for NaN
     _, _, _, metrics = learn_structure(
-        data=X, Y=Y, Y_idx=n_features, processor=processor,
-        key=k2, processor_type='elm',
-        max_iter=20, verbose=0, use_bf16=True,
+        data=X,
+        Y=Y,
+        Y_idx=n_features,
+        processor=processor,
+        key=k2,
+        processor_type="elm",
+        max_iter=20,
+        verbose=0,
+        use_bf16=True,
         use_validation_split=False,
     )
 
-    final_loss = metrics['final_loss']
-    recon_loss = metrics['final_recon_loss']
-    class_loss = metrics['final_class_loss']
+    final_loss = metrics["final_loss"]
+    recon_loss = metrics["final_recon_loss"]
+    class_loss = metrics["final_class_loss"]
 
     print(f"  Final loss:  {final_loss:.6f}")
     print(f"  Recon loss:  {recon_loss:.6f}")
@@ -132,19 +150,25 @@ def test_bf16_train_step_convergence():
 
     X, Y = _make_test_data(k1, n_samples=60, n_features=n_features)
 
-    processor = create_processor('elm', key=k2, n_features=n_features)
+    processor = create_processor("elm", key=k2, n_features=n_features)
 
     start = time.time()
     _, _, _, metrics = learn_structure(
-        data=X, Y=Y, Y_idx=n_features, processor=processor,
-        key=k2, processor_type='elm',
-        max_iter=50, verbose=0, use_bf16=True,
+        data=X,
+        Y=Y,
+        Y_idx=n_features,
+        processor=processor,
+        key=k2,
+        processor_type="elm",
+        max_iter=50,
+        verbose=0,
+        use_bf16=True,
         use_validation_split=False,
     )
     elapsed = time.time() - start
 
-    final_loss = metrics['final_loss']
-    n_iters = metrics['iterations']
+    final_loss = metrics["final_loss"]
+    n_iters = metrics["iterations"]
 
     print(f"  Training time: {elapsed:.2f}s")
     print(f"  Final loss:    {final_loss:.6f}")
@@ -170,12 +194,18 @@ def test_dag_constraint_stays_fp32():
 
     X, Y = _make_test_data(k1, n_samples=30, n_features=n_features)
 
-    processor = create_processor('elm', key=k2, n_features=n_features)
+    processor = create_processor("elm", key=k2, n_features=n_features)
 
     A_est, _, _, _ = learn_structure(
-        data=X, Y=Y, Y_idx=n_features, processor=processor,
-        key=k2, processor_type='elm',
-        max_iter=10, verbose=0, use_bf16=True,
+        data=X,
+        Y=Y,
+        Y_idx=n_features,
+        processor=processor,
+        key=k2,
+        processor_type="elm",
+        max_iter=10,
+        verbose=0,
+        use_bf16=True,
         use_validation_split=False,
     )
 
@@ -198,22 +228,33 @@ def test_backward_compatibility():
 
     X, Y = _make_test_data(k1, n_samples=30, n_features=n_features)
 
-    processor1 = create_processor('elm', key=k2, n_features=n_features)
-    processor2 = create_processor('elm', key=k2, n_features=n_features)
+    processor1 = create_processor("elm", key=k2, n_features=n_features)
+    processor2 = create_processor("elm", key=k2, n_features=n_features)
 
     # Default (no bf16 argument)
     A1, _, _, m1 = learn_structure(
-        data=X, Y=Y, Y_idx=n_features, processor=processor1,
-        key=k2, processor_type='elm',
-        max_iter=15, verbose=0,
+        data=X,
+        Y=Y,
+        Y_idx=n_features,
+        processor=processor1,
+        key=k2,
+        processor_type="elm",
+        max_iter=15,
+        verbose=0,
         use_validation_split=False,
     )
 
     # Explicit use_bf16=False
     A2, _, _, m2 = learn_structure(
-        data=X, Y=Y, Y_idx=n_features, processor=processor2,
-        key=k2, processor_type='elm',
-        max_iter=15, verbose=0, use_bf16=False,
+        data=X,
+        Y=Y,
+        Y_idx=n_features,
+        processor=processor2,
+        key=k2,
+        processor_type="elm",
+        max_iter=15,
+        verbose=0,
+        use_bf16=False,
         use_validation_split=False,
     )
 

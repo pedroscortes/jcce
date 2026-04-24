@@ -13,8 +13,9 @@ Usage:
     )
 """
 
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
-from typing import List, Dict, Optional, Tuple
 
 
 def compute_hypervolume_2d(
@@ -110,22 +111,19 @@ def compute_anytime_hypervolume(
             'hypervolumes': (n,) array of cumulative hypervolume at each trial.
             'n_pareto': (n,) array of cumulative Pareto front size.
     """
-    trials = [t for t in study.trials
-              if t.state.name == 'COMPLETE' and t.values is not None]
+    trials = [t for t in study.trials if t.state.name == "COMPLETE" and t.values is not None]
 
     if not trials:
         return {
-            'timestamps': np.array([]),
-            'hypervolumes': np.array([]),
-            'n_pareto': np.array([]),
+            "timestamps": np.array([]),
+            "hypervolumes": np.array([]),
+            "n_pareto": np.array([]),
         }
 
     # Sort by completion time
     trials.sort(key=lambda t: t.datetime_complete or t.datetime_start)
 
-    start_time = min(
-        t.datetime_start for t in trials if t.datetime_start is not None
-    )
+    start_time = min(t.datetime_start for t in trials if t.datetime_start is not None)
 
     timestamps = []
     hypervolumes = []
@@ -150,18 +148,18 @@ def compute_anytime_hypervolume(
         n_pareto_list.append(len(pareto))
 
     return {
-        'timestamps': np.array(timestamps),
-        'hypervolumes': np.array(hypervolumes),
-        'n_pareto': np.array(n_pareto_list),
+        "timestamps": np.array(timestamps),
+        "hypervolumes": np.array(hypervolumes),
+        "n_pareto": np.array(n_pareto_list),
     }
 
 
 def compute_anytime_hypervolume_from_solutions(
     solutions: List[Dict],
     ref_point: np.ndarray = np.array([0.0, 0.0]),
-    bacc_key: str = 'classification_balanced_accuracy',
-    sparsity_key: str = 'mb_sparsity',
-    time_key: str = 'wall_time',
+    bacc_key: str = "classification_balanced_accuracy",
+    sparsity_key: str = "mb_sparsity",
+    time_key: str = "wall_time",
 ) -> Dict[str, np.ndarray]:
     """
     Compute anytime hypervolume from a list of enhanced_solutions with timestamps.
@@ -180,14 +178,14 @@ def compute_anytime_hypervolume_from_solutions(
     """
     if not solutions:
         return {
-            'timestamps': np.array([]),
-            'hypervolumes': np.array([]),
-            'n_pareto': np.array([]),
+            "timestamps": np.array([]),
+            "hypervolumes": np.array([]),
+            "n_pareto": np.array([]),
         }
 
     # Sort by time
     def get_time(sol):
-        t = sol.get('metrics', {}).get(time_key)
+        t = sol.get("metrics", {}).get(time_key)
         if t is None:
             t = sol.get(time_key, 0.0)
         return float(t)
@@ -200,7 +198,7 @@ def compute_anytime_hypervolume_from_solutions(
     all_points = []
 
     for sol in sorted_sols:
-        m = sol.get('metrics', {})
+        m = sol.get("metrics", {})
         bacc = m.get(bacc_key, 0.0)
         sparsity = m.get(sparsity_key, 0.0)
         all_points.append([bacc, sparsity])
@@ -214,9 +212,9 @@ def compute_anytime_hypervolume_from_solutions(
         n_pareto_list.append(len(pareto))
 
     return {
-        'timestamps': np.array(timestamps),
-        'hypervolumes': np.array(hypervolumes),
-        'n_pareto': np.array(n_pareto_list),
+        "timestamps": np.array(timestamps),
+        "hypervolumes": np.array(hypervolumes),
+        "n_pareto": np.array(n_pareto_list),
     }
 
 
@@ -240,27 +238,29 @@ def compare_anytime_curves(
             'total_time': method -> total wall-clock time
     """
     result = {
-        'final_hv': {},
-        'final_n_pareto': {},
-        'total_time': {},
+        "final_hv": {},
+        "final_n_pareto": {},
+        "total_time": {},
     }
 
     if target_hv is not None:
-        result['time_to_target'] = {}
+        result["time_to_target"] = {}
 
     for name, curve in curves.items():
-        hvs = curve['hypervolumes']
-        ts = curve['timestamps']
+        hvs = curve["hypervolumes"]
+        ts = curve["timestamps"]
 
-        result['final_hv'][name] = float(hvs[-1]) if len(hvs) > 0 else 0.0
-        result['final_n_pareto'][name] = int(curve['n_pareto'][-1]) if len(curve['n_pareto']) > 0 else 0
-        result['total_time'][name] = float(ts[-1]) if len(ts) > 0 else 0.0
+        result["final_hv"][name] = float(hvs[-1]) if len(hvs) > 0 else 0.0
+        result["final_n_pareto"][name] = (
+            int(curve["n_pareto"][-1]) if len(curve["n_pareto"]) > 0 else 0
+        )
+        result["total_time"][name] = float(ts[-1]) if len(ts) > 0 else 0.0
 
         if target_hv is not None:
             reached = np.where(hvs >= target_hv)[0]
             if len(reached) > 0:
-                result['time_to_target'][name] = float(ts[reached[0]])
+                result["time_to_target"][name] = float(ts[reached[0]])
             else:
-                result['time_to_target'][name] = float('inf')
+                result["time_to_target"][name] = float("inf")
 
     return result

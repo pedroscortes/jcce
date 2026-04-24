@@ -4,15 +4,15 @@ Tests for Session 36 fixes:
 - Fix 20: Lambda-2 stall detection (stagnation check)
 - Fix 21: h_pooled normalization for Y classification (all processors)
 """
+
 import jax
 import jax.numpy as jnp
 from jax import random
-import pytest
-
 
 # ============================================================================
 # Fix 19: GNN logit clamping + H normalization
 # ============================================================================
+
 
 class TestGNNLogitClamping:
     """Test that logit clamping prevents BCE explosion."""
@@ -26,18 +26,18 @@ class TestGNNLogitClamping:
         Y_pred = jax.nn.sigmoid(Y_clamped)
         eps = 1e-7
         loss_clamped = -jnp.mean(
-            batch_Y * jnp.log(Y_pred + eps) +
-            (1 - batch_Y) * jnp.log(1 - Y_pred + eps)
+            batch_Y * jnp.log(Y_pred + eps) + (1 - batch_Y) * jnp.log(1 - Y_pred + eps)
         )
 
         Y_pred_raw = jax.nn.sigmoid(Y_output)
         loss_raw = -jnp.mean(
-            batch_Y * jnp.log(Y_pred_raw + eps) +
-            (1 - batch_Y) * jnp.log(1 - Y_pred_raw + eps)
+            batch_Y * jnp.log(Y_pred_raw + eps) + (1 - batch_Y) * jnp.log(1 - Y_pred_raw + eps)
         )
 
         assert float(loss_clamped) < 6.5, f"Clamped BCE should be < 6.5, got {float(loss_clamped)}"
-        assert float(loss_raw) > float(loss_clamped), "Raw loss should exceed clamped loss for extreme logits"
+        assert float(loss_raw) > float(loss_clamped), (
+            "Raw loss should exceed clamped loss for extreme logits"
+        )
 
     def test_clamping_no_effect_normal_range(self):
         """Clamping should not affect logits in normal [-3, 3] range."""
@@ -47,13 +47,13 @@ class TestGNNLogitClamping:
 
     def test_clamping_gradient_flows(self):
         """Gradients should flow through unclamped region."""
+
         def loss_fn(logits, targets):
             clamped = jnp.clip(logits, -6.0, 6.0)
             pred = jax.nn.sigmoid(clamped)
             eps = 1e-7
             return -jnp.mean(
-                targets * jnp.log(pred + eps) +
-                (1 - targets) * jnp.log(1 - pred + eps)
+                targets * jnp.log(pred + eps) + (1 - targets) * jnp.log(1 - pred + eps)
             )
 
         logits = jnp.array([2.0, -1.0, 0.5])
@@ -80,9 +80,9 @@ class TestGNNHNormalization:
 
         params = adapter.solve_output_weights(X, y, params, for_classification=True)
 
-        assert '_H_mean' in params, "GNN should store _H_mean after solve_output_weights"
-        assert '_H_std' in params, "GNN should store _H_std after solve_output_weights"
-        assert params['_weights_solved'] is True
+        assert "_H_mean" in params, "GNN should store _H_mean after solve_output_weights"
+        assert "_H_std" in params, "GNN should store _H_std after solve_output_weights"
+        assert params["_weights_solved"] is True
 
     def test_gnn_h_stats_correct_shape(self):
         """_H_mean/_H_std should be (1, hidden_dim) for broadcasting."""
@@ -97,8 +97,8 @@ class TestGNNHNormalization:
         params = adapter.init_params(5)
         params = adapter.solve_output_weights(X, y, params, for_classification=True)
 
-        assert params['_H_mean'].shape == (1, hidden_dim)
-        assert params['_H_std'].shape == (1, hidden_dim)
+        assert params["_H_mean"].shape == (1, hidden_dim)
+        assert params["_H_std"].shape == (1, hidden_dim)
 
     def test_gnn_forward_uses_h_stats(self):
         """After solve_output_weights, forward() should apply H denormalization."""
@@ -138,6 +138,7 @@ class TestGNNHNormalization:
 # ============================================================================
 # Fix 20: Lambda-2 stall detection
 # ============================================================================
+
 
 class TestLambda2StallDetection:
     """Test that lambda_2 doesn't increase when h_A is improving."""
@@ -193,6 +194,7 @@ class TestLambda2StallDetection:
 # Fix 21: h_pooled normalization for Y classification (all processors)
 # ============================================================================
 
+
 class TestHPooledNormalization:
     """Test that h_pooled is normalized when skip_centering=True (training time)."""
 
@@ -222,7 +224,9 @@ class TestHPooledNormalization:
         out = adapter.forward(X, params, skip_centering=True)
         max_abs = float(jnp.max(jnp.abs(out)))
         # h_pooled is normalized but output_proj_W * 0.5 with hidden_dim features → some variance
-        assert max_abs < 25.0, f"Transformer skip_centering output should be bounded, got max={max_abs}"
+        assert max_abs < 25.0, (
+            f"Transformer skip_centering output should be bounded, got max={max_abs}"
+        )
 
     def test_elm_skip_centering_output_bounded(self):
         """ELM with skip_centering=True should produce bounded output."""
@@ -248,13 +252,13 @@ class TestHPooledNormalization:
         params = adapter.init_params(5)
 
         # Set a non-zero bias
-        params['output_proj_b'] = jnp.array([2.0])
+        params["output_proj_b"] = jnp.array([2.0])
 
         out_with_bias = adapter.forward(X, params, skip_centering=True)
         mean_with_bias = float(jnp.mean(out_with_bias))
 
         # Reset bias to zero
-        params['output_proj_b'] = jnp.array([0.0])
+        params["output_proj_b"] = jnp.array([0.0])
         out_no_bias = adapter.forward(X, params, skip_centering=True)
         mean_no_bias = float(jnp.mean(out_no_bias))
 
@@ -298,40 +302,48 @@ class TestHPooledNormalization:
 
         def classification_loss(W, b):
             params_copy = dict(params)
-            params_copy['output_proj_W'] = W
-            params_copy['output_proj_b'] = b
+            params_copy["output_proj_W"] = W
+            params_copy["output_proj_b"] = b
             out = adapter.forward(X, params_copy, skip_centering=True)
             pred = jax.nn.sigmoid(out)
             eps = 1e-7
             return -jnp.mean(y * jnp.log(pred + eps) + (1 - y) * jnp.log(1 - pred + eps))
 
-        W = params['output_proj_W']
-        b = params['output_proj_b']
+        W = params["output_proj_W"]
+        b = params["output_proj_b"]
         grad_W, grad_b = jax.grad(classification_loss, argnums=(0, 1))(W, b)
 
-        assert float(jnp.sum(jnp.abs(grad_W))) > 0.01, f"grad_W should be non-zero, got {float(jnp.sum(jnp.abs(grad_W)))}"
-        assert float(jnp.abs(grad_b.squeeze())) > 0.001, f"grad_b should be non-zero, got {float(jnp.abs(grad_b.squeeze()))}"
+        assert float(jnp.sum(jnp.abs(grad_W))) > 0.01, (
+            f"grad_W should be non-zero, got {float(jnp.sum(jnp.abs(grad_W)))}"
+        )
+        assert float(jnp.abs(grad_b.squeeze())) > 0.001, (
+            f"grad_b should be non-zero, got {float(jnp.abs(grad_b.squeeze()))}"
+        )
 
     def test_all_5_adapters_have_h_pooled_norm(self):
         """All 5 adapters should apply h_pooled normalization with skip_centering=True."""
         from jcce.structure_learning.processor_adapters import (
-            MLPAdapter, TransformerAdapter, MambaAdapter, ELMAdapter, GNNAdapter
+            ELMAdapter,
+            GNNAdapter,
+            MambaAdapter,
+            MLPAdapter,
+            TransformerAdapter,
         )
 
         key = random.PRNGKey(50)
         X = random.normal(key, (50, 5)) * 10.0  # Very large scale
 
         adapters = [
-            ('MLP', MLPAdapter(hidden_dim=16, key=key)),
-            ('Transformer', TransformerAdapter(d_model=16, n_heads=2, n_layers=1, key=key)),
-            ('Mamba', MambaAdapter(d_model=16, key=key)),
-            ('ELM', ELMAdapter(hidden_dim=16, key=key)),
-            ('GNN', GNNAdapter(hidden_dim=16, n_layers=2, key=key)),
+            ("MLP", MLPAdapter(hidden_dim=16, key=key)),
+            ("Transformer", TransformerAdapter(d_model=16, n_heads=2, n_layers=1, key=key)),
+            ("Mamba", MambaAdapter(d_model=16, key=key)),
+            ("ELM", ELMAdapter(hidden_dim=16, key=key)),
+            ("GNN", GNNAdapter(hidden_dim=16, n_layers=2, key=key)),
         ]
 
         for name, adapter in adapters:
             params = adapter.init_params(5)
-            if name == 'GNN':
+            if name == "GNN":
                 out = adapter.forward(X, params, skip_centering=True)
             else:
                 out = adapter.forward(X, params, skip_centering=True)
@@ -344,6 +356,7 @@ class TestHPooledNormalization:
 # ============================================================================
 # Integration: Combined effect
 # ============================================================================
+
 
 class TestIntegration:
     """Test combined effect of all fixes."""
@@ -366,7 +379,9 @@ class TestIntegration:
         eps = 1e-7
         bce = -jnp.mean(y * jnp.log(pred + eps) + (1 - y) * jnp.log(1 - pred + eps))
 
-        assert float(bce) < 2.0, f"With h_pooled norm + clamp, BCE should be < 2.0, got {float(bce)}"
+        assert float(bce) < 2.0, (
+            f"With h_pooled norm + clamp, BCE should be < 2.0, got {float(bce)}"
+        )
         assert jnp.isfinite(bce)
 
     def test_mlp_bce_not_stuck_at_7_77(self):

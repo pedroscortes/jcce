@@ -7,10 +7,9 @@ This module provides metrics to evaluate:
 3. Causal structure recovery
 """
 
-import jax
+from typing import Dict
+
 import jax.numpy as jnp
-from typing import Dict, Tuple
-from scipy.stats import spearmanr
 import numpy as np
 
 
@@ -303,10 +302,7 @@ def compute_r2_score(z_pred: jnp.ndarray, z_true: jnp.ndarray) -> float:
     return float(np.clip(r2, 0.0, 1.0))
 
 
-def evaluate_disentanglement(
-    z_pred: jnp.ndarray,
-    z_true: jnp.ndarray
-) -> Dict[str, float]:
+def evaluate_disentanglement(z_pred: jnp.ndarray, z_true: jnp.ndarray) -> Dict[str, float]:
     """
     Compute all disentanglement metrics.
 
@@ -364,9 +360,7 @@ def structural_hamming_distance(A_pred: jnp.ndarray, A_true: jnp.ndarray) -> flo
 
 
 def graph_precision_recall_f1(
-    A_pred: jnp.ndarray,
-    A_true: jnp.ndarray,
-    threshold: float = 1e-3
+    A_pred: jnp.ndarray, A_true: jnp.ndarray, threshold: float = 1e-3
 ) -> Dict[str, float]:
     """
     Compute precision, recall, and F1 score for edge prediction.
@@ -408,13 +402,13 @@ def graph_precision_recall_f1(
     f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
     return {
-        'precision': float(precision),
-        'recall': float(recall),
-        'f1': float(f1),
-        'tp': int(tp),
-        'fp': int(fp),
-        'fn': int(fn),
-        'tn': int(tn)
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        "tp": int(tp),
+        "fp": int(fp),
+        "fn": int(fn),
+        "tn": int(tn),
     }
 
 
@@ -456,9 +450,7 @@ def compute_reachability_matrix(A: np.ndarray, threshold: float = 1e-3) -> np.nd
 
 
 def structural_intervention_distance(
-    A_pred: np.ndarray,
-    A_true: np.ndarray,
-    threshold: float = 1e-3
+    A_pred: np.ndarray, A_true: np.ndarray, threshold: float = 1e-3
 ) -> int:
     """
     Structural Intervention Distance (SID) between two DAGs.
@@ -513,9 +505,7 @@ def structural_intervention_distance(
 
 
 def structural_intervention_distance_normalized(
-    A_pred: np.ndarray,
-    A_true: np.ndarray,
-    threshold: float = 1e-3
+    A_pred: np.ndarray, A_true: np.ndarray, threshold: float = 1e-3
 ) -> float:
     """
     Normalized Structural Intervention Distance.
@@ -547,9 +537,7 @@ def structural_intervention_distance_normalized(
 
 
 def evaluate_structure_recovery(
-    A_pred: jnp.ndarray,
-    A_true: jnp.ndarray,
-    compute_sid: bool = True
+    A_pred: jnp.ndarray, A_true: jnp.ndarray, compute_sid: bool = True
 ) -> Dict[str, float]:
     """
     Comprehensive evaluation of graph structure recovery.
@@ -574,16 +562,13 @@ def evaluate_structure_recovery(
     prf_metrics = graph_precision_recall_f1(A_pred, A_true)
 
     # Combine
-    metrics = {
-        'shd': shd,
-        **prf_metrics
-    }
+    metrics = {"shd": shd, **prf_metrics}
 
     # SID (optional, can be slow)
     if compute_sid:
         sid = structural_intervention_distance(A_pred, A_true)
         sid_norm = structural_intervention_distance_normalized(A_pred, A_true)
-        metrics['sid'] = sid
-        metrics['sid_normalized'] = sid_norm
+        metrics["sid"] = sid
+        metrics["sid_normalized"] = sid_norm
 
     return metrics

@@ -74,13 +74,8 @@ class AdjacencyPrior:
         A_clipped = np.clip(A_pareto, 0.0, 1.0)
 
         with self._lock:
-            self._A_tilde = (
-                self._beta * self._A_tilde
-                + (1.0 - self._beta) * A_clipped
-            )
-            self._A_tilde = np.clip(
-                self._A_tilde, self._min_prob, self._max_prob
-            )
+            self._A_tilde = self._beta * self._A_tilde + (1.0 - self._beta) * A_clipped
+            self._A_tilde = np.clip(self._A_tilde, self._min_prob, self._max_prob)
             np.fill_diagonal(self._A_tilde, 0.0)
             self._n_updates += 1
 
@@ -131,11 +126,11 @@ class AdjacencyPrior:
         mask = ~np.eye(self._n_total, dtype=bool)
         off_diag = A[mask]
         return {
-            'n_updates': n_updates,
-            'mean_edge_prob': float(off_diag.mean()),
-            'std_edge_prob': float(off_diag.std()),
-            'min_edge_prob': float(off_diag.min()),
-            'max_edge_prob': float(off_diag.max()),
-            'n_strong_edges': int((off_diag > 0.7).sum()),
-            'n_weak_edges': int((off_diag < 0.3).sum()),
+            "n_updates": n_updates,
+            "mean_edge_prob": float(off_diag.mean()),
+            "std_edge_prob": float(off_diag.std()),
+            "min_edge_prob": float(off_diag.min()),
+            "max_edge_prob": float(off_diag.max()),
+            "n_strong_edges": int((off_diag > 0.7).sum()),
+            "n_weak_edges": int((off_diag < 0.3).sum()),
         }

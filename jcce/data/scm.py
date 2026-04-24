@@ -6,7 +6,7 @@ Implements both linear and nonlinear SCMs for generating synthetic causal data.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal, Optional, List, Tuple
+from typing import List, Literal, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -52,9 +52,7 @@ class StructuralCausalModel(ABC):
         """
         raise NotImplementedError
 
-    def _sample_noise(
-        self, n_samples: int, key: jax.random.PRNGKey
-    ) -> jnp.ndarray:
+    def _sample_noise(self, n_samples: int, key: jax.random.PRNGKey) -> jnp.ndarray:
         """
         Sample exogenous noise variables.
 
@@ -68,9 +66,7 @@ class StructuralCausalModel(ABC):
         if self.config.noise_type == "gaussian":
             epsilon = jax.random.normal(key, (n_samples, self.num_nodes))
         elif self.config.noise_type == "uniform":
-            epsilon = jax.random.uniform(
-                key, (n_samples, self.num_nodes), minval=-1.0, maxval=1.0
-            )
+            epsilon = jax.random.uniform(key, (n_samples, self.num_nodes), minval=-1.0, maxval=1.0)
         elif self.config.noise_type == "laplace":
             # Laplace(0, scale) using inverse transform sampling
             u = jax.random.uniform(key, (n_samples, self.num_nodes))
@@ -220,7 +216,9 @@ class NonlinearMLPSCM(StructuralCausalModel):
 
         return params
 
-    def _apply_mlp(self, x: jnp.ndarray, params: List[Tuple[jnp.ndarray, jnp.ndarray]]) -> jnp.ndarray:
+    def _apply_mlp(
+        self, x: jnp.ndarray, params: List[Tuple[jnp.ndarray, jnp.ndarray]]
+    ) -> jnp.ndarray:
         """
         Apply MLP with ReLU activations.
 
@@ -313,9 +311,7 @@ class NonlinearMLPSCM(StructuralCausalModel):
 
 
 def create_scm(
-    A: jnp.ndarray,
-    config: SCMConfig,
-    key: Optional[jax.random.PRNGKey] = None
+    A: jnp.ndarray, config: SCMConfig, key: Optional[jax.random.PRNGKey] = None
 ) -> StructuralCausalModel:
     """
     Factory function to create an SCM based on configuration.

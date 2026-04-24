@@ -14,47 +14,41 @@ Usage:
     )
 """
 
+import math
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
 import jax
 import jax.numpy as jnp
-from jax import random
 import jax.scipy as jsp
 import optax
-from typing import Callable, Tuple, Dict, Any, Optional, List
-from functools import partial
-import math
-
-from .processor_adapters import (
-    MLPAdapter,
-    TransformerAdapter,
-    MambaAdapter,
-    ELMAdapter,
-    GNNAdapter,
-)
+from jax import random
 
 from .effect_estimation import (
     AdaptiveCurriculumState,
-    update_adaptive_curriculum,
-    get_phase_weights_fixed,
     compute_valid_adjustment_sets,
+    get_phase_weights_fixed,
+    update_adaptive_curriculum,
 )
 
 # GPS-DragonNet with variable type detection for proper causal effects
 from .gps_dragonnet import (
-    compute_xx_effect_gps,
-    compute_xy_effect_gps,
     compute_xx_effect_unified,  # Auto-detects treatment type
-    compute_xx_effect_binary,
-    compute_xx_effect_categorical,
-    detect_variable_type,
-    get_variable_types,
+    )
+from .processor_adapters import (
+    ELMAdapter,
+    GNNAdapter,
+    MambaAdapter,
+    MLPAdapter,
+    TransformerAdapter,
 )
-
 
 # ============================================================================
 # Helper functions for joint processor param optimization
 # ============================================================================
 # Processor params contain non-array metadata (tree_def, shapes, n_inputs, etc.)
 # that optax can't handle. These functions extract/merge trainable arrays.
+
 
 def extract_trainable_params(processor_params):
     """
@@ -69,13 +63,21 @@ def extract_trainable_params(processor_params):
     Returns:
         List of filtered param dicts containing only trainable arrays
     """
+
     def is_trainable(x):
         # Only float arrays are trainable (not integers, booleans, objects).
         # Also accepts numpy arrays (from artifact storage conversion).
         import numpy as np
-        return (isinstance(x, (jnp.ndarray, np.ndarray)) and
-                x.dtype in [jnp.float32, jnp.float64, jnp.float16, jnp.bfloat16,
-                             np.float32, np.float64, np.float16])
+
+        return isinstance(x, (jnp.ndarray, np.ndarray)) and x.dtype in [
+            jnp.float32,
+            jnp.float64,
+            jnp.float16,
+            jnp.bfloat16,
+            np.float32,
+            np.float64,
+            np.float16,
+        ]
 
     def extract_from_dict(d):
         result = {}
@@ -107,6 +109,7 @@ def merge_trained_params(original_params, trained_params):
     Returns:
         List of merged param dicts ready for forward pass
     """
+
     def merge_dicts(orig, trained):
         result = orig.copy()
         for k, v in trained.items():
@@ -136,12 +139,13 @@ def merge_trained_params(original_params, trained_params):
 # - Mamba: State-space model → very high memory → 256
 
 PROCESSOR_BATCH_SIZES = {
-    'elm': 512,         # Reduced from 2048 → better for multi-GPU + large datasets
-    'mlp': 256,         # 4× reduction from 1024 → MLP Large needs same as Transformer
-    'transformer': 256, # 4× reduction → handles attention matrices
-    'gnn': 512,         # Graph ops = moderate memory (2× reduction)
-    'mamba': 256,       # 4× reduction → state-space is memory-hungry
+    "elm": 512,  # Reduced from 2048 → better for multi-GPU + large datasets
+    "mlp": 256,  # 4× reduction from 1024 → MLP Large needs same as Transformer
+    "transformer": 256,  # 4× reduction → handles attention matrices
+    "gnn": 512,  # Graph ops = moderate memory (2× reduction)
+    "mamba": 256,  # 4× reduction → state-space is memory-hungry
 }
+
 
 def get_batch_size(processor_type: str) -> int:
     """Get processor-specific batch size for memory efficiency."""
@@ -152,11 +156,8 @@ def get_batch_size(processor_type: str) -> int:
 # Processor Factory
 # ============================================================================
 
-def create_processor(
-    processor_type: str,
-    key: random.PRNGKey,
-    **kwargs
-):
+
+def create_processor(processor_type: str, key: random.PRNGKey, **kwargs):
     """
     Factory function to create processor adapters.
 
@@ -174,91 +175,92 @@ def create_processor(
     """
     processor_type = processor_type.lower()
 
-    if processor_type == 'mlp':
+    if processor_type == "mlp":
         return MLPAdapter(
-            hidden_dim=kwargs.get('hidden_dim', 64),
-            n_layers=kwargs.get('n_layers', 2),
-            activation=kwargs.get('activation', 'relu'),
+            hidden_dim=kwargs.get("hidden_dim", 64),
+            n_layers=kwargs.get("n_layers", 2),
+            activation=kwargs.get("activation", "relu"),
             key=key,
         )
 
-    elif processor_type == 'transformer':
+    elif processor_type == "transformer":
         return TransformerAdapter(
-            d_model=kwargs.get('d_model', 128),
-            n_heads=kwargs.get('n_heads', 4),
-            n_layers=kwargs.get('n_layers', 2),
-            d_ff=kwargs.get('d_ff', 512),
+            d_model=kwargs.get("d_model", 128),
+            n_heads=kwargs.get("n_heads", 4),
+            n_layers=kwargs.get("n_layers", 2),
+            d_ff=kwargs.get("d_ff", 512),
             key=key,
         )
 
-    elif processor_type == 'mamba':
+    elif processor_type == "mamba":
         return MambaAdapter(
-            d_model=kwargs.get('d_model', 128),
-            d_state=kwargs.get('d_state', 16),
-            d_conv=kwargs.get('d_conv', 4),
-            expand=kwargs.get('expand', 2),
+            d_model=kwargs.get("d_model", 128),
+            d_state=kwargs.get("d_state", 16),
+            d_conv=kwargs.get("d_conv", 4),
+            expand=kwargs.get("expand", 2),
             key=key,
-            n_features=kwargs.get('n_features', None),  # Auto-scale
+            n_features=kwargs.get("n_features", None),  # Auto-scale
         )
 
-    elif processor_type == 'elm':
+    elif processor_type == "elm":
         return ELMAdapter(
-            hidden_dim=kwargs.get('hidden_dim', 32),
-            n_hidden_nodes=kwargs.get('n_hidden_nodes', 128),
-            activation=kwargs.get('activation', 'tanh'),
+            hidden_dim=kwargs.get("hidden_dim", 32),
+            n_hidden_nodes=kwargs.get("n_hidden_nodes", 128),
+            activation=kwargs.get("activation", "tanh"),
             key=key,
         )
 
-    elif processor_type == 'dag_transformer':
+    elif processor_type == "dag_transformer":
         from jcce.structure_learning.processor_adapters import DAGAttentionAdapter
+
         return DAGAttentionAdapter(
-            d_model=kwargs.get('d_model', 64),
-            n_heads=kwargs.get('n_heads', 4),
-            n_layers=kwargs.get('n_layers', 2),
-            d_ff=kwargs.get('d_ff', 256),
-            temperature=kwargs.get('temperature', 5.0),
+            d_model=kwargs.get("d_model", 64),
+            n_heads=kwargs.get("n_heads", 4),
+            n_layers=kwargs.get("n_layers", 2),
+            d_ff=kwargs.get("d_ff", 256),
+            temperature=kwargs.get("temperature", 5.0),
             key=key,
         )
 
-    elif processor_type == 'causal_mamba':
+    elif processor_type == "causal_mamba":
         from jcce.structure_learning.processor_adapters import CausalMambaAdapter
+
         return CausalMambaAdapter(
-            d_model=kwargs.get('d_model', 128),
-            d_state=kwargs.get('d_state', 16),
-            d_conv=kwargs.get('d_conv', 4),
-            expand=kwargs.get('expand', 2),
+            d_model=kwargs.get("d_model", 128),
+            d_state=kwargs.get("d_state", 16),
+            d_conv=kwargs.get("d_conv", 4),
+            expand=kwargs.get("expand", 2),
             key=key,
-            n_features=kwargs.get('n_features', None),
-            reorder_interval=kwargs.get('reorder_interval', 50),
+            n_features=kwargs.get("n_features", None),
+            reorder_interval=kwargs.get("reorder_interval", 50),
         )
 
-    elif processor_type == 'gnn':
+    elif processor_type == "gnn":
         return GNNAdapter(
-            hidden_dim=kwargs.get('hidden_dim', 64),
-            n_layers=kwargs.get('n_layers', 2),
-            gnn_type=kwargs.get('gnn_type', 'gcn'),
-            sage_aggregation=kwargs.get('sage_aggregation', 'mean'),
+            hidden_dim=kwargs.get("hidden_dim", 64),
+            n_layers=kwargs.get("n_layers", 2),
+            gnn_type=kwargs.get("gnn_type", "gcn"),
+            sage_aggregation=kwargs.get("sage_aggregation", "mean"),
             key=key,
         )
 
     else:
-        raise ValueError(f"Unknown processor type: {processor_type}. "
-                        f"Choose from: mlp, transformer, mamba, elm, gnn")
+        raise ValueError(
+            f"Unknown processor type: {processor_type}. "
+            f"Choose from: mlp, transformer, mamba, elm, gnn"
+        )
 
 
 # ============================================================================
 # GOLEM-Unified Forward Model (Generic)
 # ============================================================================
 
+
 # MEMORY OPTIMIZATION: No gradient checkpointing (for now)
 # Fixed batch-size compilation (FIXED_BATCH_SIZE=4096) is the primary memory optimization
 # Checkpointing can be added later if memory usage is still high (>20GB)
 def golem_unified_forward(
-    X: jnp.ndarray,
-    A: jnp.ndarray,
-    processor,
-    processor_params: list,
-    threshold: float = 1e-6
+    X: jnp.ndarray, A: jnp.ndarray, processor, processor_params: list, threshold: float = 1e-6
 ) -> jnp.ndarray:
     """
     Reconstruct data using processor-based SCM.
@@ -285,7 +287,7 @@ def golem_unified_forward(
     X_recon = jnp.zeros_like(X)
 
     # Detect if processor is GNN (needs adjacency for message passing)
-    is_gnn = processor.__class__.__name__ == 'GNNAdapter'
+    is_gnn = processor.__class__.__name__ == "GNNAdapter"
 
     for j in range(n_vars):
         # Soft weighting by adjacency matrix (allows gradient flow)
@@ -318,11 +320,9 @@ def golem_unified_forward(
 # Helper Functions: Focused Structure Learning
 # ============================================================================
 
+
 def get_y_neighborhood(
-    A: jnp.ndarray,
-    Y_idx: int,
-    radius: int = 2,
-    threshold: float = 1e-6
+    A: jnp.ndarray, Y_idx: int, radius: int = 2, threshold: float = 1e-6
 ) -> jnp.ndarray:
     """
     Get variables within 'radius' hops of Y in the causal graph.
@@ -356,11 +356,7 @@ def get_y_neighborhood(
     return jnp.array(sorted(list(relevant)))
 
 
-def extract_markov_blanket(
-    A: jnp.ndarray,
-    Y_idx: int,
-    threshold: float = 1e-6
-) -> jnp.ndarray:
+def extract_markov_blanket(A: jnp.ndarray, Y_idx: int, threshold: float = 1e-6) -> jnp.ndarray:
     """
     Extract Markov Blanket of Y from adjacency matrix.
 
@@ -397,6 +393,7 @@ def extract_markov_blanket(
 # ============================================================================
 # GOLEM-Unified Loss Function (Generic)
 # ============================================================================
+
 
 # MEMORY OPTIMIZATION: Gradient checkpointing for DAG constraint
 # Reduces memory by 40-50% by recomputing forward pass during backward
@@ -476,9 +473,7 @@ def dag_constraint(A: jnp.ndarray, s: float = 1.0) -> float:
 
 @partial(jax.jit, static_argnums=(1,))
 def compute_dag_constraint_spectral(
-    A: jnp.ndarray,
-    num_iterations: int = 10,
-    epsilon: float = 1e-6
+    A: jnp.ndarray, num_iterations: int = 10, epsilon: float = 1e-6
 ) -> float:
     """
     Spectral radius DAG constraint via power iteration.
@@ -522,10 +517,7 @@ def compute_dag_constraint_spectral(
 
 
 def hybrid_dag_constraint(
-    A: jnp.ndarray,
-    iteration: int,
-    max_iter: int,
-    use_exact_final: bool = True
+    A: jnp.ndarray, iteration: int, max_iter: int, use_exact_final: bool = True
 ) -> float:
     """
     Hybrid approach: Fast spectral during optimization, exact DAGMA for final.
@@ -556,7 +548,7 @@ def dynamic_pruning(
     iteration: int,
     max_iter: int,
     prune_start: float = 0.15,
-    prune_end_percentile: float = 30.0
+    prune_end_percentile: float = 30.0,
 ) -> jnp.ndarray:
     """
     Progressive pruning based on gradient and magnitude significance.
@@ -583,7 +575,9 @@ def dynamic_pruning(
 
     # Calculate thresholds that increase over time
     # Early: keep 90% of edges, Late: keep 70% of edges
-    percentile = 90.0 - (90.0 - prune_end_percentile) * jnp.clip((progress - prune_start) / (1.0 - prune_start), 0.0, 1.0)
+    percentile = 90.0 - (90.0 - prune_end_percentile) * jnp.clip(
+        (progress - prune_start) / (1.0 - prune_start), 0.0, 1.0
+    )
 
     # Gradient significance threshold
     grad_abs = jnp.abs(grads)
@@ -624,23 +618,23 @@ def get_adaptive_config(n_vars: int, processor_type: str) -> dict:
     """
     # Base configuration
     config = {
-        'population_size': 20,
-        'generations': 15,
-        'golem_iterations': 20,
-        'batch_size': 256,
-        'genomes_per_gpu': 2,
-        'patience': 15,
-        'use_spectral_constraint': False,
-        'enable_pruning': False,
+        "population_size": 20,
+        "generations": 15,
+        "golem_iterations": 20,
+        "batch_size": 256,
+        "genomes_per_gpu": 2,
+        "patience": 15,
+        "use_spectral_constraint": False,
+        "enable_pruning": False,
     }
 
     # Processor-specific memory factors
     processor_memory_factor = {
-        'elm': 0.5,       # Fastest, lowest memory
-        'mlp': 1.0,       # Baseline
-        'gnn': 1.5,       # Higher due to message passing
-        'transformer': 2.0,  # Attention maps are expensive
-        'mamba': 1.8,     # State-space overhead
+        "elm": 0.5,  # Fastest, lowest memory
+        "mlp": 1.0,  # Baseline
+        "gnn": 1.5,  # Higher due to message passing
+        "transformer": 2.0,  # Attention maps are expensive
+        "mamba": 1.8,  # State-space overhead
     }
 
     mem_factor = processor_memory_factor.get(processor_type.lower(), 1.0)
@@ -648,40 +642,48 @@ def get_adaptive_config(n_vars: int, processor_type: str) -> dict:
 
     # Small datasets (d < 20)
     if effective_d < 20:
-        config.update({
-            'golem_iterations': 15,  # Converges faster
-            'patience': 10,
-        })
+        config.update(
+            {
+                "golem_iterations": 15,  # Converges faster
+                "patience": 10,
+            }
+        )
 
     # Medium datasets (20 <= d < 35)
     elif effective_d < 35:
-        config.update({
-            'batch_size': 192,
-            'use_spectral_constraint': True,  # Start using spectral
-        })
+        config.update(
+            {
+                "batch_size": 192,
+                "use_spectral_constraint": True,  # Start using spectral
+            }
+        )
 
     # Large datasets (35 <= d < 50)
     elif effective_d < 50:
-        config.update({
-            'population_size': 18,
-            'golem_iterations': 18,
-            'batch_size': 128,
-            'genomes_per_gpu': 1,  # Sequential to avoid OOM
-            'use_spectral_constraint': True,
-            'enable_pruning': True,
-        })
+        config.update(
+            {
+                "population_size": 18,
+                "golem_iterations": 18,
+                "batch_size": 128,
+                "genomes_per_gpu": 1,  # Sequential to avoid OOM
+                "use_spectral_constraint": True,
+                "enable_pruning": True,
+            }
+        )
 
     # Very large datasets (d >= 50)
     else:
-        config.update({
-            'population_size': 15,
-            'golem_iterations': 15,
-            'batch_size': 64,
-            'genomes_per_gpu': 1,
-            'patience': 10,
-            'use_spectral_constraint': True,
-            'enable_pruning': True,
-        })
+        config.update(
+            {
+                "population_size": 15,
+                "golem_iterations": 15,
+                "batch_size": 64,
+                "genomes_per_gpu": 1,
+                "patience": 10,
+                "use_spectral_constraint": True,
+                "enable_pruning": True,
+            }
+        )
 
     return config
 
@@ -753,7 +755,7 @@ def golem_unified_loss(
     processor_params: list,
     lambda_1: float = 0.1,
     lambda_2: float = 0.01,
-    threshold: float = 1e-6
+    threshold: float = 1e-6,
 ) -> Tuple[float, float]:
     """
     GOLEM-Unified loss function.
@@ -795,6 +797,7 @@ def golem_unified_loss(
 # ============================================================================
 # Multi-Task Loss Function (Structure + Classification)
 # ============================================================================
+
 
 def golem_unified_multitask_loss(
     X: jnp.ndarray,
@@ -862,7 +865,7 @@ def golem_unified_multitask_loss(
             X_weighted = X * weights[jnp.newaxis, :]
 
             # Forward through processor
-            if processor.__class__.__name__ == 'GNNAdapter':
+            if processor.__class__.__name__ == "GNNAdapter":
                 A_normalized = A / (jnp.sum(jnp.abs(A), axis=0, keepdims=True) + 1e-8)
                 X_j_recon = processor.forward(X_weighted, processor_params[j], A=A_normalized)
             else:
@@ -891,7 +894,7 @@ def golem_unified_multitask_loss(
     X_weighted = X * weights[jnp.newaxis, :]
 
     # Predict Y using learned processor
-    if processor.__class__.__name__ == 'GNNAdapter':
+    if processor.__class__.__name__ == "GNNAdapter":
         A_normalized = A / (jnp.sum(jnp.abs(A), axis=0, keepdims=True) + 1e-8)
         Y_pred_continuous = processor.forward(X_weighted, processor_params[Y_idx], A=A_normalized)
     else:
@@ -918,12 +921,7 @@ def golem_unified_multitask_loss(
     dag_loss = lambda_2 * h_A
 
     # Total loss: weighted combination
-    total_loss = (
-        reconstruction_loss +
-        lambda_class * classification_loss +
-        sparsity_loss +
-        dag_loss
-    )
+    total_loss = reconstruction_loss + lambda_class * classification_loss + sparsity_loss + dag_loss
 
     return total_loss, reconstruction_loss, classification_loss, h_A
 
@@ -932,13 +930,14 @@ def golem_unified_multitask_loss(
 # Joint Optimization of A + Processor Params + Uncertainty
 # ============================================================================
 
+
 def _learn_structure_legacy(
     data: jnp.ndarray,
     Y: jnp.ndarray,
     Y_idx: int,
     processor,
     key: random.PRNGKey,
-    processor_type: str = 'mlp',
+    processor_type: str = "mlp",
     lambda_1: float = 0.02,
     lambda_2_init: float = 0.01,
     lambda_2_max: float = 1e10,
@@ -961,7 +960,7 @@ def _learn_structure_legacy(
     lambda_L: float = 0.05,
     lambda_bow: float = 0.1,
     warm_start_L_iters: int = 20,
-    task: str = 'classification',  # 'classification' or 'regression'
+    task: str = "classification",  # 'classification' or 'regression'
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
     v4.0 PROPER: Joint optimization of A + processor parameters + uncertainty weights.
@@ -1053,10 +1052,10 @@ def _learn_structure_legacy(
     # L_batch = U_batch @ V.T has shape (batch_size, n_vars)
 
     if verbose:
-        processor_name = processor.__class__.__name__.replace('Adapter', '')
-        print(f"\n{'='*60}")
-        print(f"v5.1: Joint Optimization (A + θ + Uncertainty + Validation)")
-        print(f"{'='*60}")
+        processor_name = processor.__class__.__name__.replace("Adapter", "")
+        print(f"\n{'=' * 60}")
+        print("v5.1: Joint Optimization (A + θ + Uncertainty + Validation)")
+        print(f"{'=' * 60}")
         if use_validation_split:
             print(f"Data: {n_samples_total} total → {n_samples} train / {n_val} val")
         else:
@@ -1075,16 +1074,16 @@ def _learn_structure_legacy(
         print(f"Lambda_class (classification): {lambda_class}")
         print(f"Early stopping patience: {patience}")
         if use_spectral_constraint:
-            print(f"v4.1: Spectral DAG constraint ENABLED (O(d²))")
+            print("v4.1: Spectral DAG constraint ENABLED (O(d²))")
         else:
-            print(f"DAG Constraint: Matrix Exponential (standard)")
+            print("DAG Constraint: Matrix Exponential (standard)")
         if enable_pruning:
-            print(f"v4.1: Dynamic pruning ENABLED")
+            print("v4.1: Dynamic pruning ENABLED")
         if use_latent_confounders:
             print(f"v6.0: Latent confounders ENABLED (k={latent_rank_k})")
             print(f"  λ_L (nuclear): {lambda_L}, λ_bow (bow-free): {lambda_bow}")
             print(f"  Warm-start: {warm_start_L_iters} iters before L")
-        print(f"INNOVATION: Optimizing A AND processor params jointly!")
+        print("INNOVATION: Optimizing A AND processor params jointly!")
 
     # Initialize adjacency matrix A
     if A_init is not None:
@@ -1095,7 +1094,9 @@ def _learn_structure_legacy(
     else:
         # Cold start: random initialization
         key, init_key = random.split(key)
-        A = random.normal(init_key, (n_vars, n_vars)) * 0.1  # Larger init for better gradient signal
+        A = (
+            random.normal(init_key, (n_vars, n_vars)) * 0.1
+        )  # Larger init for better gradient signal
 
         # Correlation warm-start for A[:,Y_idx]
         # Initialize edges to Y based on correlation with Y to break symmetry
@@ -1136,13 +1137,13 @@ def _learn_structure_legacy(
     # Pack optimizable parameters (A + uncertainty weights + processor params + optional L)
     # Includes trainable processor params for joint optimization
     all_params = {
-        'A': A,
-        'log_var_recon': log_var_recon,
-        'processor_params': trainable_proc_params,
+        "A": A,
+        "log_var_recon": log_var_recon,
+        "processor_params": trainable_proc_params,
     }
     if use_latent_confounders:
-        all_params['U'] = U
-        all_params['V'] = V
+        all_params["U"] = U
+        all_params["V"] = V
 
     # Augmented Lagrangian parameter
     lambda_2 = lambda_2_init
@@ -1153,9 +1154,9 @@ def _learn_structure_legacy(
     # Helper function to compute residuals for warm-start
     def compute_residuals_for_warmstart(params, data_batch):
         """Compute residuals X_j - f(X * |A[:,j]|) for warm-starting L."""
-        A_curr = params['A']
+        A_curr = params["A"]
         # Merge trained params with metadata for forward passes
-        proc_params = merge_trained_params(processor_params, params['processor_params'])
+        proc_params = merge_trained_params(processor_params, params["processor_params"])
         n_samp, n_v = data_batch.shape
         residuals = jnp.zeros((n_samp, n_v))
 
@@ -1169,7 +1170,7 @@ def _learn_structure_legacy(
             weights = jnp.where(weight_sum > 0.01, weights, fallback_weights)
             X_weighted = data_batch * weights[jnp.newaxis, :]
 
-            if processor.__class__.__name__ == 'GNNAdapter':
+            if processor.__class__.__name__ == "GNNAdapter":
                 A_normalized = A_curr / (jnp.sum(jnp.abs(A_curr), axis=0, keepdims=True) + 1e-8)
                 predicted = processor.forward(X_weighted, proc_params[j], A=A_normalized)
             else:
@@ -1185,7 +1186,16 @@ def _learn_structure_legacy(
         L_active = False  # Start with L inactive for warm-start
 
     # Define joint loss function
-    def loss_fn(params, batch_data, batch_Y, lambda_2_current, current_iter, use_L_in_loss=True, batch_indices=None, rng_key=None):
+    def loss_fn(
+        params,
+        batch_data,
+        batch_Y,
+        lambda_2_current,
+        current_iter,
+        use_L_in_loss=True,
+        batch_indices=None,
+        rng_key=None,
+    ):
         """
         Joint loss with uncertainty weighting.
 
@@ -1200,20 +1210,20 @@ def _learn_structure_legacy(
         - processor_params (jointly optimized with A)
         """
         training = rng_key is not None
-        A_curr = params['A']
+        A_curr = params["A"]
         # Apply pruning mask if enabled
         if enable_pruning:
             A_curr = A_curr * pruning_mask
         # Merge trained params with metadata for forward passes
-        proc_params = merge_trained_params(processor_params, params['processor_params'])
-        log_var_r = params['log_var_recon']
+        proc_params = merge_trained_params(processor_params, params["processor_params"])
+        log_var_r = params["log_var_recon"]
 
         # Compute L for latent confounders (only for training)
         # For validation, L is not used because it's sample-specific to training data
         # With batching: U_batch = U[batch_indices, :], L_batch = U_batch @ V.T
         if use_latent_confounders and use_L_in_loss:
-            U_curr = params['U']
-            V_curr = params['V']
+            U_curr = params["U"]
+            V_curr = params["V"]
             if batch_indices is not None:
                 # Batching: slice U by batch indices
                 U_batch = U_curr[batch_indices, :]  # (batch_size, k)
@@ -1259,13 +1269,15 @@ def _learn_structure_legacy(
 
             # Forward through processor
             # Pass training mode and rng_key to enable dropout for MLP/Transformer
-            if processor.__class__.__name__ == 'GNNAdapter':
+            if processor.__class__.__name__ == "GNNAdapter":
                 # GNN needs adjacency matrix
                 A_normalized = A_curr / (jnp.sum(jnp.abs(A_curr), axis=0, keepdims=True) + 1e-8)
                 direct_effect = processor.forward(X_weighted, proc_params[j], A=A_normalized)
-            elif processor.__class__.__name__ in ('MLPAdapter', 'TransformerAdapter'):
+            elif processor.__class__.__name__ in ("MLPAdapter", "TransformerAdapter"):
                 # Enable dropout during training
-                direct_effect = processor.forward(X_weighted, proc_params[j], training=training, rng_key=rng_key)
+                direct_effect = processor.forward(
+                    X_weighted, proc_params[j], training=training, rng_key=rng_key
+                )
             else:
                 # ELM, Mamba don't have dropout
                 direct_effect = processor.forward(X_weighted, proc_params[j])
@@ -1281,7 +1293,7 @@ def _learn_structure_legacy(
 
             if j == Y_idx:
                 # Task-dependent loss for Y
-                if task == 'regression':
+                if task == "regression":
                     # Regression: MSE (no sigmoid)
                     classification_loss = jnp.mean((output - batch_Y) ** 2)
                 else:
@@ -1290,8 +1302,8 @@ def _learn_structure_legacy(
                     Y_pred_prob = jax.nn.sigmoid(Y_pred_logits)
                     eps = 1e-7
                     bce = -jnp.mean(
-                        batch_Y * jnp.log(Y_pred_prob + eps) +
-                        (1 - batch_Y) * jnp.log(1 - Y_pred_prob + eps)
+                        batch_Y * jnp.log(Y_pred_prob + eps)
+                        + (1 - batch_Y) * jnp.log(1 - Y_pred_prob + eps)
                     )
                     classification_loss = bce
             else:
@@ -1330,16 +1342,16 @@ def _learn_structure_legacy(
 
         # Weight decay on A matrix (L2 regularization)
         if weight_decay > 0:
-            weight_decay_loss = weight_decay * jnp.sum(A_curr ** 2)
+            weight_decay_loss = weight_decay * jnp.sum(A_curr**2)
             structural_loss = structural_loss + weight_decay_loss
 
         # Latent confounder penalties
         if use_latent_confounders:
-            U_curr = params['U']
-            V_curr = params['V']
+            U_curr = params["U"]
+            V_curr = params["V"]
 
             # Nuclear norm via factored representation: ||L||_* ≈ 0.5*(||U||²_F + ||V||²_F)
-            nuclear_norm_loss = 0.5 * (jnp.sum(U_curr ** 2) + jnp.sum(V_curr ** 2))
+            nuclear_norm_loss = 0.5 * (jnp.sum(U_curr**2) + jnp.sum(V_curr**2))
             structural_loss = structural_loss + lambda_L * nuclear_norm_loss
 
             # Bow-free penalty: ||A ⊙ Ω||₁ where Ω = L.T @ L / n
@@ -1359,14 +1371,11 @@ def _learn_structure_legacy(
 
     # Optimizer for all parameters (A + processor_params + uncertainty weights)
     # Gradient clipping prevents exploding gradients (Mamba/GNN)
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.adam(learning_rate=lr)
-    )
+    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr))
     opt_state = optimizer.init(all_params)
 
     # Early stopping
-    best_loss = float('inf')
+    best_loss = float("inf")
     patience_counter = 0
     best_params = all_params.copy()  # Initialize with current params
 
@@ -1376,7 +1385,7 @@ def _learn_structure_legacy(
         # After warm_start_L_iters, compute residuals and initialize U, V via SVD
         if use_latent_confounders and not L_active and iter == warm_start_L_iters:
             if verbose:
-                print(f"\nWarm-start: Computing residuals and initializing L factors...")
+                print("\nWarm-start: Computing residuals and initializing L factors...")
 
             # Compute residuals: X_j - f(X * |A[:,j]|)
             residuals = compute_residuals_for_warmstart(all_params, data_train)
@@ -1396,8 +1405,8 @@ def _learn_structure_legacy(
             V_new = Vt_svd[:k, :].T * sqrt_S[jnp.newaxis, :]
 
             # Update all_params with warm-started U, V
-            all_params['U'] = U_new
-            all_params['V'] = V_new
+            all_params["U"] = U_new
+            all_params["V"] = V_new
 
             # Reinitialize optimizer state with new params
             opt_state = optimizer.init(all_params)
@@ -1439,7 +1448,9 @@ def _learn_structure_legacy(
                     batch_data = jnp.concatenate([batch_data_raw, padding_data], axis=0)
                     batch_Y = jnp.concatenate([batch_Y_raw, padding_Y], axis=0)
                     # Pad batch_indices too (use index 0 for padding, will be masked)
-                    padding_indices = jnp.zeros(effective_batch_size - actual_batch_size, dtype=jnp.int32)
+                    padding_indices = jnp.zeros(
+                        effective_batch_size - actual_batch_size, dtype=jnp.int32
+                    )
                     batch_indices = jnp.concatenate([batch_indices, padding_indices])
                 else:
                     batch_data = batch_data_raw
@@ -1450,7 +1461,16 @@ def _learn_structure_legacy(
                 key, dropout_key = random.split(key)
                 (loss_val, (h_A, recon_loss, class_loss)), grads = jax.value_and_grad(
                     loss_fn, has_aux=True
-                )(all_params, batch_data, batch_Y, lambda_2, iter, L_active, batch_indices, dropout_key)
+                )(
+                    all_params,
+                    batch_data,
+                    batch_Y,
+                    lambda_2,
+                    iter,
+                    L_active,
+                    batch_indices,
+                    dropout_key,
+                )
 
                 # Update ALL parameters (A + processor_params + uncertainty weights)
                 updates, opt_state = optimizer.update(grads, opt_state)
@@ -1471,9 +1491,11 @@ def _learn_structure_legacy(
             # Full batch on training data
             # Generate dropout key for this iteration
             key, dropout_key = random.split(key)
-            (epoch_loss, (epoch_h_A, epoch_recon_loss, epoch_class_loss)), grads = jax.value_and_grad(
-                loss_fn, has_aux=True
-            )(all_params, data_train, Y_train, lambda_2, iter, L_active, None, dropout_key)
+            (epoch_loss, (epoch_h_A, epoch_recon_loss, epoch_class_loss)), grads = (
+                jax.value_and_grad(loss_fn, has_aux=True)(
+                    all_params, data_train, Y_train, lambda_2, iter, L_active, None, dropout_key
+                )
+            )
 
             # Update ALL parameters
             updates, opt_state = optimizer.update(grads, opt_state)
@@ -1483,16 +1505,25 @@ def _learn_structure_legacy(
         # L is not used for validation (sample-specific to training)
         # rng_key=None disables dropout for validation
         if use_validation_split and data_val is not None:
-            val_loss, (_, _, _) = loss_fn(all_params, data_val, Y_val, lambda_2, iter, use_L_in_loss=False, batch_indices=None, rng_key=None)
+            val_loss, (_, _, _) = loss_fn(
+                all_params,
+                data_val,
+                Y_val,
+                lambda_2,
+                iter,
+                use_L_in_loss=False,
+                batch_indices=None,
+                rng_key=None,
+            )
             early_stop_loss = float(val_loss)
         else:
             early_stop_loss = float(epoch_loss)
 
         # Dynamic pruning - update mask periodically
         if enable_pruning and iter > 0 and iter % 10 == 0:
-            A_curr = all_params['A']
+            A_curr = all_params["A"]
             # Compute gradient for pruning decision
-            grads_A = grads['A']
+            grads_A = grads["A"]
             pruning_mask = dynamic_pruning(A_curr, grads_A, iter, max_iter)
 
         # Increase DAG penalty if constraint not satisfied
@@ -1504,32 +1535,39 @@ def _learn_structure_legacy(
             best_loss = early_stop_loss
             patience_counter = 0
             # Save best parameters
-            best_params = {k: v.copy() if hasattr(v, 'copy') else v for k, v in all_params.items()}
+            best_params = {k: v.copy() if hasattr(v, "copy") else v for k, v in all_params.items()}
         else:
             patience_counter += 1
 
         if verbose and iter % 10 == 0:
-            sigma_r = jnp.exp(0.5 * all_params['log_var_recon'])
-            pruning_info = f", pruned={int((1-pruning_mask.mean())*100)}%" if enable_pruning else ""
+            sigma_r = jnp.exp(0.5 * all_params["log_var_recon"])
+            pruning_info = (
+                f", pruned={int((1 - pruning_mask.mean()) * 100)}%" if enable_pruning else ""
+            )
             spectral_info = " [spectral]" if use_spectral_constraint else ""
             val_info = f", val_loss={early_stop_loss:.3f}" if use_validation_split else ""
-            print(f"Iter {iter}: train_loss={epoch_loss:.3f} "
-                  f"(recon={epoch_recon_loss:.3f}, class={epoch_class_loss:.3f}){val_info}, "
-                  f"h(A)={epoch_h_A:.3f}{spectral_info}, λ2={lambda_2:.2e}, "
-                  f"σ_r={sigma_r:.3f}{pruning_info}", flush=True)
+            print(
+                f"Iter {iter}: train_loss={epoch_loss:.3f} "
+                f"(recon={epoch_recon_loss:.3f}, class={epoch_class_loss:.3f}){val_info}, "
+                f"h(A)={epoch_h_A:.3f}{spectral_info}, λ2={lambda_2:.2e}, "
+                f"σ_r={sigma_r:.3f}{pruning_info}",
+                flush=True,
+            )
 
         # Early stopping
         if patience_counter >= patience:
             if verbose:
-                print(f"\nEarly stopping at iteration {iter} (patience={patience}, best_val_loss={best_loss:.4f})")
+                print(
+                    f"\nEarly stopping at iteration {iter} (patience={patience}, best_val_loss={best_loss:.4f})"
+                )
             # Restore best parameters
             all_params = best_params
             break
 
     # Extract final parameters
-    A_final = all_params['A']
+    A_final = all_params["A"]
     # Merge trained params with metadata to get full processor params
-    processor_params_final = merge_trained_params(processor_params, all_params['processor_params'])
+    processor_params_final = merge_trained_params(processor_params, all_params["processor_params"])
 
     # solve_output_weights is DISABLED: end-to-end joint training means
     # processor params are already optimized during GOLEM, no post-hoc step needed.
@@ -1538,13 +1576,15 @@ def _learn_structure_legacy(
         n_selected = int(jnp.sum(jnp.abs(A_final[:, Y_idx]) > 0.05))
         print(f"\nUnified framework: A-weighted features: {n_selected} edges to Y")
         print(f"  weight_max={float(jnp.max(jnp.abs(A_final[:, Y_idx]))):.3f}")
-        print(f"  (No post-hoc logistic regression - using jointly trained params)")
+        print("  (No post-hoc logistic regression - using jointly trained params)")
 
     if verbose:
-        print(f"\nLearned A matrix (max={jnp.max(jnp.abs(A_final)):.3f}, "
-              f"mean={jnp.mean(jnp.abs(A_final)):.3f})")
-        print(f"Final uncertainty: σ_recon={jnp.exp(0.5*all_params['log_var_recon']):.3f}")
-        print(f"Processor params jointly optimized with A")
+        print(
+            f"\nLearned A matrix (max={jnp.max(jnp.abs(A_final)):.3f}, "
+            f"mean={jnp.mean(jnp.abs(A_final)):.3f})"
+        )
+        print(f"Final uncertainty: σ_recon={jnp.exp(0.5 * all_params['log_var_recon']):.3f}")
+        print("Processor params jointly optimized with A")
 
     # Threshold to get binary DAG (absolute threshold, not relative)
     threshold = 0.05
@@ -1572,7 +1612,7 @@ def _learn_structure_legacy(
 
     # Add L contribution to prediction if enabled
     if use_latent_confounders:
-        L_final = all_params['U'] @ all_params['V'].T
+        L_final = all_params["U"] @ all_params["V"].T
         Y_pred_logits = Y_pred_logits + L_final[:, Y_idx]
     else:
         L_final = None
@@ -1580,7 +1620,7 @@ def _learn_structure_legacy(
     # Task-dependent post-training metrics
     Y_flat = Y_for_acc.flatten()
 
-    if task == 'regression':
+    if task == "regression":
         # Regression: raw predictions, no sigmoid
         Y_pred = Y_pred_logits.flatten()
         Y_pred_prob = Y_pred  # For consistency in return dict
@@ -1611,7 +1651,7 @@ def _learn_structure_legacy(
                 effective_rank = int(jnp.sum(L_singular_values > 0.01 * L_singular_values[0]))
                 nuclear_norm = float(jnp.sum(L_singular_values))
                 print(f"Latent L: effective_rank={effective_rank}, ||L||_*={nuclear_norm:.4f}")
-            print(f"{'='*60}\n")
+            print(f"{'=' * 60}\n")
     else:
         # Classification: sigmoid + threshold + confusion matrix metrics
         Y_pred_prob = jax.nn.sigmoid(Y_pred_logits)
@@ -1622,12 +1662,20 @@ def _learn_structure_legacy(
         mae = 0.0
 
         if verbose:
-            print(f"\n[DEBUG] Accuracy computation:")
+            print("\n[DEBUG] Accuracy computation:")
             print(f"  weight_sum={float(weight_sum):.4f}, using_uniform={float(weight_sum) < 0.01}")
-            print(f"  Y_pred_logits: min={float(jnp.min(Y_pred_logits)):.4f}, max={float(jnp.max(Y_pred_logits)):.4f}, mean={float(jnp.mean(Y_pred_logits)):.4f}")
-            print(f"  Y_pred_prob: min={float(jnp.min(Y_pred_prob)):.4f}, max={float(jnp.max(Y_pred_prob)):.4f}, mean={float(jnp.mean(Y_pred_prob)):.4f}")
-            print(f"  Y_pred_binary: sum={float(jnp.sum(Y_pred_binary)):.0f}/{len(Y_pred_binary)} ({100*float(jnp.mean(Y_pred_binary)):.1f}%)")
-            print(f"  Y_true: sum={float(jnp.sum(Y_flat)):.0f}/{len(Y_flat)} ({100*float(jnp.mean(Y_flat)):.1f}%)")
+            print(
+                f"  Y_pred_logits: min={float(jnp.min(Y_pred_logits)):.4f}, max={float(jnp.max(Y_pred_logits)):.4f}, mean={float(jnp.mean(Y_pred_logits)):.4f}"
+            )
+            print(
+                f"  Y_pred_prob: min={float(jnp.min(Y_pred_prob)):.4f}, max={float(jnp.max(Y_pred_prob)):.4f}, mean={float(jnp.mean(Y_pred_prob)):.4f}"
+            )
+            print(
+                f"  Y_pred_binary: sum={float(jnp.sum(Y_pred_binary)):.0f}/{len(Y_pred_binary)} ({100 * float(jnp.mean(Y_pred_binary)):.1f}%)"
+            )
+            print(
+                f"  Y_true: sum={float(jnp.sum(Y_flat)):.0f}/{len(Y_flat)} ({100 * float(jnp.mean(Y_flat)):.1f}%)"
+            )
 
         if verbose:
             n_edges = int(jnp.sum(A_binary))
@@ -1639,7 +1687,7 @@ def _learn_structure_legacy(
                 effective_rank = int(jnp.sum(L_singular_values > 0.01 * L_singular_values[0]))
                 nuclear_norm = float(jnp.sum(L_singular_values))
                 print(f"Latent L: effective_rank={effective_rank}, ||L||_*={nuclear_norm:.4f}")
-            print(f"{'='*60}\n")
+            print(f"{'=' * 60}\n")
 
         # Classification metrics: confusion matrix
         Y_pred_flat = Y_pred_binary.flatten()
@@ -1664,7 +1712,9 @@ def _learn_structure_legacy(
         if n_pos > 0 and n_neg > 0:
             tpr_cumsum = jnp.cumsum(Y_true_sorted) / n_pos
             fpr_cumsum = jnp.cumsum(1 - Y_true_sorted) / n_neg
-            auc_roc = float(jnp.sum((fpr_cumsum[1:] - fpr_cumsum[:-1]) * (tpr_cumsum[1:] + tpr_cumsum[:-1]) / 2))
+            auc_roc = float(
+                jnp.sum((fpr_cumsum[1:] - fpr_cumsum[:-1]) * (tpr_cumsum[1:] + tpr_cumsum[:-1]) / 2)
+            )
         else:
             auc_roc = 0.5
 
@@ -1683,60 +1733,60 @@ def _learn_structure_legacy(
 
     metrics = {
         # Structure metrics
-        'n_edges': int(jnp.sum(A_binary)),
-        'sparsity': sparsity,
-        'final_h_A': float(epoch_h_A),
-        'markov_blanket': markov_blanket,
-        'markov_blanket_size': len(markov_blanket),
-
+        "n_edges": int(jnp.sum(A_binary)),
+        "sparsity": sparsity,
+        "final_h_A": float(epoch_h_A),
+        "markov_blanket": markov_blanket,
+        "markov_blanket_size": len(markov_blanket),
         # Loss metrics
-        'final_loss': float(epoch_loss),
-        'final_recon_loss': float(epoch_recon_loss),
-        'final_class_loss': float(epoch_class_loss),
-
+        "final_loss": float(epoch_loss),
+        "final_recon_loss": float(epoch_recon_loss),
+        "final_class_loss": float(epoch_class_loss),
         # Classification metrics (v6.1.2) — also populated for regression (R² maps to balanced_accuracy)
-        'classification_accuracy': classification_accuracy,
-        'balanced_accuracy': balanced_accuracy,
-        'precision': precision,
-        'recall': recall,
-        'specificity': specificity,
-        'f1_score': f1_score,
-        'auc_roc': auc_roc,
-
+        "classification_accuracy": classification_accuracy,
+        "balanced_accuracy": balanced_accuracy,
+        "precision": precision,
+        "recall": recall,
+        "specificity": specificity,
+        "f1_score": f1_score,
+        "auc_roc": auc_roc,
         # Regression metrics (0.0 for classification)
-        'r2': r2,
-        'rmse': rmse,
-        'mae': mae,
-        'task': task,
-
+        "r2": r2,
+        "rmse": rmse,
+        "mae": mae,
+        "task": task,
         # Training info
-        'iterations': iter + 1,
-        'early_stopped': patience_counter >= patience,
-        'final_sigma_recon': float(jnp.exp(0.5 * all_params['log_var_recon'])),
-        'final_sigma_class': 1.0,  # Sentinel — log_var_class removed, curriculum + lambda_class suffice
-
+        "iterations": iter + 1,
+        "early_stopped": patience_counter >= patience,
+        "final_sigma_recon": float(jnp.exp(0.5 * all_params["log_var_recon"])),
+        "final_sigma_class": 1.0,  # Sentinel — log_var_class removed, curriculum + lambda_class suffice
         # Adjacency matrix (for DAG visualization)
-        'A_binary': A_binary.tolist() if hasattr(A_binary, 'tolist') else A_binary,
-        'A_weights': A_final.tolist() if hasattr(A_final, 'tolist') else A_final,
+        "A_binary": A_binary.tolist() if hasattr(A_binary, "tolist") else A_binary,
+        "A_weights": A_final.tolist() if hasattr(A_final, "tolist") else A_final,
     }
 
     # Add confusion matrix only for classification
-    if task == 'classification':
+    if task == "classification":
         Y_pred_flat = Y_pred_binary.flatten()
         Y_true_flat = Y_flat.flatten()
         tp_val = float(jnp.sum((Y_pred_flat == 1) & (Y_true_flat == 1)))
         tn_val = float(jnp.sum((Y_pred_flat == 0) & (Y_true_flat == 0)))
         fp_val = float(jnp.sum((Y_pred_flat == 1) & (Y_true_flat == 0)))
         fn_val = float(jnp.sum((Y_pred_flat == 0) & (Y_true_flat == 1)))
-        metrics['confusion_matrix'] = {'tp': int(tp_val), 'tn': int(tn_val), 'fp': int(fp_val), 'fn': int(fn_val)}
+        metrics["confusion_matrix"] = {
+            "tp": int(tp_val),
+            "tn": int(tn_val),
+            "fp": int(fp_val),
+            "fn": int(fn_val),
+        }
 
     # Add L metrics if latent confounders enabled
     if use_latent_confounders and L_final is not None:
         L_singular_values = jnp.linalg.svd(L_final, compute_uv=False)
-        metrics['L_effective_rank'] = int(jnp.sum(L_singular_values > 0.01 * L_singular_values[0]))
-        metrics['L_nuclear_norm'] = float(jnp.sum(L_singular_values))
-        metrics['L_max'] = float(jnp.max(jnp.abs(L_final)))
-        metrics['L_mean'] = float(jnp.mean(jnp.abs(L_final)))
+        metrics["L_effective_rank"] = int(jnp.sum(L_singular_values > 0.01 * L_singular_values[0]))
+        metrics["L_nuclear_norm"] = float(jnp.sum(L_singular_values))
+        metrics["L_max"] = float(jnp.max(jnp.abs(L_final)))
+        metrics["L_mean"] = float(jnp.mean(jnp.abs(L_final)))
 
     # Return L as well when enabled
     if use_latent_confounders:
@@ -1748,6 +1798,7 @@ def _learn_structure_legacy(
 # ============================================================================
 # Effect Estimation Integration
 # ============================================================================
+
 
 def learn_with_effects(
     data: jnp.ndarray,
@@ -1767,7 +1818,7 @@ def learn_with_effects(
     lambda_propensity: float = 0.1,
     lambda_targeted: float = 1.0,
     # Standard GOLEM parameters
-    processor_type: str = 'elm',
+    processor_type: str = "elm",
     lambda_1: float = 0.02,
     lambda_2_init: float = 0.01,
     lambda_2_max: float = 1e10,
@@ -1821,11 +1872,12 @@ def learn_with_effects(
         processor_params: Trained parameters
         metrics: Dict including effect estimation metrics (ATE, etc.)
     """
-    from jcce.structure_learning.processor_adapters import EffectAdapterWrapper
     from jcce.structure_learning.effect_estimation import (
-        compute_effect_losses, binarize_treatment, select_treatment_candidates,
-        get_training_phase
+        binarize_treatment,
+        compute_effect_losses,
+        get_training_phase,
     )
+    from jcce.structure_learning.processor_adapters import EffectAdapterWrapper
 
     n_samples_total, n_vars = data.shape
 
@@ -1839,7 +1891,7 @@ def learn_with_effects(
             latent_dim=effect_latent_dim,  # Must match U's rank!
             head_hidden_dim=head_hidden_dim,
             enable_effects=True,
-            key=wrap_key
+            key=wrap_key,
         )
     else:
         effect_processor = processor
@@ -1916,7 +1968,7 @@ def learn_with_effects(
             if treatment_idx is None:
                 # Will select after A is learned (use first parent for now)
                 treatment_idx = 0 if Y_idx != 0 else 1
-            T_full = binarize_treatment(data, treatment_idx, method='median')
+            T_full = binarize_treatment(data, treatment_idx, method="median")
             T_train = T_full[train_idx] if use_validation_split else T_full
         else:
             T_train = T[train_idx] if use_validation_split else T
@@ -1928,13 +1980,13 @@ def learn_with_effects(
 
     # Package all parameters
     all_params = {
-        'A': A,
-        'log_var_recon': log_var_recon,
-        'processor_params': trainable_proc_params,
+        "A": A,
+        "log_var_recon": log_var_recon,
+        "processor_params": trainable_proc_params,
     }
     if use_latent_confounders:
-        all_params['U'] = U
-        all_params['V'] = V
+        all_params["U"] = U
+        all_params["V"] = V
 
     # Dynamic lambda_2 growth
     lambda_2 = lambda_2_init
@@ -1959,18 +2011,27 @@ def learn_with_effects(
     # =========================================================================
     # Loss function with effect estimation
     # =========================================================================
-    def loss_fn(params, batch_data, batch_Y, batch_T, lambda_2_current, current_iter,
-                use_L_in_loss=True, batch_indices=None, rng_key=None):
+    def loss_fn(
+        params,
+        batch_data,
+        batch_Y,
+        batch_T,
+        lambda_2_current,
+        current_iter,
+        use_L_in_loss=True,
+        batch_indices=None,
+        rng_key=None,
+    ):
         """
         Extended loss function with effect estimation.
         """
-        A_curr = params['A']
+        A_curr = params["A"]
         if enable_pruning and pruning_mask is not None:
             A_curr = A_curr * pruning_mask
 
         # Merge trained params with metadata for joint optimization
-        proc_params = merge_trained_params(processor_params, params['processor_params'])
-        log_var_r = params['log_var_recon']
+        proc_params = merge_trained_params(processor_params, params["processor_params"])
+        log_var_r = params["log_var_recon"]
 
         # Get training phase for effect weight scaling
         phase = get_training_phase(current_iter, max_iter)
@@ -1978,8 +2039,8 @@ def learn_with_effects(
 
         # Compute L for latent confounders
         if use_latent_confounders and use_L_in_loss:
-            U_curr = params['U']
-            V_curr = params['V']
+            U_curr = params["U"]
+            V_curr = params["V"]
             if batch_indices is not None:
                 U_batch = U_curr[batch_indices, :]
                 L_batch = U_batch @ V_curr.T
@@ -2016,11 +2077,13 @@ def learn_with_effects(
             X_weighted = batch_data * weights[jnp.newaxis, :]
 
             # Pass training and rng_key for dropout
-            if processor.__class__.__name__ == 'GNNAdapter':
+            if processor.__class__.__name__ == "GNNAdapter":
                 A_normalized = A_curr / (jnp.sum(jnp.abs(A_curr), axis=0, keepdims=True) + 1e-8)
                 direct_effect = processor.forward(X_weighted, proc_params[j], A=A_normalized)
-            elif processor.__class__.__name__ in ('MLPAdapter', 'TransformerAdapter'):
-                direct_effect = processor.forward(X_weighted, proc_params[j], training=training, rng_key=rng_key)
+            elif processor.__class__.__name__ in ("MLPAdapter", "TransformerAdapter"):
+                direct_effect = processor.forward(
+                    X_weighted, proc_params[j], training=training, rng_key=rng_key
+                )
             else:
                 direct_effect = processor.forward(X_weighted, proc_params[j])
 
@@ -2035,8 +2098,8 @@ def learn_with_effects(
                 Y_pred_prob = jax.nn.sigmoid(Y_pred_logits)
                 eps = 1e-7
                 bce = -jnp.mean(
-                    batch_Y * jnp.log(Y_pred_prob + eps) +
-                    (1 - batch_Y) * jnp.log(1 - Y_pred_prob + eps)
+                    batch_Y * jnp.log(Y_pred_prob + eps)
+                    + (1 - batch_Y) * jnp.log(1 - Y_pred_prob + eps)
                 )
                 classification_loss = bce
             else:
@@ -2053,9 +2116,11 @@ def learn_with_effects(
 
         if use_spectral_constraint:
             h_A = compute_dag_constraint_auto(
-                A_curr, use_spectral=True,
-                iteration=current_iter, max_iter=max_iter,
-                use_exact_final=True
+                A_curr,
+                use_spectral=True,
+                iteration=current_iter,
+                max_iter=max_iter,
+                use_exact_final=True,
             )
         else:
             h_A = dag_constraint(A_curr)
@@ -2065,13 +2130,13 @@ def learn_with_effects(
         structural_loss = total_recon_loss + sparsity_loss + dag_loss
 
         if weight_decay > 0:
-            structural_loss = structural_loss + weight_decay * jnp.sum(A_curr ** 2)
+            structural_loss = structural_loss + weight_decay * jnp.sum(A_curr**2)
 
         # L regularization
         if use_latent_confounders:
-            U_curr = params['U']
-            V_curr = params['V']
-            nuclear_norm_loss = 0.5 * (jnp.sum(U_curr ** 2) + jnp.sum(V_curr ** 2))
+            U_curr = params["U"]
+            V_curr = params["V"]
+            nuclear_norm_loss = 0.5 * (jnp.sum(U_curr**2) + jnp.sum(V_curr**2))
             structural_loss = structural_loss + lambda_L * nuclear_norm_loss
 
             L_curr = U_curr @ V_curr.T
@@ -2095,44 +2160,53 @@ def learn_with_effects(
 
             # Forward with effect heads
             if U_batch is not None:
-                if processor.__class__.__name__ == 'GNNAdapter':
+                if processor.__class__.__name__ == "GNNAdapter":
                     A_norm = A_curr / (jnp.sum(jnp.abs(A_curr), axis=0, keepdims=True) + 1e-8)
                     effect_outputs = effect_processor.forward_with_effects(
-                        X_weighted_Y, proc_params[Y_idx], U_batch, batch_T,
-                        training=True, rng_key=rng_key, A=A_norm
+                        X_weighted_Y,
+                        proc_params[Y_idx],
+                        U_batch,
+                        batch_T,
+                        training=True,
+                        rng_key=rng_key,
+                        A=A_norm,
                     )
                 else:
                     effect_outputs = effect_processor.forward_with_effects(
-                        X_weighted_Y, proc_params[Y_idx], U_batch, batch_T,
-                        training=True, rng_key=rng_key
+                        X_weighted_Y,
+                        proc_params[Y_idx],
+                        U_batch,
+                        batch_T,
+                        training=True,
+                        rng_key=rng_key,
                     )
 
-                y0 = effect_outputs['y0']
-                y1 = effect_outputs['y1']
-                propensity = effect_outputs['propensity']
+                y0 = effect_outputs["y0"]
+                y1 = effect_outputs["y1"]
+                propensity = effect_outputs["propensity"]
 
                 # Compute effect losses
                 losses = compute_effect_losses(batch_Y, batch_T, y0, y1, propensity)
 
-                L_outcome = losses['L_outcome']
-                L_propensity = losses['L_propensity']
-                L_targeted = losses['L_targeted']
+                L_outcome = losses["L_outcome"]
+                L_propensity = losses["L_propensity"]
+                L_targeted = losses["L_targeted"]
 
                 # Scaled effect loss
                 effect_loss = effect_scale * (
-                    lambda_outcome * L_outcome +
-                    lambda_propensity * L_propensity +
-                    lambda_targeted * L_targeted
+                    lambda_outcome * L_outcome
+                    + lambda_propensity * L_propensity
+                    + lambda_targeted * L_targeted
                 )
 
                 # NOTE: Can't use float() inside JAX-traced function
                 # Store as JAX arrays, convert to float outside
                 effect_metrics = {
-                    'L_outcome': L_outcome,
-                    'L_propensity': L_propensity,
-                    'L_targeted': L_targeted,
-                    'ATE': losses['ATE'],
-                    'CATE_std': losses['CATE_std'],
+                    "L_outcome": L_outcome,
+                    "L_propensity": L_propensity,
+                    "L_targeted": L_targeted,
+                    "ATE": losses["ATE"],
+                    "CATE_std": losses["CATE_std"],
                 }
 
         # Uncertainty weighting — log_var_class removed
@@ -2146,14 +2220,11 @@ def learn_with_effects(
         return total_loss, (h_A, total_recon_loss, classification_loss, effect_metrics)
 
     # Optimizer with gradient clipping (prevents exploding gradients in Mamba/GNN)
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.adam(learning_rate=lr)
-    )
+    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr))
     opt_state = optimizer.init(all_params)
 
     # Early stopping
-    best_loss = float('inf')
+    best_loss = float("inf")
     patience_counter = 0
     best_params = all_params.copy()
 
@@ -2167,7 +2238,7 @@ def learn_with_effects(
         # L warm-start
         if use_latent_confounders and not L_active and iter == warm_start_L_iters:
             if verbose:
-                print(f"Warm-start: Initializing L factors via SVD...")
+                print("Warm-start: Initializing L factors via SVD...")
             L_active = True
 
         epoch_loss = 0.0
@@ -2192,12 +2263,21 @@ def learn_with_effects(
 
                 (loss_val, (h_A, recon_loss, class_loss, eff_metrics)), grads = jax.value_and_grad(
                     loss_fn, has_aux=True
-                )(all_params, batch_data, batch_Y, batch_T, lambda_2, iter,
-                  L_active, batch_indices, rng_key)
+                )(
+                    all_params,
+                    batch_data,
+                    batch_Y,
+                    batch_T,
+                    lambda_2,
+                    iter,
+                    L_active,
+                    batch_indices,
+                    rng_key,
+                )
 
                 updates, opt_state = optimizer.update(grads, opt_state, all_params)
                 all_params = optax.apply_updates(all_params, updates)
-                all_params['A'] = all_params['A'].at[jnp.diag_indices(n_vars)].set(0)
+                all_params["A"] = all_params["A"].at[jnp.diag_indices(n_vars)].set(0)
 
                 epoch_loss += loss_val
                 epoch_h_A = h_A
@@ -2212,12 +2292,21 @@ def learn_with_effects(
 
             (loss_val, (h_A, recon_loss, class_loss, eff_metrics)), grads = jax.value_and_grad(
                 loss_fn, has_aux=True
-            )(all_params, data_train, Y_train, T_train, lambda_2, iter,
-              L_active, batch_indices, rng_key)
+            )(
+                all_params,
+                data_train,
+                Y_train,
+                T_train,
+                lambda_2,
+                iter,
+                L_active,
+                batch_indices,
+                rng_key,
+            )
 
             updates, opt_state = optimizer.update(grads, opt_state, all_params)
             all_params = optax.apply_updates(all_params, updates)
-            all_params['A'] = all_params['A'].at[jnp.diag_indices(n_vars)].set(0)
+            all_params["A"] = all_params["A"].at[jnp.diag_indices(n_vars)].set(0)
 
             epoch_loss = loss_val
             epoch_h_A = h_A
@@ -2228,7 +2317,7 @@ def learn_with_effects(
         # Early stopping
         if epoch_loss < best_loss:
             best_loss = epoch_loss
-            best_params = {k: v.copy() if hasattr(v, 'copy') else v for k, v in all_params.items()}
+            best_params = {k: v.copy() if hasattr(v, "copy") else v for k, v in all_params.items()}
             patience_counter = 0
         else:
             patience_counter += 1
@@ -2238,10 +2327,12 @@ def learn_with_effects(
             lambda_2 = min(lambda_2 * lambda_2_growth, lambda_2_max)
 
         if verbose and iter % 10 == 0:
-            ate_val = float(epoch_effect_metrics.get('ATE', 0)) if epoch_effect_metrics else 0
+            ate_val = float(epoch_effect_metrics.get("ATE", 0)) if epoch_effect_metrics else 0
             ate_str = f", ATE={ate_val:.4f}" if epoch_effect_metrics else ""
-            print(f"Iter {iter}: loss={float(epoch_loss):.4f}, h(A)={float(epoch_h_A):.4f}, "
-                  f"recon={float(epoch_recon_loss):.4f}, class={float(epoch_class_loss):.4f}{ate_str}")
+            print(
+                f"Iter {iter}: loss={float(epoch_loss):.4f}, h(A)={float(epoch_h_A):.4f}, "
+                f"recon={float(epoch_recon_loss):.4f}, class={float(epoch_class_loss):.4f}{ate_str}"
+            )
 
         if patience_counter >= patience:
             if verbose:
@@ -2250,13 +2341,13 @@ def learn_with_effects(
             break
 
     # Extract results
-    A_final = all_params['A']
+    A_final = all_params["A"]
     threshold = 0.05
     A_binary = (jnp.abs(A_final) > threshold).astype(jnp.float32)
 
     # Compute classification metrics
     # Merge trained params with metadata to get full processor params
-    processor_params_final = merge_trained_params(processor_params, all_params['processor_params'])
+    processor_params_final = merge_trained_params(processor_params, all_params["processor_params"])
 
     # Use A-weighted features for prediction
     weights_Y = jnp.abs(A_final[:, Y_idx])
@@ -2293,37 +2384,39 @@ def learn_with_effects(
 
     # Compute final metrics
     metrics = {
-        'n_edges': int(jnp.sum(A_binary)),
-        'final_loss': float(epoch_loss),
-        'final_h_A': float(epoch_h_A),
-        'iterations': iter + 1,
+        "n_edges": int(jnp.sum(A_binary)),
+        "final_loss": float(epoch_loss),
+        "final_h_A": float(epoch_h_A),
+        "iterations": iter + 1,
         # Classification metrics
-        'classification_accuracy': classification_accuracy,
-        'balanced_accuracy': balanced_accuracy,
-        'precision': precision,
-        'recall': recall,
-        'specificity': specificity,
-        'f1_score': f1_score,
+        "classification_accuracy": classification_accuracy,
+        "balanced_accuracy": balanced_accuracy,
+        "precision": precision,
+        "recall": recall,
+        "specificity": specificity,
+        "f1_score": f1_score,
         # Structure
-        'markov_blanket': markov_blanket,
-        'markov_blanket_size': len(markov_blanket),
+        "markov_blanket": markov_blanket,
+        "markov_blanket_size": len(markov_blanket),
         # DAG structure (can be used to build graph visualization)
-        'A_binary': A_binary.tolist() if hasattr(A_binary, 'tolist') else A_binary,
-        'A_weights': A_final.tolist() if hasattr(A_final, 'tolist') else A_final,
+        "A_binary": A_binary.tolist() if hasattr(A_binary, "tolist") else A_binary,
+        "A_weights": A_final.tolist() if hasattr(A_final, "tolist") else A_final,
     }
 
     # Add effect metrics (convert JAX arrays to float)
     if enable_effects and epoch_effect_metrics:
-        metrics.update({
-            'ATE': float(epoch_effect_metrics.get('ATE', 0.0)),
-            'CATE_std': float(epoch_effect_metrics.get('CATE_std', 0.0)),
-            'L_outcome': float(epoch_effect_metrics.get('L_outcome', 0.0)),
-            'L_propensity': float(epoch_effect_metrics.get('L_propensity', 0.0)),
-        })
+        metrics.update(
+            {
+                "ATE": float(epoch_effect_metrics.get("ATE", 0.0)),
+                "CATE_std": float(epoch_effect_metrics.get("CATE_std", 0.0)),
+                "L_outcome": float(epoch_effect_metrics.get("L_outcome", 0.0)),
+                "L_propensity": float(epoch_effect_metrics.get("L_propensity", 0.0)),
+            }
+        )
 
     if use_latent_confounders:
-        L_final = all_params['U'] @ all_params['V'].T
-        metrics['L_nuclear_norm'] = float(jnp.sum(jnp.linalg.svd(L_final, compute_uv=False)))
+        L_final = all_params["U"] @ all_params["V"].T
+        metrics["L_nuclear_norm"] = float(jnp.sum(jnp.linalg.svd(L_final, compute_uv=False)))
 
     if verbose:
         print(f"\nFinal: {metrics['n_edges']} edges")
@@ -2338,6 +2431,7 @@ def learn_with_effects(
 # ============================================================================
 # Stage 1: Multi-Edge Effect Estimation (v7.0)
 # ============================================================================
+
 
 def compute_ate_for_single_treatment(
     X: jnp.ndarray,
@@ -2384,7 +2478,7 @@ def compute_ate_for_single_treatment(
 
     # Detect feature type
     n_unique = len(jnp.unique(T))
-    feature_type = 'binary' if n_unique <= 10 else 'continuous'
+    feature_type = "binary" if n_unique <= 10 else "continuous"
 
     # Build input: X without treatment column AND without Y column + L
     # CRITICAL: Y must not be a covariate when predicting Y!
@@ -2403,7 +2497,7 @@ def compute_ate_for_single_treatment(
 
     # For binary treatment: standard TARNet
     # For continuous: simple regression approach (VCNet in Stage 2)
-    if feature_type == 'binary':
+    if feature_type == "binary":
         return _compute_ate_binary(effect_input, Y, T, key, input_dim, n_hidden, n_steps, lr)
     else:
         return _compute_ate_continuous(effect_input, Y, T, key, input_dim, n_hidden, n_steps, lr)
@@ -2435,23 +2529,32 @@ def _compute_ate_binary(effect_input, Y, T, key, input_dim, n_hidden, n_steps, l
     bp_o = jnp.zeros(1)
 
     params = {
-        'W0_h': W0_h, 'b0_h': b0_h, 'W0_o': W0_o, 'b0_o': b0_o,
-        'W1_h': W1_h, 'b1_h': b1_h, 'W1_o': W1_o, 'b1_o': b1_o,
-        'Wp_h': Wp_h, 'bp_h': bp_h, 'Wp_o': Wp_o, 'bp_o': bp_o,
+        "W0_h": W0_h,
+        "b0_h": b0_h,
+        "W0_o": W0_o,
+        "b0_o": b0_o,
+        "W1_h": W1_h,
+        "b1_h": b1_h,
+        "W1_o": W1_o,
+        "b1_o": b1_o,
+        "Wp_h": Wp_h,
+        "bp_h": bp_h,
+        "Wp_o": Wp_o,
+        "bp_o": bp_o,
     }
 
     def forward(params, X, T_val=None):
         # Y(0) prediction
-        h0 = jax.nn.relu(X @ params['W0_h'] + params['b0_h'])
-        y0 = jax.nn.sigmoid(h0 @ params['W0_o'] + params['b0_o']).squeeze()
+        h0 = jax.nn.relu(X @ params["W0_h"] + params["b0_h"])
+        y0 = jax.nn.sigmoid(h0 @ params["W0_o"] + params["b0_o"]).squeeze()
 
         # Y(1) prediction
-        h1 = jax.nn.relu(X @ params['W1_h'] + params['b1_h'])
-        y1 = jax.nn.sigmoid(h1 @ params['W1_o'] + params['b1_o']).squeeze()
+        h1 = jax.nn.relu(X @ params["W1_h"] + params["b1_h"])
+        y1 = jax.nn.sigmoid(h1 @ params["W1_o"] + params["b1_o"]).squeeze()
 
         # Propensity
-        hp = jax.nn.relu(X @ params['Wp_h'] + params['bp_h'])
-        prop = jax.nn.sigmoid(hp @ params['Wp_o'] + params['bp_o']).squeeze()
+        hp = jax.nn.relu(X @ params["Wp_h"] + params["bp_h"])
+        prop = jax.nn.sigmoid(hp @ params["Wp_o"] + params["bp_o"]).squeeze()
 
         return y0, y1, prop
 
@@ -2461,14 +2564,10 @@ def _compute_ate_binary(effect_input, Y, T, key, input_dim, n_hidden, n_steps, l
         # Factual outcome loss
         y_pred = jnp.where(T > 0.5, y1, y0)
         eps = 1e-7
-        outcome_loss = -jnp.mean(
-            Y * jnp.log(y_pred + eps) + (1 - Y) * jnp.log(1 - y_pred + eps)
-        )
+        outcome_loss = -jnp.mean(Y * jnp.log(y_pred + eps) + (1 - Y) * jnp.log(1 - y_pred + eps))
 
         # Propensity loss
-        prop_loss = -jnp.mean(
-            T * jnp.log(prop + eps) + (1 - T) * jnp.log(1 - prop + eps)
-        )
+        prop_loss = -jnp.mean(T * jnp.log(prop + eps) + (1 - T) * jnp.log(1 - prop + eps))
 
         return outcome_loss + 0.5 * prop_loss
 
@@ -2493,13 +2592,13 @@ def _compute_ate_binary(effect_input, Y, T, key, input_dim, n_hidden, n_steps, l
     ate_std = float(jnp.std(ite))
 
     return {
-        'ATE': ate,
-        'ATE_std': ate_std,
-        'CATE_std': ate_std,
-        'propensity_mean': float(jnp.mean(prop_final)),
-        'feature_type': 'binary',
-        'n_treated': int(jnp.sum(T > 0.5)),
-        'n_control': int(jnp.sum(T <= 0.5)),
+        "ATE": ate,
+        "ATE_std": ate_std,
+        "CATE_std": ate_std,
+        "propensity_mean": float(jnp.mean(prop_final)),
+        "feature_type": "binary",
+        "n_treated": int(jnp.sum(T > 0.5)),
+        "n_control": int(jnp.sum(T <= 0.5)),
     }
 
 
@@ -2554,15 +2653,21 @@ def _compute_ate_continuous(effect_input, Y, T, key, input_dim, n_hidden, n_step
 
     params = {
         # Feature encoder
-        'W_phi_1': W_phi_1, 'b_phi_1': b_phi_1,
-        'W_phi_2': W_phi_2, 'b_phi_2': b_phi_2,
+        "W_phi_1": W_phi_1,
+        "b_phi_1": b_phi_1,
+        "W_phi_2": W_phi_2,
+        "b_phi_2": b_phi_2,
         # Treatment encoder
-        'W_psi_1': W_psi_1, 'b_psi_1': b_psi_1,
-        'W_psi_2': W_psi_2, 'b_psi_2': b_psi_2,
+        "W_psi_1": W_psi_1,
+        "b_psi_1": b_psi_1,
+        "W_psi_2": W_psi_2,
+        "b_psi_2": b_psi_2,
         # Varying coefficients
-        'W_beta': W_beta, 'b_beta': b_beta,
+        "W_beta": W_beta,
+        "b_beta": b_beta,
         # GPS
-        'W_gps': W_gps, 'b_gps': b_gps,
+        "W_gps": W_gps,
+        "b_gps": b_gps,
     }
 
     # =========================================================================
@@ -2570,25 +2675,25 @@ def _compute_ate_continuous(effect_input, Y, T, key, input_dim, n_hidden, n_step
     # =========================================================================
     def feature_encoder(params, X):
         """Encode features: X → Φ(X)"""
-        h = jax.nn.relu(X @ params['W_phi_1'] + params['b_phi_1'])
-        phi = jax.nn.tanh(h @ params['W_phi_2'] + params['b_phi_2'])  # Bounded
+        h = jax.nn.relu(X @ params["W_phi_1"] + params["b_phi_1"])
+        phi = jax.nn.tanh(h @ params["W_phi_2"] + params["b_phi_2"])  # Bounded
         return phi
 
     def treatment_encoder(params, T_val):
         """Encode treatment: T → ψ(T)"""
         T_input = T_val.reshape(-1, 1)
-        h = jax.nn.elu(T_input @ params['W_psi_1'] + params['b_psi_1'])
-        psi = jax.nn.elu(h @ params['W_psi_2'] + params['b_psi_2'])
+        h = jax.nn.elu(T_input @ params["W_psi_1"] + params["b_psi_1"])
+        psi = jax.nn.elu(h @ params["W_psi_2"] + params["b_psi_2"])
         return psi
 
     def varying_coefficients(params, psi):
         """Generate varying coefficients: ψ(T) → β(T)"""
-        beta = jax.nn.tanh(psi @ params['W_beta'] + params['b_beta'])  # Bounded [-1, 1]
+        beta = jax.nn.tanh(psi @ params["W_beta"] + params["b_beta"])  # Bounded [-1, 1]
         return beta
 
     def vcnet_forward(params, X, T_val):
         """Full VCNet forward: Y(T) = sigmoid(β(T) · Φ(X))"""
-        phi = feature_encoder(params, X)        # (n, latent_dim)
+        phi = feature_encoder(params, X)  # (n, latent_dim)
         psi = treatment_encoder(params, T_val)  # (n, treatment_embed_dim)
         beta = varying_coefficients(params, psi)  # (n, latent_dim)
 
@@ -2599,7 +2704,7 @@ def _compute_ate_continuous(effect_input, Y, T, key, input_dim, n_hidden, n_step
 
     def gps_forward(params, X, T_val):
         """Generalized Propensity Score: P(T|X) assuming Gaussian"""
-        gps_out = X @ params['W_gps'] + params['b_gps']
+        gps_out = X @ params["W_gps"] + params["b_gps"]
         mu = gps_out[:, 0]
         log_sigma = jnp.clip(gps_out[:, 1], -3, 3)  # Stability
         sigma = jnp.exp(log_sigma)
@@ -2615,9 +2720,7 @@ def _compute_ate_continuous(effect_input, Y, T, key, input_dim, n_hidden, n_step
         # Outcome loss (BCE)
         y_pred = vcnet_forward(params, X, T_val)
         eps = 1e-7
-        outcome_loss = -jnp.mean(
-            Y * jnp.log(y_pred + eps) + (1 - Y) * jnp.log(1 - y_pred + eps)
-        )
+        outcome_loss = -jnp.mean(Y * jnp.log(y_pred + eps) + (1 - Y) * jnp.log(1 - y_pred + eps))
 
         # GPS loss (negative log-likelihood)
         gps_log_prob, _, _ = gps_forward(params, X, T_val)
@@ -2632,10 +2735,9 @@ def _compute_ate_continuous(effect_input, Y, T, key, input_dim, n_hidden, n_step
         # Compute predictions at multiple doses for a subset of samples
         subset_idx = jnp.arange(min(50, X.shape[0]))
         X_subset = X[subset_idx]
-        y_at_doses = jnp.array([
-            vcnet_forward(params, X_subset, jnp.full(len(subset_idx), t))
-            for t in T_samples[:10]
-        ])  # (10, subset_size)
+        y_at_doses = jnp.array(
+            [vcnet_forward(params, X_subset, jnp.full(len(subset_idx), t)) for t in T_samples[:10]]
+        )  # (10, subset_size)
 
         # Smoothness: penalize variance across doses (encourages smooth curves)
         smoothness_loss = jnp.mean(jnp.var(y_at_doses, axis=0))
@@ -2683,22 +2785,23 @@ def _compute_ate_continuous(effect_input, Y, T, key, input_dim, n_hidden, n_step
     _, gps_mu, gps_sigma = gps_forward(params, effect_input, T_norm)
 
     return {
-        'ATE': ate,
-        'ATE_std': ate_std,
-        'CATE_std': ate_std,
-        'feature_type': 'continuous',
-        'T_range': [T_min, T_max],
+        "ATE": ate,
+        "ATE_std": ate_std,
+        "CATE_std": ate_std,
+        "feature_type": "continuous",
+        "T_range": [T_min, T_max],
         # VCNet-specific outputs
-        'ADRF': [float(x) for x in adrf],  # Average Dose-Response Function
-        'ADRF_doses': [float(x) for x in T_grid * (T_max - T_min) + T_min],  # Original scale
-        'GPS_mu_mean': float(jnp.mean(gps_mu)),
-        'GPS_sigma_mean': float(jnp.mean(gps_sigma)),
+        "ADRF": [float(x) for x in adrf],  # Average Dose-Response Function
+        "ADRF_doses": [float(x) for x in T_grid * (T_max - T_min) + T_min],  # Original scale
+        "GPS_mu_mean": float(jnp.mean(gps_mu)),
+        "GPS_sigma_mean": float(jnp.mean(gps_sigma)),
     }
 
 
 # ============================================================================
 # Stage 3: Mediation Analysis (NDE/NIE)
 # ============================================================================
+
 
 def identify_mediation_paths(A_binary: jnp.ndarray, Y_idx: int) -> list:
     """
@@ -2724,7 +2827,9 @@ def identify_mediation_paths(A_binary: jnp.ndarray, Y_idx: int) -> list:
 
     for t_idx in parents_of_Y:
         # Find children of T that are also parents of Y (mediators)
-        children_of_T = [j for j in range(n_vars) if j != t_idx and j != Y_idx and float(A_binary[t_idx, j]) > 0]
+        children_of_T = [
+            j for j in range(n_vars) if j != t_idx and j != Y_idx and float(A_binary[t_idx, j]) > 0
+        ]
 
         for m_idx in children_of_T:
             # Check if M → Y exists
@@ -2810,12 +2915,12 @@ def compute_mediation_effects(
     Wm_o = random.normal(k2, (n_hidden, 1)) * 0.1
     bm_o = jnp.zeros(1)
 
-    mediator_params = {'Wm_h': Wm_h, 'bm_h': bm_h, 'Wm_o': Wm_o, 'bm_o': bm_o}
+    mediator_params = {"Wm_h": Wm_h, "bm_h": bm_h, "Wm_o": Wm_o, "bm_o": bm_o}
 
     def mediator_forward(params, X_cov, T_val):
         X_input = jnp.concatenate([X_cov, T_val.reshape(-1, 1)], axis=1)
-        h = jax.nn.relu(X_input @ params['Wm_h'] + params['bm_h'])
-        m_pred = jax.nn.sigmoid(h @ params['Wm_o'] + params['bm_o']).squeeze()
+        h = jax.nn.relu(X_input @ params["Wm_h"] + params["bm_h"])
+        m_pred = jax.nn.sigmoid(h @ params["Wm_o"] + params["bm_o"]).squeeze()
         return m_pred
 
     def mediator_loss_binary(params, X_cov, T_val, M_true):
@@ -2842,7 +2947,9 @@ def compute_mediation_effects(
         return params, opt_state, loss
 
     for _ in range(n_steps):
-        mediator_params, opt_state_m, _ = train_mediator_step(mediator_params, opt_state_m, covariates, T, M)
+        mediator_params, opt_state_m, _ = train_mediator_step(
+            mediator_params, opt_state_m, covariates, T, M
+        )
 
     # =========================================================================
     # Step 2: Fit Outcome Model Y = f(T, M, X, L)
@@ -2855,12 +2962,12 @@ def compute_mediation_effects(
     Wo_o = random.normal(k4, (n_hidden, 1)) * 0.1
     bo_o = jnp.zeros(1)
 
-    outcome_params = {'Wo_h': Wo_h, 'bo_h': bo_h, 'Wo_o': Wo_o, 'bo_o': bo_o}
+    outcome_params = {"Wo_h": Wo_h, "bo_h": bo_h, "Wo_o": Wo_o, "bo_o": bo_o}
 
     def outcome_forward(params, X_cov, T_val, M_val):
         X_input = jnp.concatenate([X_cov, T_val.reshape(-1, 1), M_val.reshape(-1, 1)], axis=1)
-        h = jax.nn.relu(X_input @ params['Wo_h'] + params['bo_h'])
-        y_pred = jax.nn.sigmoid(h @ params['Wo_o'] + params['bo_o']).squeeze()
+        h = jax.nn.relu(X_input @ params["Wo_h"] + params["bo_h"])
+        y_pred = jax.nn.sigmoid(h @ params["Wo_o"] + params["bo_o"]).squeeze()
         return y_pred
 
     def outcome_loss(params, X_cov, T_val, M_val, Y_true):
@@ -2880,7 +2987,9 @@ def compute_mediation_effects(
         return params, opt_state, loss
 
     for _ in range(n_steps):
-        outcome_params, opt_state_o, _ = train_outcome_step(outcome_params, opt_state_o, covariates, T, M, Y)
+        outcome_params, opt_state_o, _ = train_outcome_step(
+            outcome_params, opt_state_o, covariates, T, M, Y
+        )
 
     # =========================================================================
     # Step 3: Counterfactual Simulation
@@ -2916,15 +3025,15 @@ def compute_mediation_effects(
     prop_mediated = nie / te if abs(te) > 1e-6 else 0.0
 
     return {
-        'NDE': nde,  # Natural Direct Effect
-        'NIE': nie,  # Natural Indirect Effect
-        'total_effect': te,
-        'total_effect_decomposed': te_decomposed,
-        'proportion_mediated': prop_mediated,
-        'treatment_idx': treatment_idx,
-        'mediator_idx': mediator_idx,
-        'M_0_mean': float(jnp.mean(M_0)),
-        'M_1_mean': float(jnp.mean(M_1)),
+        "NDE": nde,  # Natural Direct Effect
+        "NIE": nie,  # Natural Indirect Effect
+        "total_effect": te,
+        "total_effect_decomposed": te_decomposed,
+        "proportion_mediated": prop_mediated,
+        "treatment_idx": treatment_idx,
+        "mediator_idx": mediator_idx,
+        "M_0_mean": float(jnp.mean(M_0)),
+        "M_1_mean": float(jnp.mean(M_1)),
     }
 
 
@@ -2934,7 +3043,7 @@ def learn_with_multi_effects(
     Y_idx: int,
     processor,
     key: random.PRNGKey,
-    processor_type: str = 'transformer',
+    processor_type: str = "transformer",
     # Latent confounder settings
     use_latent_confounders: bool = True,
     latent_rank_k: int = 3,
@@ -3008,8 +3117,10 @@ def learn_with_multi_effects(
         print("=" * 60)
         print("JCCE v7.0: Multi-Edge Causal Effect Estimation")
         print("=" * 60)
-        print(f"Settings: include_L={include_L_in_effects}, latent_k={latent_rank_k}, "
-              f"mediation={compute_mediation}, all_edges={compute_all_edges}")
+        print(
+            f"Settings: include_L={include_L_in_effects}, latent_k={latent_rank_k}, "
+            f"mediation={compute_mediation}, all_edges={compute_all_edges}"
+        )
 
     # =========================================================================
     # Phase 1: GOLEM Training (DAG + Latent Confounders)
@@ -3056,10 +3167,12 @@ def learn_with_multi_effects(
         L = None
 
     # Extract Markov Blanket
-    markov_blanket = base_metrics.get('markov_blanket', [])
+    markov_blanket = base_metrics.get("markov_blanket", [])
 
     if verbose:
-        print(f"\nPhase 1 complete: MB={markov_blanket}, BAcc={base_metrics['balanced_accuracy']:.2%}")
+        print(
+            f"\nPhase 1 complete: MB={markov_blanket}, BAcc={base_metrics['balanced_accuracy']:.2%}"
+        )
 
     # =========================================================================
     # Phase 2: Multi-Edge Effect Estimation
@@ -3094,8 +3207,11 @@ def learn_with_multi_effects(
 
         if verbose:
             n_unique = len(jnp.unique(T))
-            ftype = 'binary' if n_unique <= 10 else 'continuous'
-            print(f"  [{i+1}/{len(markov_blanket)}] X{feature_idx}→Y ({ftype}, {n_unique} unique)...", end=" ")
+            ftype = "binary" if n_unique <= 10 else "continuous"
+            print(
+                f"  [{i + 1}/{len(markov_blanket)}] X{feature_idx}→Y ({ftype}, {n_unique} unique)...",
+                end=" ",
+            )
 
         # Compute effect (using training subset that matches L)
         # CRITICAL: Pass Y_idx to exclude Y from covariates!
@@ -3113,7 +3229,7 @@ def learn_with_multi_effects(
             lr=effect_lr,
         )
 
-        causal_effects[f'X{feature_idx}→Y'] = effect
+        causal_effects[f"X{feature_idx}→Y"] = effect
 
         if verbose:
             print(f"ATE={effect['ATE']:.4f}")
@@ -3131,7 +3247,7 @@ def learn_with_multi_effects(
         mediation_paths = identify_mediation_paths(A_binary_np, Y_idx)
 
         if verbose:
-            print(f"\n--- Phase 3: Mediation Analysis ---")
+            print("\n--- Phase 3: Mediation Analysis ---")
             print(f"Found {len(mediation_paths)} mediation paths in DAG")
 
         if len(mediation_paths) > 0:
@@ -3141,7 +3257,7 @@ def learn_with_multi_effects(
                 if verbose:
                     path_str = f"X{t_idx}→X{m_idx}→Y"
                     direct_str = " (+ direct X{t_idx}→Y)" if has_direct else ""
-                    print(f"  [{i+1}/{len(mediation_paths)}] {path_str}{direct_str}...", end=" ")
+                    print(f"  [{i + 1}/{len(mediation_paths)}] {path_str}{direct_str}...", end=" ")
 
                 # Compute NDE/NIE for this mediation path
                 med_effect = compute_mediation_effects(
@@ -3161,8 +3277,10 @@ def learn_with_multi_effects(
                 mediation_results[path_key] = med_effect
 
                 if verbose:
-                    print(f"NDE={med_effect['NDE']:.4f}, NIE={med_effect['NIE']:.4f}, "
-                          f"%Med={med_effect['proportion_mediated']*100:.1f}%")
+                    print(
+                        f"NDE={med_effect['NDE']:.4f}, NIE={med_effect['NIE']:.4f}, "
+                        f"%Med={med_effect['proportion_mediated'] * 100:.1f}%"
+                    )
         else:
             if verbose:
                 print("  No mediation paths found (no T→M→Y structure in DAG)")
@@ -3188,7 +3306,7 @@ def learn_with_multi_effects(
                     all_edges.append((i, j))
 
         if verbose:
-            print(f"\n--- Phase 4: All Edge Effects ---")
+            print("\n--- Phase 4: All Edge Effects ---")
             print(f"Computing effects for {len(all_edges)} feature→feature edges")
 
         if len(all_edges) > 0:
@@ -3202,11 +3320,14 @@ def learn_with_multi_effects(
                 # Detect types
                 n_unique_t = len(jnp.unique(T_edge))
                 n_unique_y = len(jnp.unique(Y_edge))
-                t_type = 'binary' if n_unique_t <= 10 else 'continuous'
-                y_type = 'binary' if n_unique_y <= 10 else 'continuous'
+                t_type = "binary" if n_unique_t <= 10 else "continuous"
+                y_type = "binary" if n_unique_y <= 10 else "continuous"
 
                 if verbose:
-                    print(f"  [{idx+1}/{len(all_edges)}] X{src}→X{dst} ({t_type} T, {y_type} Y)...", end=" ")
+                    print(
+                        f"  [{idx + 1}/{len(all_edges)}] X{src}→X{dst} ({t_type} T, {y_type} Y)...",
+                        end=" ",
+                    )
 
                 # Build effect input (exclude both src and dst features)
                 mask = jnp.array([k != src and k != dst for k in range(n_vars)])
@@ -3220,23 +3341,35 @@ def learn_with_multi_effects(
                 input_dim = effect_input.shape[1]
 
                 # Compute effect based on treatment type
-                if t_type == 'binary':
+                if t_type == "binary":
                     # Use TARNet for binary treatment
                     effect = _compute_ate_binary(
-                        effect_input, Y_edge, T_edge, subkey,
-                        input_dim, effect_n_hidden, effect_n_steps, effect_lr
+                        effect_input,
+                        Y_edge,
+                        T_edge,
+                        subkey,
+                        input_dim,
+                        effect_n_hidden,
+                        effect_n_steps,
+                        effect_lr,
                     )
                 else:
                     # Use VCNet for continuous treatment
                     effect = _compute_ate_continuous(
-                        effect_input, Y_edge, T_edge, subkey,
-                        input_dim, effect_n_hidden, effect_n_steps, effect_lr
+                        effect_input,
+                        Y_edge,
+                        T_edge,
+                        subkey,
+                        input_dim,
+                        effect_n_hidden,
+                        effect_n_steps,
+                        effect_lr,
                     )
 
                 # Add metadata
-                effect['source_idx'] = src
-                effect['target_idx'] = dst
-                effect['target_type'] = y_type
+                effect["source_idx"] = src
+                effect["target_idx"] = dst
+                effect["target_type"] = y_type
 
                 edge_key = f"X{src}→X{dst}"
                 feature_effects[edge_key] = effect
@@ -3252,50 +3385,56 @@ def learn_with_multi_effects(
     # =========================================================================
     metrics = {
         **base_metrics,
-        'causal_effects': causal_effects,
-        'mediation': mediation_results,
-        'feature_effects': feature_effects,
-        'include_L_in_effects': include_L_in_effects,
-        'effect_estimation': {
-            'n_effects_computed': len(causal_effects),
-            'n_mediation_paths': len(mediation_results),
-            'n_feature_effects': len(feature_effects),
-            'n_hidden': effect_n_hidden,
-            'n_steps': effect_n_steps,
+        "causal_effects": causal_effects,
+        "mediation": mediation_results,
+        "feature_effects": feature_effects,
+        "include_L_in_effects": include_L_in_effects,
+        "effect_estimation": {
+            "n_effects_computed": len(causal_effects),
+            "n_mediation_paths": len(mediation_results),
+            "n_feature_effects": len(feature_effects),
+            "n_hidden": effect_n_hidden,
+            "n_steps": effect_n_steps,
         },
     }
 
     if L is not None:
-        metrics['L_info'] = {
-            'shape': list(L.shape),
-            'rank': latent_rank_k,
-            'nuclear_norm': float(jnp.sum(jnp.linalg.svd(L, compute_uv=False))),
+        metrics["L_info"] = {
+            "shape": list(L.shape),
+            "rank": latent_rank_k,
+            "nuclear_norm": float(jnp.sum(jnp.linalg.svd(L, compute_uv=False))),
         }
 
     if verbose:
         print("\n" + "=" * 60)
         print("Multi-Edge Effect Estimation Complete")
         print("=" * 60)
-        print(f"Classification: Acc={metrics['classification_accuracy']:.2%}, BAcc={metrics['balanced_accuracy']:.2%}")
+        print(
+            f"Classification: Acc={metrics['classification_accuracy']:.2%}, BAcc={metrics['balanced_accuracy']:.2%}"
+        )
         print(f"Markov Blanket: {markov_blanket}")
-        print(f"\nCausal Effects (MB → Y):")
+        print("\nCausal Effects (MB → Y):")
         for edge, eff in causal_effects.items():
-            print(f"  {edge}: ATE={eff['ATE']:.4f} ± {eff.get('ATE_std', 0):.4f} ({eff['feature_type']})")
+            print(
+                f"  {edge}: ATE={eff['ATE']:.4f} ± {eff.get('ATE_std', 0):.4f} ({eff['feature_type']})"
+            )
 
         if mediation_results:
-            print(f"\nMediation Analysis:")
+            print("\nMediation Analysis:")
             for path, med in mediation_results.items():
                 print(f"  {path}:")
                 print(f"    Total Effect:    {med['total_effect']:.4f}")
                 print(f"    Direct (NDE):    {med['NDE']:.4f}")
                 print(f"    Indirect (NIE):  {med['NIE']:.4f}")
-                print(f"    % Mediated:      {med['proportion_mediated']*100:.1f}%")
+                print(f"    % Mediated:      {med['proportion_mediated'] * 100:.1f}%")
 
         if feature_effects:
-            print(f"\nFeature→Feature Effects (Stage 4):")
+            print("\nFeature→Feature Effects (Stage 4):")
             for edge, eff in feature_effects.items():
-                print(f"  {edge}: ATE={eff['ATE']:.4f} ± {eff.get('ATE_std', 0):.4f} "
-                      f"({eff['feature_type']}→{eff['target_type']})")
+                print(
+                    f"  {edge}: ATE={eff['ATE']:.4f} ± {eff.get('ATE_std', 0):.4f} "
+                    f"({eff['feature_type']}→{eff['target_type']})"
+                )
 
     if use_latent_confounders:
         return A_binary, processor, params, metrics, L
@@ -3307,7 +3446,10 @@ def learn_with_multi_effects(
 # Stage 5: DAG Evaluation Metrics
 # ============================================================================
 
-def compute_dag_metrics(A_learned: jnp.ndarray, A_true: jnp.ndarray, threshold: float = 0.05) -> dict:
+
+def compute_dag_metrics(
+    A_learned: jnp.ndarray, A_true: jnp.ndarray, threshold: float = 0.05
+) -> dict:
     """
     Compute DAG structure evaluation metrics.
 
@@ -3355,20 +3497,20 @@ def compute_dag_metrics(A_learned: jnp.ndarray, A_true: jnp.ndarray, threshold: 
     F1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
     return {
-        'SHD': SHD,
-        'TPR': TPR,
-        'FPR': FPR,
-        'FDR': FDR,
-        'precision': precision,
-        'recall': recall,
-        'F1': F1,
-        'TP': int(TP),
-        'FP': int(FP),
-        'FN': int(FN),
-        'TN': int(TN),
-        'n_true_edges': int(jnp.sum(A_true)),
-        'n_learned_edges': int(jnp.sum(A_pred)),
-        'n_correct_edges': int(TP),
+        "SHD": SHD,
+        "TPR": TPR,
+        "FPR": FPR,
+        "FDR": FDR,
+        "precision": precision,
+        "recall": recall,
+        "F1": F1,
+        "TP": int(TP),
+        "FP": int(FP),
+        "FN": int(FN),
+        "TN": int(TN),
+        "n_true_edges": int(jnp.sum(A_true)),
+        "n_learned_edges": int(jnp.sum(A_pred)),
+        "n_correct_edges": int(TP),
     }
 
 
@@ -3399,16 +3541,16 @@ def compute_markov_blanket_metrics(mb_learned: list, mb_true: list) -> dict:
     jaccard = len(correct) / len(union) if union else 0.0
 
     return {
-        'precision': precision,
-        'recall': recall,
-        'F1': F1,
-        'jaccard': jaccard,
-        'n_correct': len(correct),
-        'n_extra': len(extra),
-        'n_missing': len(missing),
-        'correct_features': sorted(list(correct)),
-        'extra_features': sorted(list(extra)),
-        'missing_features': sorted(list(missing)),
+        "precision": precision,
+        "recall": recall,
+        "F1": F1,
+        "jaccard": jaccard,
+        "n_correct": len(correct),
+        "n_extra": len(extra),
+        "n_missing": len(missing),
+        "correct_features": sorted(list(correct)),
+        "extra_features": sorted(list(extra)),
+        "missing_features": sorted(list(missing)),
     }
 
 
@@ -3480,8 +3622,9 @@ def evaluate_against_ground_truth(
     # Compute learned MB if not provided
     if mb_learned is None:
         A_binary = (jnp.abs(jnp.array(A_learned)) > threshold).astype(jnp.float32)
-        mb_learned = [int(i) for i in range(A_binary.shape[0])
-                      if A_binary[i, Y_idx] > 0 and i != Y_idx]
+        mb_learned = [
+            int(i) for i in range(A_binary.shape[0]) if A_binary[i, Y_idx] > 0 and i != Y_idx
+        ]
 
     # Compute MB metrics
     mb_metrics = compute_markov_blanket_metrics(mb_learned, mb_true)
@@ -3490,31 +3633,33 @@ def evaluate_against_ground_truth(
         print("\n" + "=" * 60)
         print("DAG Evaluation Against Ground Truth")
         print("=" * 60)
-        print(f"\nStructural Metrics:")
+        print("\nStructural Metrics:")
         print(f"  SHD (Structural Hamming Distance): {dag_metrics['SHD']}")
-        print(f"  Edges: {dag_metrics['n_learned_edges']} learned / {dag_metrics['n_true_edges']} true / {dag_metrics['n_correct_edges']} correct")
+        print(
+            f"  Edges: {dag_metrics['n_learned_edges']} learned / {dag_metrics['n_true_edges']} true / {dag_metrics['n_correct_edges']} correct"
+        )
         print(f"  Precision: {dag_metrics['precision']:.3f}")
         print(f"  Recall (TPR): {dag_metrics['recall']:.3f}")
         print(f"  F1 Score: {dag_metrics['F1']:.3f}")
         print(f"  FPR: {dag_metrics['FPR']:.4f}, FDR: {dag_metrics['FDR']:.3f}")
 
-        print(f"\nMarkov Blanket Metrics:")
+        print("\nMarkov Blanket Metrics:")
         print(f"  True MB: {mb_true}")
         print(f"  Learned MB: {list(mb_learned)}")
         print(f"  Precision: {mb_metrics['precision']:.3f}")
         print(f"  Recall: {mb_metrics['recall']:.3f}")
         print(f"  F1 Score: {mb_metrics['F1']:.3f}")
         print(f"  Jaccard: {mb_metrics['jaccard']:.3f}")
-        if mb_metrics['missing_features']:
+        if mb_metrics["missing_features"]:
             print(f"  Missing: {mb_metrics['missing_features']}")
-        if mb_metrics['extra_features']:
+        if mb_metrics["extra_features"]:
             print(f"  Extra: {mb_metrics['extra_features']}")
 
     return {
-        'dag': dag_metrics,
-        'markov_blanket': mb_metrics,
-        'mb_true': mb_true,
-        'mb_learned': list(mb_learned),
+        "dag": dag_metrics,
+        "markov_blanket": mb_metrics,
+        "mb_true": mb_true,
+        "mb_learned": list(mb_learned),
     }
 
 
@@ -3526,6 +3671,7 @@ def evaluate_against_ground_truth(
 # 2. Amortized effect network: Single network handles ALL treatments
 # 3. Unified loss: Structure + Classification + Effect in one training loop
 # ============================================================================
+
 
 def init_amortized_effect_params(
     key: random.PRNGKey,
@@ -3566,15 +3712,15 @@ def init_amortized_effect_params(
     prop_b = jnp.zeros(1)
 
     return {
-        'treatment_embed': treatment_embed,
-        'shared_w1': shared_w1,
-        'shared_b1': shared_b1,
-        'y0_w': y0_w,
-        'y0_b': y0_b,
-        'y1_w': y1_w,
-        'y1_b': y1_b,
-        'prop_w': prop_w,
-        'prop_b': prop_b,
+        "treatment_embed": treatment_embed,
+        "shared_w1": shared_w1,
+        "shared_b1": shared_b1,
+        "y0_w": y0_w,
+        "y0_b": y0_b,
+        "y1_w": y1_w,
+        "y1_b": y1_b,
+        "prop_w": prop_w,
+        "prop_b": prop_b,
     }
 
 
@@ -3612,24 +3758,24 @@ def amortized_effect_forward(
     covariates = X[:, covariate_indices]
 
     # Get treatment embedding
-    t_embed = effect_params['treatment_embed'][treatment_idx]  # (embed_dim,)
+    t_embed = effect_params["treatment_embed"][treatment_idx]  # (embed_dim,)
     t_embed_broadcast = jnp.tile(t_embed, (batch_size, 1))  # (batch, embed_dim)
 
     # Concatenate: [covariates, treatment_embedding]
     effect_input = jnp.concatenate([covariates, t_embed_broadcast], axis=1)
 
     # Shared hidden layer
-    hidden = effect_input @ effect_params['shared_w1'] + effect_params['shared_b1']
+    hidden = effect_input @ effect_params["shared_w1"] + effect_params["shared_b1"]
     hidden = jax.nn.relu(hidden)
 
     # Outcome heads
-    y0 = (hidden @ effect_params['y0_w'] + effect_params['y0_b']).squeeze(-1)
-    y1 = (hidden @ effect_params['y1_w'] + effect_params['y1_b']).squeeze(-1)
+    y0 = (hidden @ effect_params["y0_w"] + effect_params["y0_b"]).squeeze(-1)
+    y1 = (hidden @ effect_params["y1_w"] + effect_params["y1_b"]).squeeze(-1)
 
     # Propensity
-    propensity = jax.nn.sigmoid(
-        hidden @ effect_params['prop_w'] + effect_params['prop_b']
-    ).squeeze(-1)
+    propensity = jax.nn.sigmoid(hidden @ effect_params["prop_w"] + effect_params["prop_b"]).squeeze(
+        -1
+    )
 
     return y0, y1, propensity
 
@@ -3657,7 +3803,7 @@ def compute_amortized_effect_loss(
     T_binary = jnp.where(
         use_threshold,
         (T >= 0.5).astype(jnp.float32),  # Threshold at 0.5 for binary
-        (T > jnp.median(T)).astype(jnp.float32)  # Median for continuous
+        (T > jnp.median(T)).astype(jnp.float32),  # Median for continuous
     )
 
     # Forward pass
@@ -3671,8 +3817,7 @@ def compute_amortized_effect_loss(
     eps = 1e-7
     prop_clipped = jnp.clip(propensity, eps, 1 - eps)
     propensity_loss = -jnp.mean(
-        T_binary * jnp.log(prop_clipped) +
-        (1 - T_binary) * jnp.log(1 - prop_clipped)
+        T_binary * jnp.log(prop_clipped) + (1 - T_binary) * jnp.log(1 - prop_clipped)
     )
 
     # Total effect loss
@@ -3682,9 +3827,9 @@ def compute_amortized_effect_loss(
     ate = jnp.mean(y1 - y0)
 
     metrics = {
-        'ate': ate,
-        'outcome_loss': outcome_loss,
-        'propensity_loss': propensity_loss,
+        "ate": ate,
+        "outcome_loss": outcome_loss,
+        "propensity_loss": propensity_loss,
     }
 
     return total_loss, metrics
@@ -3694,6 +3839,7 @@ def compute_amortized_effect_loss(
 # DragonNet Architecture (Shi et al., 2019)
 # Deeper network with targeted regularization for better effect estimation
 # ============================================================================
+
 
 def init_dragonnet_params(
     key: random.PRNGKey,
@@ -3756,20 +3902,29 @@ def init_dragonnet_params(
     prop_b2 = jnp.zeros(1)
 
     return {
-        'treatment_embed': treatment_embed,
+        "treatment_embed": treatment_embed,
         # Shared layers
-        'shared_w1': shared_w1, 'shared_b1': shared_b1,
-        'shared_w2': shared_w2, 'shared_b2': shared_b2,
-        'shared_w3': shared_w3, 'shared_b3': shared_b3,
+        "shared_w1": shared_w1,
+        "shared_b1": shared_b1,
+        "shared_w2": shared_w2,
+        "shared_b2": shared_b2,
+        "shared_w3": shared_w3,
+        "shared_b3": shared_b3,
         # Y(0) head
-        'y0_w1': y0_w1, 'y0_b1': y0_b1,
-        'y0_w2': y0_w2, 'y0_b2': y0_b2,
+        "y0_w1": y0_w1,
+        "y0_b1": y0_b1,
+        "y0_w2": y0_w2,
+        "y0_b2": y0_b2,
         # Y(1) head
-        'y1_w1': y1_w1, 'y1_b1': y1_b1,
-        'y1_w2': y1_w2, 'y1_b2': y1_b2,
+        "y1_w1": y1_w1,
+        "y1_b1": y1_b1,
+        "y1_w2": y1_w2,
+        "y1_b2": y1_b2,
         # Propensity head
-        'prop_w1': prop_w1, 'prop_b1': prop_b1,
-        'prop_w2': prop_w2, 'prop_b2': prop_b2,
+        "prop_w1": prop_w1,
+        "prop_b1": prop_b1,
+        "prop_w2": prop_w2,
+        "prop_b2": prop_b2,
     }
 
 
@@ -3827,34 +3982,36 @@ def dragonnet_forward(
         # This means model predicts based on treatment embedding only (diff-in-means)
 
     # Get treatment embedding
-    t_embed = effect_params['treatment_embed'][treatment_idx]
+    t_embed = effect_params["treatment_embed"][treatment_idx]
     t_embed_broadcast = jnp.tile(t_embed, (batch_size, 1))
 
     # Concatenate input
     x = jnp.concatenate([covariates, t_embed_broadcast], axis=1)
 
     # Shared layers with ReLU
-    h = x @ effect_params['shared_w1'] + effect_params['shared_b1']
+    h = x @ effect_params["shared_w1"] + effect_params["shared_b1"]
     h = jax.nn.relu(h)
-    h = h @ effect_params['shared_w2'] + effect_params['shared_b2']
+    h = h @ effect_params["shared_w2"] + effect_params["shared_b2"]
     h = jax.nn.relu(h)
-    h = h @ effect_params['shared_w3'] + effect_params['shared_b3']
+    h = h @ effect_params["shared_w3"] + effect_params["shared_b3"]
     shared_repr = jax.nn.relu(h)
 
     # Y(0) head
-    y0_h = shared_repr @ effect_params['y0_w1'] + effect_params['y0_b1']
+    y0_h = shared_repr @ effect_params["y0_w1"] + effect_params["y0_b1"]
     y0_h = jax.nn.relu(y0_h)
-    y0 = (y0_h @ effect_params['y0_w2'] + effect_params['y0_b2']).squeeze(-1)
+    y0 = (y0_h @ effect_params["y0_w2"] + effect_params["y0_b2"]).squeeze(-1)
 
     # Y(1) head
-    y1_h = shared_repr @ effect_params['y1_w1'] + effect_params['y1_b1']
+    y1_h = shared_repr @ effect_params["y1_w1"] + effect_params["y1_b1"]
     y1_h = jax.nn.relu(y1_h)
-    y1 = (y1_h @ effect_params['y1_w2'] + effect_params['y1_b2']).squeeze(-1)
+    y1 = (y1_h @ effect_params["y1_w2"] + effect_params["y1_b2"]).squeeze(-1)
 
     # Propensity head
-    prop_h = shared_repr @ effect_params['prop_w1'] + effect_params['prop_b1']
+    prop_h = shared_repr @ effect_params["prop_w1"] + effect_params["prop_b1"]
     prop_h = jax.nn.relu(prop_h)
-    propensity = jax.nn.sigmoid(prop_h @ effect_params['prop_w2'] + effect_params['prop_b2']).squeeze(-1)
+    propensity = jax.nn.sigmoid(
+        prop_h @ effect_params["prop_w2"] + effect_params["prop_b2"]
+    ).squeeze(-1)
 
     return y0, y1, propensity, shared_repr
 
@@ -3864,6 +4021,7 @@ def dragonnet_forward(
 # linear models fitted on raw features X[Z] (backdoor adjustment set).
 # Key advantage: nuisance models do NOT share parameters with the processor,
 # avoiding the representation saturation that makes DragonNet ATEs unreliable.
+
 
 def init_structural_dml_params(n_features: int, key: jnp.ndarray) -> Dict[str, jnp.ndarray]:
     """Initialize parameters for the structural DML nuisance models.
@@ -3875,11 +4033,11 @@ def init_structural_dml_params(n_features: int, key: jnp.ndarray) -> Dict[str, j
     k1, k2 = jax.random.split(key)
     return {
         # Propensity model: w_prop @ X[Z] + b_prop -> sigmoid -> P(T=1)
-        'w_prop': jax.random.normal(k1, (n_features,)) * 0.01,
-        'b_prop': jnp.zeros(1),
+        "w_prop": jax.random.normal(k1, (n_features,)) * 0.01,
+        "b_prop": jnp.zeros(1),
         # Outcome model: w_out @ [X[Z], T] + b_out -> E[Y|X,T]
-        'w_out': jax.random.normal(k2, (n_features + 1,)) * 0.01,
-        'b_out': jnp.zeros(1),
+        "w_out": jax.random.normal(k2, (n_features + 1,)) * 0.01,
+        "b_out": jnp.zeros(1),
     }
 
 
@@ -3924,9 +4082,9 @@ def structural_dml_effect_loss(
     # Extract treatment
     T = X[:, treatment_idx]
     T_range = jnp.max(T) - jnp.min(T)
-    T_binary = jnp.where(T_range <= 1.0,
-                         (T >= 0.5).astype(jnp.float32),
-                         (T > jnp.median(T)).astype(jnp.float32))
+    T_binary = jnp.where(
+        T_range <= 1.0, (T >= 0.5).astype(jnp.float32), (T > jnp.median(T)).astype(jnp.float32)
+    )
 
     # Build covariate matrix X_z from adjustment set
     if valid_covariates is not None and len(valid_covariates) > 0:
@@ -3953,31 +4111,30 @@ def structural_dml_effect_loss(
 
     # ========== Propensity model: P(T=1 | X[Z]) ==========
     # Simple logistic regression with independent parameters
-    logit_prop = X_z @ dml_params['w_prop'][:X_z.shape[1]] + dml_params['b_prop'][0]
+    logit_prop = X_z @ dml_params["w_prop"][: X_z.shape[1]] + dml_params["b_prop"][0]
     propensity = jax.nn.sigmoid(logit_prop)
     eps = 1e-4
     propensity = jnp.clip(propensity, eps, 1 - eps)
 
     # Propensity loss (BCE)
     prop_loss = -jnp.mean(
-        T_binary * jnp.log(propensity + eps) +
-        (1 - T_binary) * jnp.log(1 - propensity + eps)
+        T_binary * jnp.log(propensity + eps) + (1 - T_binary) * jnp.log(1 - propensity + eps)
     )
 
     # ========== Outcome model: E[Y | X[Z], T] ==========
     # Ridge regression: [X_z, T] -> Y
     X_zt = jnp.concatenate([X_z, T_binary[:, None]], axis=1)
-    y_pred = X_zt @ dml_params['w_out'][:X_zt.shape[1]] + dml_params['b_out'][0]
+    y_pred = X_zt @ dml_params["w_out"][: X_zt.shape[1]] + dml_params["b_out"][0]
 
     # Potential outcomes under T=1 and T=0
     X_z1 = jnp.concatenate([X_z, jnp.ones((n_samples, 1))], axis=1)
     X_z0 = jnp.concatenate([X_z, jnp.zeros((n_samples, 1))], axis=1)
-    mu_1 = X_z1 @ dml_params['w_out'][:X_z1.shape[1]] + dml_params['b_out'][0]
-    mu_0 = X_z0 @ dml_params['w_out'][:X_z0.shape[1]] + dml_params['b_out'][0]
+    mu_1 = X_z1 @ dml_params["w_out"][: X_z1.shape[1]] + dml_params["b_out"][0]
+    mu_0 = X_z0 @ dml_params["w_out"][: X_z0.shape[1]] + dml_params["b_out"][0]
 
     # Outcome loss (MSE + ridge)
     outcome_loss = jnp.mean((y_pred - Y_flat) ** 2)
-    ridge_loss = ridge_alpha * jnp.sum(dml_params['w_out'] ** 2)
+    ridge_loss = ridge_alpha * jnp.sum(dml_params["w_out"] ** 2)
 
     # ========== AIPW doubly robust estimator ==========
     w1 = T_binary / propensity
@@ -3989,17 +4146,18 @@ def structural_dml_effect_loss(
     ate_aipw = jnp.mean(pseudo_y1 - pseudo_y0)
 
     # Effect loss: outcome fit + propensity fit + pseudo-outcome variance
-    aipw_var_loss = jnp.mean((pseudo_y1 - jnp.mean(pseudo_y1)) ** 2) + \
-                    jnp.mean((pseudo_y0 - jnp.mean(pseudo_y0)) ** 2)
+    aipw_var_loss = jnp.mean((pseudo_y1 - jnp.mean(pseudo_y1)) ** 2) + jnp.mean(
+        (pseudo_y0 - jnp.mean(pseudo_y0)) ** 2
+    )
 
     total_loss = outcome_loss + 0.5 * prop_loss + 0.1 * aipw_var_loss + ridge_loss
 
     info = {
-        'ate_aipw': ate_aipw,
-        'ate_simple': jnp.mean(mu_1 - mu_0),
-        'propensity_mean': jnp.mean(propensity),
-        'outcome_mse': outcome_loss,
-        'prop_loss': prop_loss,
+        "ate_aipw": ate_aipw,
+        "ate_simple": jnp.mean(mu_1 - mu_0),
+        "propensity_mean": jnp.mean(propensity),
+        "outcome_mse": outcome_loss,
+        "prop_loss": prop_loss,
     }
 
     return total_loss, info
@@ -4037,7 +4195,7 @@ def compute_dragonnet_loss(
     T_binary = jnp.where(
         use_threshold,
         (T >= 0.5).astype(jnp.float32),  # Threshold at 0.5 for binary
-        (T > jnp.median(T)).astype(jnp.float32)  # Median for continuous
+        (T > jnp.median(T)).astype(jnp.float32),  # Median for continuous
     )
 
     # Forward pass (v11: with valid covariates)
@@ -4055,8 +4213,7 @@ def compute_dragonnet_loss(
 
     # ========== Propensity loss (BCE) ==========
     propensity_loss = -jnp.mean(
-        T_binary * jnp.log(propensity + eps) +
-        (1 - T_binary) * jnp.log(1 - propensity + eps)
+        T_binary * jnp.log(propensity + eps) + (1 - T_binary) * jnp.log(1 - propensity + eps)
     )
 
     # ========== AIPW pseudo-outcome for doubly robust estimation ==========
@@ -4077,8 +4234,9 @@ def compute_dragonnet_loss(
     ate_aipw = jnp.mean(pseudo_y1 - pseudo_y0)
 
     # AIPW loss: variance of pseudo-outcomes
-    aipw_loss = jnp.mean((pseudo_y1 - jnp.mean(pseudo_y1)) ** 2) + \
-                jnp.mean((pseudo_y0 - jnp.mean(pseudo_y0)) ** 2)
+    aipw_loss = jnp.mean((pseudo_y1 - jnp.mean(pseudo_y1)) ** 2) + jnp.mean(
+        (pseudo_y0 - jnp.mean(pseudo_y0)) ** 2
+    )
 
     # ========== Targeted regularization (DragonNet epsilon) ==========
     # Encourages shared representation gradients to be aligned
@@ -4100,18 +4258,20 @@ def compute_dragonnet_loss(
     epsilon_loss = jnp.mean((mean_repr_treated - mean_repr_control) ** 2)
 
     # ========== Total loss ==========
-    total_loss = outcome_loss + 0.5 * propensity_loss + 0.1 * aipw_loss + targeted_reg * epsilon_loss
+    total_loss = (
+        outcome_loss + 0.5 * propensity_loss + 0.1 * aipw_loss + targeted_reg * epsilon_loss
+    )
 
     # Simple ATE (for comparison)
     ate_simple = jnp.mean(y1 - y0)
 
     metrics = {
-        'ate': ate_simple,
-        'ate_aipw': ate_aipw,
-        'outcome_loss': outcome_loss,
-        'propensity_loss': propensity_loss,
-        'aipw_loss': aipw_loss,
-        'epsilon_loss': epsilon_loss,
+        "ate": ate_simple,
+        "ate_aipw": ate_aipw,
+        "outcome_loss": outcome_loss,
+        "propensity_loss": propensity_loss,
+        "aipw_loss": aipw_loss,
+        "epsilon_loss": epsilon_loss,
     }
 
     return total_loss, metrics
@@ -4156,6 +4316,7 @@ def compute_bow_free_penalty_v7(
 # ============================================================================
 # Low-Rank Error Covariance for Latent Confounders (DECOR-style)
 # ============================================================================
+
 
 def init_lowrank_confound(
     key: random.PRNGKey, n_vars: int, rank_k: int = 5, scale: float = 0.05
@@ -4203,16 +4364,16 @@ def compute_confound_nll(
     d, k = B.shape
     sigma2 = jnp.maximum(jnp.exp(log_var_c), 1e-6)
 
-    BtB = B.T @ B                                # (k, k)
-    M = sigma2 * jnp.eye(k) + BtB                # (k, k)
-    M_inv = jnp.linalg.inv(M)                    # O(k³), k is small
+    BtB = B.T @ B  # (k, k)
+    M = sigma2 * jnp.eye(k) + BtB  # (k, k)
+    M_inv = jnp.linalg.inv(M)  # O(k³), k is small
 
     # Efficient quadratic form: tr(R.T Ω⁻¹ R)
     # Woodbury: Ω⁻¹ = σ⁻²I - σ⁻²B M⁻¹ B.T  (where M = σ²I_k + B.TB)
     # So tr(R.T Ω⁻¹ R) = σ⁻² tr(RtR) - σ⁻² tr(B.T RtR B M⁻¹)
     s2_inv = 1.0 / sigma2
-    RtR = residuals.T @ residuals                 # (d, d)
-    BtRtRB = B.T @ RtR @ B                       # (k, k)
+    RtR = residuals.T @ residuals  # (d, d)
+    BtRtRB = B.T @ RtR @ B  # (k, k)
     quad = s2_inv * jnp.trace(RtR) - s2_inv * jnp.trace(BtRtRB @ M_inv)
 
     # log|Ω| = (d - k) log(σ²) + log|M|
@@ -4229,7 +4390,7 @@ def learn_structure(
     Y_idx: int,
     processor,
     key: random.PRNGKey,
-    processor_type: str = 'mlp',
+    processor_type: str = "mlp",
     # Structure learning
     lambda_1: float = 0.02,
     lambda_2_init: float = 0.01,
@@ -4262,7 +4423,10 @@ def learn_structure(
     targeted_reg: float = 0.1,  # Targeted regularization weight for DragonNet
     # Adaptive curriculum
     use_adaptive_curriculum: bool = True,  # Convergence-based phase transitions
-    curriculum_phase_splits: tuple = (0.4, 0.8),  # Fixed curriculum split points (phase1_end, phase2_end)
+    curriculum_phase_splits: tuple = (
+        0.4,
+        0.8,
+    ),  # Fixed curriculum split points (phase1_end, phase2_end)
     use_pcgrad: bool = False,  # PCGrad gradient surgery for conflicting objectives (Yu et al., 2020)
     use_structural_dml: bool = False,  # Replace DragonNet with independent linear models on X[Z]
     # Latent confounder parameters
@@ -4280,7 +4444,7 @@ def learn_structure(
     lambda_ident: float = 0.01,  # D-optimality regularizer weight (active Phase 2-3 only)
     ident_threshold: float = 0.3,  # Threshold for MB membership from A matrix
     # Task type
-    task: str = 'classification',  # 'classification' or 'regression'
+    task: str = "classification",  # 'classification' or 'regression'
     # Ablation overrides
     enforce_outcome_sink: bool = True,  # Set A[Y_idx,:]=0 after each update (disable for A6 ablation)
     freeze_A: bool = False,  # If True, don't update A_direct (only train processor, A7 ablation)
@@ -4385,20 +4549,23 @@ def learn_structure(
 
     if verbose >= 1:
         import sys
-        print(f"\n{'='*60}")
-        print(f"v7.0: Unified Discovery + Bi-directed Edges + Amortized Effects")
-        print(f"{'='*60}")
+
+        print(f"\n{'=' * 60}")
+        print("v7.0: Unified Discovery + Bi-directed Edges + Amortized Effects")
+        print(f"{'=' * 60}")
         sys.stdout.flush()
         print(f"Data: {n_samples} train samples, {n_vars} variables")
         print(f"Processor: {processor_type}")
         sys.stdout.flush()
         if verbose >= 2:
             if use_confound_matrix:
-                print(f"Bi-directed edges: lambda_confound={lambda_confound_sparse}, lambda_bow={lambda_bow}")
+                print(
+                    f"Bi-directed edges: lambda_confound={lambda_confound_sparse}, lambda_bow={lambda_bow}"
+                )
             if use_amortized_effects:
                 print(f"Amortized effects: warmup={effect_warmup_iter}, lambda={lambda_effect}")
             if use_dragonnet:
-                print(f"Using DragonNet architecture (3 shared layers + AIPW)")
+                print("Using DragonNet architecture (3 shared layers + AIPW)")
             sys.stdout.flush()
 
     # ==================== Initialize Parameters ====================
@@ -4464,13 +4631,13 @@ def learn_structure(
             # Structural DML: independent linear models on raw features
             effect_params = init_structural_dml_params(n_vars, effect_key)
             if verbose >= 1:
-                print(f"Structural DML: independent linear propensity + outcome models (d={n_vars})")
+                print(
+                    f"Structural DML: independent linear propensity + outcome models (d={n_vars})"
+                )
         elif use_dragonnet:
             # Use DragonNet with deeper architecture
             effect_params = init_dragonnet_params(
-                effect_key, n_total,
-                hidden_dims=(128, 128, 64),
-                effect_embed_dim=effect_embed_dim
+                effect_key, n_total, hidden_dims=(128, 128, 64), effect_embed_dim=effect_embed_dim
             )
         else:
             # Original TARNet
@@ -4499,21 +4666,21 @@ def learn_structure(
 
     # Pack all parameters
     all_params = {
-        'A_direct': A_direct,
-        'log_var_recon': log_var_recon,
-        'processor_params': trainable_proc_params,
+        "A_direct": A_direct,
+        "log_var_recon": log_var_recon,
+        "processor_params": trainable_proc_params,
     }
     if use_confound_matrix:
         if B_confound is not None:
-            all_params['B_confound'] = B_confound
-            all_params['log_var_confound'] = log_var_confound
+            all_params["B_confound"] = B_confound
+            all_params["log_var_confound"] = log_var_confound
         elif A_confound is not None:
-            all_params['A_confound'] = A_confound
+            all_params["A_confound"] = A_confound
     if use_amortized_effects:
-        all_params['effect_params'] = effect_params
+        all_params["effect_params"] = effect_params
     if use_latent_confounders:
-        all_params['U'] = U
-        all_params['V'] = V
+        all_params["U"] = U
+        all_params["V"] = V
 
     # Save frozen copy of A_direct for freeze_A ablation
     A_direct_frozen = jnp.array(A_direct) if freeze_A else None
@@ -4542,9 +4709,9 @@ def learn_structure(
         Note: effect_warmup_completed and adjustment_sets are captured via closure.
         When these change, the JIT-compiled train_step must be recreated.
         """
-        A_curr = params['A_direct']
-        proc_params = merge_trained_params(processor_params, params['processor_params'])
-        log_var_r = params['log_var_recon']
+        A_curr = params["A_direct"]
+        proc_params = merge_trained_params(processor_params, params["processor_params"])
+        log_var_r = params["log_var_recon"]
 
         n_batch, n_v = batch_data.shape
 
@@ -4555,10 +4722,10 @@ def learn_structure(
         A_conf, B_conf, lvc = None, None, None
         if use_confound_matrix:
             if n_latent_confounders > 0:
-                B_conf = params['B_confound']
-                lvc = params['log_var_confound']
+                B_conf = params["B_confound"]
+                lvc = params["log_var_confound"]
             else:
-                A_conf = symmetrize_confound_matrix(params['A_confound'])
+                A_conf = symmetrize_confound_matrix(params["A_confound"])
 
         # ========== Reconstruction (X features) + Classification (Y) ==========
         total_recon_loss = 0.0
@@ -4583,17 +4750,23 @@ def learn_structure(
         _stacked = {k: jnp.stack([proc_params[j][k] for j in range(n_v)]) for k in _arr_keys}
 
         # vmapped forward: process all n_v variables in parallel (1 kernel vs n_v)
-        if processor.__class__.__name__ == 'GNNAdapter':
-            A_norm = A_curr[:n_v, :n_v] / (jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8)
+        if processor.__class__.__name__ == "GNNAdapter":
+            A_norm = A_curr[:n_v, :n_v] / (
+                jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
+            )
+
             def _recon_fwd(X_w_j, arrays_j):
                 return processor.forward(X_w_j, {**_meta, **arrays_j}, A=A_norm)
         else:
+
             def _recon_fwd(X_w_j, arrays_j):
                 return processor.forward(X_w_j, {**_meta, **arrays_j})
 
         if use_bf16:
             all_X_weighted_fwd = all_X_weighted.astype(jnp.bfloat16)
-            _stacked_fwd = jax.tree.map(lambda x: x.astype(jnp.bfloat16) if x.dtype == jnp.float32 else x, _stacked)
+            _stacked_fwd = jax.tree.map(
+                lambda x: x.astype(jnp.bfloat16) if x.dtype == jnp.float32 else x, _stacked
+            )
             all_outputs = jax.vmap(_recon_fwd)(all_X_weighted_fwd, _stacked_fwd).astype(jnp.float32)
         else:
             all_outputs = jax.vmap(_recon_fwd)(all_X_weighted, _stacked)  # (n_v, n_batch)
@@ -4634,13 +4807,20 @@ def learn_structure(
 
         if use_bf16:
             _X_wr_fwd = X_weighted_Y_recon.astype(jnp.bfloat16)
-            _pp_Y_fwd = jax.tree.map(lambda x: x.astype(jnp.bfloat16) if isinstance(x, jnp.ndarray) and x.dtype == jnp.float32 else x, _pp_Y_recon)
+            _pp_Y_fwd = jax.tree.map(
+                lambda x: x.astype(jnp.bfloat16)
+                if isinstance(x, jnp.ndarray) and x.dtype == jnp.float32
+                else x,
+                _pp_Y_recon,
+            )
         else:
             _X_wr_fwd = X_weighted_Y_recon
             _pp_Y_fwd = _pp_Y_recon
 
-        if processor.__class__.__name__ == 'GNNAdapter':
-            A_norm_recon = A_curr[:n_v, :n_v] / (jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8)
+        if processor.__class__.__name__ == "GNNAdapter":
+            A_norm_recon = A_curr[:n_v, :n_v] / (
+                jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
+            )
             Y_recon_output = processor.forward(_X_wr_fwd, _pp_Y_fwd, A=A_norm_recon)
         else:
             Y_recon_output = processor.forward(_X_wr_fwd, _pp_Y_fwd)
@@ -4654,7 +4834,9 @@ def learn_structure(
         Y_target = batch_Y_effect if batch_Y_effect is not None else batch_Y.astype(jnp.float32)
         Y_recon_loss = jnp.mean((Y_recon_output - Y_target) ** 2)
         Y_recon_weight = 3.0
-        total_recon_loss = (total_recon_loss * n_v + Y_recon_weight * Y_recon_loss) / (n_v + Y_recon_weight)
+        total_recon_loss = (total_recon_loss * n_v + Y_recon_weight * Y_recon_loss) / (
+            n_v + Y_recon_weight
+        )
 
         # Classification for Y (j = Y_idx).
         # No stop_gradient on A: gradient audit confirmed MSE and BCE are perfectly
@@ -4669,7 +4851,12 @@ def learn_structure(
 
         if use_bf16:
             _X_wY_fwd = X_weighted_Y.astype(jnp.bfloat16)
-            _pp_Yc_fwd = jax.tree.map(lambda x: x.astype(jnp.bfloat16) if isinstance(x, jnp.ndarray) and x.dtype == jnp.float32 else x, proc_params[Y_idx])
+            _pp_Yc_fwd = jax.tree.map(
+                lambda x: x.astype(jnp.bfloat16)
+                if isinstance(x, jnp.ndarray) and x.dtype == jnp.float32
+                else x,
+                proc_params[Y_idx],
+            )
         else:
             _X_wY_fwd = X_weighted_Y
             _pp_Yc_fwd = proc_params[Y_idx]
@@ -4678,8 +4865,10 @@ def learn_structure(
         # zero-mean, making sigmoid(~0)=0.5 and BCE=ln(2) (dead signal). By skipping
         # centering ONLY for classification, output_proj_b acts as a learnable class
         # prior. X_recon and Y_recon still use centering (prevents constant-output collapse).
-        if processor.__class__.__name__ == 'GNNAdapter':
-            A_norm_class = A_curr[:n_v, :n_v] / (jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8)
+        if processor.__class__.__name__ == "GNNAdapter":
+            A_norm_class = A_curr[:n_v, :n_v] / (
+                jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
+            )
             Y_output = processor.forward(_X_wY_fwd, _pp_Yc_fwd, A=A_norm_class, skip_centering=True)
         else:
             Y_output = processor.forward(_X_wY_fwd, _pp_Yc_fwd, skip_centering=True)
@@ -4688,7 +4877,7 @@ def learn_structure(
             Y_output = Y_output.astype(jnp.float32)
 
         # Task-dependent loss for Y
-        if task == 'regression':
+        if task == "regression":
             classification_loss = jnp.mean((Y_output - batch_Y) ** 2)
         else:
             # Clamp logits to [-6, 6] before sigmoid to prevent BCE explosion
@@ -4698,8 +4887,7 @@ def learn_structure(
             Y_pred = jax.nn.sigmoid(Y_output_clamped)
             eps = 1e-7
             classification_loss = -jnp.mean(
-                batch_Y * jnp.log(Y_pred + eps) +
-                (1 - batch_Y) * jnp.log(1 - Y_pred + eps)
+                batch_Y * jnp.log(Y_pred + eps) + (1 - batch_Y) * jnp.log(1 - Y_pred + eps)
             )
 
         # ========== Structure Penalties ==========
@@ -4707,7 +4895,7 @@ def learn_structure(
         # Sparsity on A_direct — adaptive Y-column penalty based on classification progress.
         # When class_loss ≈ ln(2) (stuck), Y edges are fully protected (scale→0);
         # as classification improves, normal sparsity resumes (scale→1).
-        if task == 'classification':
+        if task == "classification":
             class_ratio = jnp.clip(classification_loss / 0.6931, 0.0, 1.0)
         else:
             class_ratio = jnp.clip(classification_loss / (classification_loss + 1.0), 0.0, 1.0)
@@ -4749,12 +4937,12 @@ def learn_structure(
 
         # L2 regularization on A (prevents weight saturation at ~0.99)
         if lambda_L2 > 0:
-            l2_loss = lambda_L2 * jnp.sum(A_curr ** 2)
+            l2_loss = lambda_L2 * jnp.sum(A_curr**2)
             penalty_loss += l2_loss
 
         # Legacy weight decay (deprecated, use lambda_L2 instead)
         if weight_decay > 0 and lambda_L2 == 0:
-            penalty_loss += weight_decay * jnp.sum(A_curr ** 2)
+            penalty_loss += weight_decay * jnp.sum(A_curr**2)
 
         # ========== PC Structure Constraint (v11.2) ==========
         # Penalize deviation from PC warm-start structure to preserve causal edges
@@ -4782,7 +4970,9 @@ def learn_structure(
             # Bow-free penalty using Ω_offdiag: can't have both i→j AND i↔j
             Omega_offdiag = B_conf @ B_conf.T
             Omega_offdiag = Omega_offdiag.at[jnp.diag_indices(Omega_offdiag.shape[0])].set(0.0)
-            bow_loss = lambda_bow * jnp.sum(jnp.abs(A_curr[:n_v, :n_v]) * jnp.abs(Omega_offdiag[:n_v, :n_v]))
+            bow_loss = lambda_bow * jnp.sum(
+                jnp.abs(A_curr[:n_v, :n_v]) * jnp.abs(Omega_offdiag[:n_v, :n_v])
+            )
             penalty_loss += bow_loss
 
             # Strong penalty on confound edges TO Y (outcome)
@@ -4818,6 +5008,7 @@ def learn_structure(
             # Only apply when MB has >= 2 features (otherwise trivially conditioned)
             def _compute_d_opt(batch_data, mb_mask):
                 from jcce.validation.identifiability_diagnostics import d_optimality_penalty
+
                 # Soft selection via mask multiplication (keeps gradients flowing)
                 mb_indices = jnp.where(mb_mask, size=n_total_vars)[0]
                 X_mb = batch_data[:, mb_indices]
@@ -4825,10 +5016,7 @@ def learn_structure(
 
             # Gate: only active when effect estimation is active (Phase 2-3)
             # AND when MB has at least 2 features
-            d_opt_active = jnp.where(
-                (n_mb >= 2) & effect_warmup_completed,
-                1.0, 0.0
-            )
+            d_opt_active = jnp.where((n_mb >= 2) & effect_warmup_completed, 1.0, 0.0)
             d_opt_loss = jnp.where(
                 d_opt_active > 0.5,
                 lambda_ident * _compute_d_opt(batch_data, mb_mask),
@@ -4840,7 +5028,7 @@ def learn_structure(
 
         effect_loss = 0.0
         if use_amortized_effects and effect_warmup_completed:
-            eff_params = params['effect_params']
+            eff_params = params["effect_params"]
 
             # Compute effect loss for ALL X features (potential treatments)
             # Weight each treatment's loss by its edge strength to Y
@@ -4851,7 +5039,7 @@ def learn_structure(
             normalized_weights = jnp.where(
                 weight_sum > 0.01,
                 parent_weights / weight_sum,
-                jnp.ones(n_v) / n_v  # Uniform fallback
+                jnp.ones(n_v) / n_v,  # Uniform fallback
             )
 
             # Compute weighted effect loss over all X features as treatments.
@@ -4868,14 +5056,23 @@ def learn_structure(
 
                 if use_structural_dml:
                     t_loss, _ = structural_dml_effect_loss(
-                        batch_data, batch_Y_effect, t_idx, Y_idx, eff_params,
+                        batch_data,
+                        batch_Y_effect,
+                        t_idx,
+                        Y_idx,
+                        eff_params,
                         valid_covariates=valid_covs,
                         A_weights=A_curr if valid_covs is None else None,
                     )
                 elif use_dragonnet:
                     t_loss, _ = compute_dragonnet_loss(
-                        batch_data, batch_Y_effect, t_idx, Y_idx, eff_params, targeted_reg,
-                        valid_covariates=valid_covs
+                        batch_data,
+                        batch_Y_effect,
+                        t_idx,
+                        Y_idx,
+                        eff_params,
+                        targeted_reg,
+                        valid_covariates=valid_covs,
                     )
                 else:
                     t_loss, _ = compute_amortized_effect_loss(
@@ -4898,20 +5095,30 @@ def learn_structure(
         weighted_class = w_class * lambda_class * classification_loss
         weighted_effect = w_effect * effect_enabled * lambda_effect * effect_loss
 
-        total_loss = weighted_structural + weighted_class + weighted_effect + penalty_loss + penalty_loss_confound
+        total_loss = (
+            weighted_structural
+            + weighted_class
+            + weighted_effect
+            + penalty_loss
+            + penalty_loss_confound
+        )
 
-        return total_loss, (h_A, total_recon_loss, classification_loss, effect_loss, bow_loss, Y_output)
+        return total_loss, (
+            h_A,
+            total_recon_loss,
+            classification_loss,
+            effect_loss,
+            bow_loss,
+            Y_output,
+        )
 
     # ==================== Optimizer ====================
 
-    optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
-        optax.adam(learning_rate=lr)
-    )
+    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr))
     opt_state = optimizer.init(all_params)
 
     lambda_2 = lambda_2_init
-    best_loss = float('inf')
+    best_loss = float("inf")
     patience_counter = 0
     best_params = all_params.copy()
     gradient_diagnostics = []  # Gradient cosine similarity logs
@@ -4927,7 +5134,11 @@ def learn_structure(
             h_A_threshold=0.05,  # Stricter: require h(A) < 0.05 for phase transition
             accuracy_threshold=0.75,  # Stricter: require 75% accuracy
         )
-        curriculum_weights = (1.0, 0.5, 0.0)  # Start in Phase 1 (w_class=0.5 enables classification gradients through A)
+        curriculum_weights = (
+            1.0,
+            0.5,
+            0.0,
+        )  # Start in Phase 1 (w_class=0.5 enables classification gradients through A)
     else:
         curriculum_state = None
         curriculum_weights = get_phase_weights_fixed(0.0, phase_splits=curriculum_phase_splits)
@@ -4940,7 +5151,7 @@ def learn_structure(
     adjustment_sets_computed = False
 
     # Track previous h(A) for adaptive lambda update
-    prev_h_A = float('inf')
+    prev_h_A = float("inf")
 
     # ==================== Data Pipeline ====================
     # Place training data on device once to avoid repeated host→device transfers.
@@ -4963,30 +5174,31 @@ def learn_structure(
 
     # Pre-allocate JAX scalars to avoid per-iteration allocation
     lambda_2_jax = jnp.float32(lambda_2)
-    curriculum_w_jax = jnp.array([curriculum_weights[0], curriculum_weights[1],
-                                   curriculum_weights[2]], dtype=jnp.float32)
+    curriculum_w_jax = jnp.array(
+        [curriculum_weights[0], curriculum_weights[1], curriculum_weights[2]], dtype=jnp.float32
+    )
 
     def _pcgrad_project(grads_a, grads_b):
         """PCGrad: project grads_a onto the normal plane of grads_b when they conflict.
         Operates on the A_direct component only (the shared structural parameter).
         Yu et al., Gradient Surgery for Multi-Task Learning, NeurIPS 2020."""
-        g_a = grads_a['A_direct'].flatten()
-        g_b = grads_b['A_direct'].flatten()
+        g_a = grads_a["A_direct"].flatten()
+        g_b = grads_b["A_direct"].flatten()
         dot = jnp.sum(g_a * g_b)
         # Only project if conflicting (negative cosine)
-        proj = jnp.where(dot < 0,
-                         g_a - (dot / (jnp.sum(g_b ** 2) + 1e-12)) * g_b,
-                         g_a)
-        return {**grads_a, 'A_direct': proj.reshape(grads_a['A_direct'].shape)}
+        proj = jnp.where(dot < 0, g_a - (dot / (jnp.sum(g_b**2) + 1e-12)) * g_b, g_a)
+        return {**grads_a, "A_direct": proj.reshape(grads_a["A_direct"].shape)}
 
     def make_train_step():
         """Create JIT-compiled training step. Recreated when closure variables change."""
+
         @jax.jit
         def _step(params, opt_state, batch_key, lambda_2_jax, curriculum_w):
             # Batch selection inside JIT (avoids 3 Python↔XLA round trips)
             if use_batching:
-                batch_idx = random.choice(batch_key, n_samples,
-                                          shape=(effective_batch_size,), replace=False)
+                batch_idx = random.choice(
+                    batch_key, n_samples, shape=(effective_batch_size,), replace=False
+                )
                 batch_data = data_train[batch_idx]
                 batch_Y = Y_train[batch_idx]
                 batch_Y_effect = Y_effect_train[batch_idx]
@@ -5005,9 +5217,11 @@ def learn_structure(
                 def _recon_loss(p):
                     _, aux = loss_fn(p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw)
                     return aux[1]  # total_recon_loss
+
                 def _class_loss(p):
                     _, aux = loss_fn(p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw)
                     return aux[2]  # classification_loss
+
                 def _effect_loss(p):
                     _, aux = loss_fn(p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw)
                     return aux[3]  # effect_loss
@@ -5025,29 +5239,36 @@ def learn_structure(
                 g_effect_proj = _pcgrad_project(g_effect, g_class_proj)
                 # Penalty gradient = total - (recon + class + effect) on A_direct
                 # This preserves DAG constraint (h(A)), sparsity (L1), and L2 gradients
-                g_penalty_A = grads_total['A_direct'] - (g_recon['A_direct'] + g_class['A_direct'] + g_effect['A_direct'])
+                g_penalty_A = grads_total["A_direct"] - (
+                    g_recon["A_direct"] + g_class["A_direct"] + g_effect["A_direct"]
+                )
                 # Combine: projected task gradients + unmodified penalty gradient
-                grads = {**grads_total,
-                         'A_direct': g_recon['A_direct'] + g_class_proj['A_direct'] + g_effect_proj['A_direct'] + g_penalty_A}
+                grads = {
+                    **grads_total,
+                    "A_direct": g_recon["A_direct"]
+                    + g_class_proj["A_direct"]
+                    + g_effect_proj["A_direct"]
+                    + g_penalty_A,
+                }
             else:
                 (loss_val, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-                    params, batch_data, batch_Y, batch_Y_effect,
-                    lambda_2_jax, cw
+                    params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw
                 )
 
             # Freeze log_var_recon (its gradient exploits uncertainty weighting)
-            grads = {**grads, 'log_var_recon': jnp.zeros_like(grads['log_var_recon'])}
+            grads = {**grads, "log_var_recon": jnp.zeros_like(grads["log_var_recon"])}
             updates, new_opt_state = optimizer.update(grads, opt_state)
             new_params = optax.apply_updates(params, updates)
             # Post-update hard constraints (Python bools evaluated at trace time)
             if enforce_outcome_sink:
-                new_params['A_direct'] = new_params['A_direct'].at[Y_idx, :].set(0.0)
+                new_params["A_direct"] = new_params["A_direct"].at[Y_idx, :].set(0.0)
             if freeze_A:
-                new_params['A_direct'] = A_direct_frozen
-            if use_confound_matrix and 'A_confound' in new_params:
-                new_params['A_confound'] = symmetrize_confound_matrix(new_params['A_confound'])
+                new_params["A_direct"] = A_direct_frozen
+            if use_confound_matrix and "A_confound" in new_params:
+                new_params["A_confound"] = symmetrize_confound_matrix(new_params["A_confound"])
             # Low-rank B_confound: no post-update needed (Ω = B@B.T is symmetric by construction)
             return new_params, new_opt_state, loss_val, aux, batch_Y
+
         return _step
 
     train_step = make_train_step()
@@ -5067,15 +5288,14 @@ def learn_structure(
 
         # JIT-compiled: batch selection + forward + backward + optimizer update + constraints
         all_params, opt_state, loss_val, aux, batch_Y = train_step(
-            all_params, opt_state, batch_key,
-            lambda_2_jax, curriculum_w_jax
+            all_params, opt_state, batch_key, lambda_2_jax, curriculum_w_jax
         )
         h_A, recon_loss, class_loss, effect_loss, bow_loss, Y_logits = aux
 
         # Update adaptive curriculum after each iteration
         if use_adaptive_curriculum and curriculum_state is not None:
             # Use Y_logits from loss computation (avoids redundant forward pass)
-            if task == 'regression':
+            if task == "regression":
                 mse_val = float(jnp.mean((Y_logits - batch_Y) ** 2))
                 y_var = float(jnp.var(batch_Y)) + 1e-10
                 last_accuracy = max(1.0 - mse_val / y_var, 0.0)
@@ -5097,12 +5317,14 @@ def learn_structure(
                 n_vars=n_vars,
             )
             # Update cached JAX array when curriculum weights change
-            curriculum_w_jax = jnp.array([curriculum_weights[0], curriculum_weights[1],
-                                           curriculum_weights[2]], dtype=jnp.float32)
+            curriculum_w_jax = jnp.array(
+                [curriculum_weights[0], curriculum_weights[1], curriculum_weights[2]],
+                dtype=jnp.float32,
+            )
 
             # Compute adjustment sets when transitioning to Phase 2
             if curriculum_state.current_phase >= 2 and not adjustment_sets_computed:
-                A_curr = all_params['A_direct']
+                A_curr = all_params["A_direct"]
                 adjustment_sets = compute_valid_adjustment_sets(A_curr, Y_idx, threshold=0.05)
                 adjustment_sets_computed = True
                 train_step = make_train_step()
@@ -5111,13 +5333,17 @@ def learn_structure(
         else:
             # Fixed curriculum
             progress = iter / max_iter if max_iter > 0 else 1.0
-            curriculum_weights = get_phase_weights_fixed(progress, phase_splits=curriculum_phase_splits)
-            curriculum_w_jax = jnp.array([curriculum_weights[0], curriculum_weights[1],
-                                           curriculum_weights[2]], dtype=jnp.float32)
+            curriculum_weights = get_phase_weights_fixed(
+                progress, phase_splits=curriculum_phase_splits
+            )
+            curriculum_w_jax = jnp.array(
+                [curriculum_weights[0], curriculum_weights[1], curriculum_weights[2]],
+                dtype=jnp.float32,
+            )
 
             # For fixed curriculum, compute adjustment sets at 40%
             if progress >= 0.4 and not adjustment_sets_computed:
-                A_curr = all_params['A_direct']
+                A_curr = all_params["A_direct"]
                 adjustment_sets = compute_valid_adjustment_sets(A_curr, Y_idx, threshold=0.05)
                 adjustment_sets_computed = True
                 train_step = make_train_step()
@@ -5141,10 +5367,14 @@ def learn_structure(
 
         # Early stopping on validation (eager mode, only every 10 iters)
         if use_validation_split and iter % 10 == 0 and iter >= effect_warmup_iter:
-            val_loss, _ = loss_fn(all_params, data_val, Y_val, Y_effect_val, lambda_2, curriculum_weights)
+            val_loss, _ = loss_fn(
+                all_params, data_val, Y_val, Y_effect_val, lambda_2, curriculum_weights
+            )
             if float(val_loss) < best_loss:
                 best_loss = float(val_loss)
-                best_params = {k: v.copy() if hasattr(v, 'copy') else v for k, v in all_params.items()}
+                best_params = {
+                    k: v.copy() if hasattr(v, "copy") else v for k, v in all_params.items()
+                }
                 patience_counter = 0
             else:
                 patience_counter += 1
@@ -5155,7 +5385,7 @@ def learn_structure(
         # Phase 3: Optuna iteration callback for Hyperband pruning
         if iteration_callback is not None and iter % 10 == 0:
             # Compute proper balanced accuracy (not plain accuracy)
-            if task == 'regression':
+            if task == "regression":
                 mse_val = float(jnp.mean((Y_logits - batch_Y) ** 2))
                 y_var = float(jnp.var(batch_Y)) + 1e-10
                 _cb_acc = max(1.0 - mse_val / y_var, 0.0)
@@ -5169,63 +5399,82 @@ def learn_structure(
                 _spec = _tn / (_tn + _fp + 1e-8)
                 _cb_acc = (_sens + _spec) / 2.0
             # Include curriculum phase so pruner can skip Phase 1 trials
-            _cb_phase = curriculum_state.current_phase if (use_adaptive_curriculum and curriculum_state is not None) else (1 if (iter / max_iter) < 0.4 else 2)
-            iteration_callback(iter, {
-                'balanced_accuracy': _cb_acc,
-                'h_A': h_A_val,
-                'loss': float(loss_val),
-                'curriculum_phase': _cb_phase,
-            })
+            _cb_phase = (
+                curriculum_state.current_phase
+                if (use_adaptive_curriculum and curriculum_state is not None)
+                else (1 if (iter / max_iter) < 0.4 else 2)
+            )
+            iteration_callback(
+                iter,
+                {
+                    "balanced_accuracy": _cb_acc,
+                    "h_A": h_A_val,
+                    "loss": float(loss_val),
+                    "curriculum_phase": _cb_phase,
+                },
+            )
 
         if verbose >= 2 and iter % 20 == 0:
-            print(f"Iter {iter:3d}: loss={float(loss_val):.4f}, h(A)={h_A_val:.4f}, "
-                  f"class={float(class_loss):.4f}, effect={float(effect_loss):.4f}")
+            print(
+                f"Iter {iter:3d}: loss={float(loss_val):.4f}, h(A)={h_A_val:.4f}, "
+                f"class={float(class_loss):.4f}, effect={float(effect_loss):.4f}"
+            )
 
         # Gradient cosine diagnostic: measure alignment between loss components
         # Computed every 50 iters in eager mode (outside JIT) to detect conflicts
         if iter % 50 == 0 and iter > 0:
             try:
-                A_cur = all_params['A_direct']
+                A_cur = all_params["A_direct"]
+
                 # Compute gradient of each weighted loss component w.r.t. A
                 def _recon_only(params, *args):
                     _, aux = loss_fn(params, *args)
                     return aux[1]  # total_recon_loss
+
                 def _class_only(params, *args):
                     _, aux = loss_fn(params, *args)
                     return aux[2]  # classification_loss
+
                 def _effect_only(params, *args):
                     _, aux = loss_fn(params, *args)
                     return aux[3]  # effect_loss
 
                 _loss_args = (data_train, Y_train, Y_effect_train, lambda_2_jax, curriculum_w_jax)
-                g_r = jax.grad(_recon_only)(all_params, *_loss_args)['A_direct'].flatten()
-                g_c = jax.grad(_class_only)(all_params, *_loss_args)['A_direct'].flatten()
+                g_r = jax.grad(_recon_only)(all_params, *_loss_args)["A_direct"].flatten()
+                g_c = jax.grad(_class_only)(all_params, *_loss_args)["A_direct"].flatten()
 
                 def _cos_sim(a, b):
                     dot = float(jnp.sum(a * b))
-                    na = float(jnp.sqrt(jnp.sum(a ** 2))) + 1e-12
-                    nb = float(jnp.sqrt(jnp.sum(b ** 2))) + 1e-12
+                    na = float(jnp.sqrt(jnp.sum(a**2))) + 1e-12
+                    nb = float(jnp.sqrt(jnp.sum(b**2))) + 1e-12
                     return dot / (na * nb)
 
                 cos_rc = _cos_sim(g_r, g_c)
                 if effect_warmup_completed:
-                    g_e = jax.grad(_effect_only)(all_params, *_loss_args)['A_direct'].flatten()
+                    g_e = jax.grad(_effect_only)(all_params, *_loss_args)["A_direct"].flatten()
                     cos_re = _cos_sim(g_r, g_e)
                     cos_ce = _cos_sim(g_c, g_e)
                 else:
                     cos_re, cos_ce = 0.0, 0.0
 
-                gradient_diagnostics.append({
-                    'iter': iter,
-                    'cos_recon_class': cos_rc,
-                    'cos_recon_effect': cos_re,
-                    'cos_class_effect': cos_ce,
-                })
+                gradient_diagnostics.append(
+                    {
+                        "iter": iter,
+                        "cos_recon_class": cos_rc,
+                        "cos_recon_effect": cos_re,
+                        "cos_class_effect": cos_ce,
+                    }
+                )
                 if verbose >= 2:
-                    eff_str = f", cos(r,e)={cos_re:.3f}, cos(c,e)={cos_ce:.3f}" if effect_warmup_completed else ""
+                    eff_str = (
+                        f", cos(r,e)={cos_re:.3f}, cos(c,e)={cos_ce:.3f}"
+                        if effect_warmup_completed
+                        else ""
+                    )
                     print(f"  [Gradient] cos(recon,class)={cos_rc:.3f}{eff_str}")
             except Exception as _grad_err:
-                if verbose >= 2: print(f"  [Gradient diagnostic failed: {_grad_err}]")
+                if verbose >= 2:
+                    print(f"  [Gradient diagnostic failed: {_grad_err}]")
 
     # Use best params
     if use_validation_split:
@@ -5238,7 +5487,7 @@ def learn_structure(
     # After structure converges, refine effect network with frozen structure
     if use_amortized_effects and effect_refinement_iters > 0:
         # Create effect-only loss function (structure frozen)
-        A_frozen = all_params['A_direct'].copy()
+        A_frozen = all_params["A_direct"].copy()
 
         # Recompute adjustment sets with final frozen structure
         adjustment_sets_final = compute_valid_adjustment_sets(A_frozen, Y_idx, threshold=0.05)
@@ -5246,15 +5495,19 @@ def learn_structure(
         # Low threshold (0.01) with top-K fallback to capture more treatments
         edge_weights_to_Y = jnp.abs(A_frozen[:n_vars, Y_idx])
         edge_threshold = 0.01
-        significant_treatments = [t_idx for t_idx in range(n_vars)
-                                 if t_idx != Y_idx and float(edge_weights_to_Y[t_idx]) > edge_threshold]
+        significant_treatments = [
+            t_idx
+            for t_idx in range(n_vars)
+            if t_idx != Y_idx and float(edge_weights_to_Y[t_idx]) > edge_threshold
+        ]
 
         # Top-K fallback if threshold is too aggressive
         min_treatments = 3
         if len(significant_treatments) < min_treatments:
             sorted_indices = jnp.argsort(-edge_weights_to_Y)  # Descending
-            significant_treatments = [int(idx) for idx in sorted_indices[:min_treatments + 1]
-                                     if int(idx) != Y_idx][:min_treatments]
+            significant_treatments = [
+                int(idx) for idx in sorted_indices[: min_treatments + 1] if int(idx) != Y_idx
+            ][:min_treatments]
 
         trained_treatments = significant_treatments.copy()
 
@@ -5271,13 +5524,22 @@ def learn_structure(
                 # Use the appropriate effect estimation method
                 if use_structural_dml:
                     t_loss, _ = structural_dml_effect_loss(
-                        batch_data, batch_Y_effect, t_idx, Y_idx, effect_params,
+                        batch_data,
+                        batch_Y_effect,
+                        t_idx,
+                        Y_idx,
+                        effect_params,
                         valid_covariates=valid_covs,
                     )
                 elif use_dragonnet:
                     t_loss, _ = compute_dragonnet_loss(
-                        batch_data, batch_Y_effect, t_idx, Y_idx, effect_params, targeted_reg,
-                        valid_covariates=valid_covs
+                        batch_data,
+                        batch_Y_effect,
+                        t_idx,
+                        Y_idx,
+                        effect_params,
+                        targeted_reg,
+                        valid_covariates=valid_covs,
                     )
                 else:
                     t_loss, _ = compute_amortized_effect_loss(
@@ -5290,7 +5552,7 @@ def learn_structure(
 
         # Separate optimizer for effect refinement (higher LR)
         effect_optimizer = optax.adam(learning_rate=lr * 2)
-        effect_opt_state = effect_optimizer.init(all_params['effect_params'])
+        effect_opt_state = effect_optimizer.init(all_params["effect_params"])
 
         @jax.jit
         def effect_refine_step(effect_params, opt_state, batch_data, batch_Y_effect):
@@ -5303,25 +5565,27 @@ def learn_structure(
 
         # Refinement loop
         for refine_iter in range(effect_refinement_iters):
-            all_params['effect_params'], effect_opt_state, effect_loss = effect_refine_step(
-                all_params['effect_params'], effect_opt_state, data_train, Y_effect_train
+            all_params["effect_params"], effect_opt_state, effect_loss = effect_refine_step(
+                all_params["effect_params"], effect_opt_state, data_train, Y_effect_train
             )
 
     # ==================== Extract Results ====================
 
-    A_final = all_params['A_direct']
+    A_final = all_params["A_direct"]
 
     # Threshold for binary DAG
     # Balanced threshold (1% was too low, 10% too high)
     max_weight = jnp.max(jnp.abs(A_final))
-    threshold = max(0.05 * max_weight, 0.03)  # 5% of max or at least 0.03 (raised: S1 fix makes weights sparser)
+    threshold = max(
+        0.05 * max_weight, 0.03
+    )  # 5% of max or at least 0.03 (raised: S1 fix makes weights sparser)
     A_binary = (jnp.abs(A_final) > threshold).astype(jnp.float32)
 
     # Zero diagonal
     A_binary = A_binary - jnp.diag(jnp.diag(A_binary))
 
     # Merge processor params
-    final_proc_params = merge_trained_params(processor_params, all_params['processor_params'])
+    final_proc_params = merge_trained_params(processor_params, all_params["processor_params"])
 
     # Extract Markov Blanket (v8.0: Full MB with spouses + confound neighbors)
     # MB(Y) = parents(Y) ∪ children(Y) ∪ spouses(Y) ∪ confound_neighbors(Y)
@@ -5347,9 +5611,9 @@ def learn_structure(
     # Confound neighbors: bi-directed edges to Y (X ↔ Y via latent)
     # Moderately strict threshold for confound edges
     confound_neighbors = set()
-    if use_confound_matrix and 'B_confound' in all_params:
+    if use_confound_matrix and "B_confound" in all_params:
         # Low-rank path: compute Ω_offdiag = B@B.T, threshold off-diagonal
-        B_conf_final = all_params['B_confound']
+        B_conf_final = all_params["B_confound"]
         Omega = B_conf_final @ B_conf_final.T
         Omega_offdiag = Omega.at[jnp.diag_indices(Omega.shape[0])].set(0.0)
         max_conf_weight = jnp.max(jnp.abs(Omega_offdiag))
@@ -5357,9 +5621,9 @@ def learn_structure(
         A_conf_binary = (jnp.abs(Omega_offdiag) > conf_threshold).astype(jnp.float32)
         confound_neighbors = set(int(i) for i in jnp.where(A_conf_binary[:, Y_idx] > 0)[0])
         confound_neighbors.discard(Y_idx)
-    elif use_confound_matrix and 'A_confound' in all_params:
+    elif use_confound_matrix and "A_confound" in all_params:
         # Legacy path
-        A_conf_final = symmetrize_confound_matrix(all_params['A_confound'])
+        A_conf_final = symmetrize_confound_matrix(all_params["A_confound"])
         max_conf_weight = jnp.max(jnp.abs(A_conf_final))
         conf_threshold = max(0.1 * float(max_conf_weight), 0.05)
         A_conf_binary = (jnp.abs(A_conf_final) > conf_threshold).astype(jnp.float32)
@@ -5375,7 +5639,7 @@ def learn_structure(
     # This helps catch true causes that might have weak edge weights
     effect_based_parents = set()
     if use_amortized_effects:
-        eff_params = all_params['effect_params']
+        eff_params = all_params["effect_params"]
         all_effects = {}
 
         # Compute effects for ALL X variables (not just current MB)
@@ -5385,21 +5649,30 @@ def learn_structure(
             try:
                 if use_structural_dml:
                     _, t_metrics = structural_dml_effect_loss(
-                        data, Y_effect, t_idx, Y_idx, eff_params,
+                        data,
+                        Y_effect,
+                        t_idx,
+                        Y_idx,
+                        eff_params,
                         valid_covariates=None,
                     )
-                    ate_value = t_metrics['ate_aipw']
+                    ate_value = t_metrics["ate_aipw"]
                 elif use_dragonnet:
                     _, t_metrics = compute_dragonnet_loss(
-                        data, Y_effect, t_idx, Y_idx, eff_params, targeted_reg,
-                        valid_covariates=None
+                        data,
+                        Y_effect,
+                        t_idx,
+                        Y_idx,
+                        eff_params,
+                        targeted_reg,
+                        valid_covariates=None,
                     )
-                    ate_value = t_metrics.get('ate_aipw', t_metrics['ate'])
+                    ate_value = t_metrics.get("ate_aipw", t_metrics["ate"])
                 else:
                     _, t_metrics = compute_amortized_effect_loss(
                         data, Y_effect, t_idx, Y_idx, eff_params
                     )
-                    ate_value = t_metrics['ate']
+                    ate_value = t_metrics["ate"]
                 all_effects[t_idx] = abs(float(ate_value))
             except:
                 all_effects[t_idx] = 0.0
@@ -5428,11 +5701,11 @@ def learn_structure(
 
     # Store MB components for analysis
     mb_components = {
-        'parents': sorted(list(parents - {Y_idx})),
-        'children': sorted(list(children - {Y_idx})),
-        'spouses': sorted(list(spouses)),
-        'confound_neighbors': sorted(list(confound_neighbors)),
-        'effect_based': sorted(list(effect_based_parents)),
+        "parents": sorted(list(parents - {Y_idx})),
+        "children": sorted(list(children - {Y_idx})),
+        "spouses": sorted(list(spouses)),
+        "confound_neighbors": sorted(list(confound_neighbors)),
+        "effect_based": sorted(list(effect_based_parents)),
     }
 
     # Classification accuracy
@@ -5440,7 +5713,7 @@ def learn_structure(
     # This ensures features are weighted correctly even if edges are in A_confound
     Y_pred_logits = jnp.zeros(n_samples_total)
     weights = jnp.abs(A_final[:, Y_idx])
-    if use_confound_matrix and 'A_confound' in all_params:
+    if use_confound_matrix and "A_confound" in all_params:
         # Add confound weights with 0.5 factor (confounding contributes less than direct)
         A_conf_weights = jnp.abs(A_conf_final[:, Y_idx])
         weights = weights + 0.5 * A_conf_weights
@@ -5449,15 +5722,17 @@ def learn_structure(
     weights_Y_eval = jnp.maximum(weights[:n_vars], 0.01)
     # Use training data only for in-sample metrics (avoid test leakage)
     X_weighted = data_train * weights_Y_eval[jnp.newaxis, :]
-    if processor.__class__.__name__ == 'GNNAdapter':
-        A_norm = A_final[:n_vars, :n_vars] / (jnp.sum(jnp.abs(A_final[:n_vars, :n_vars]), axis=0, keepdims=True) + 1e-8)
+    if processor.__class__.__name__ == "GNNAdapter":
+        A_norm = A_final[:n_vars, :n_vars] / (
+            jnp.sum(jnp.abs(A_final[:n_vars, :n_vars]), axis=0, keepdims=True) + 1e-8
+        )
         Y_pred_logits = processor.forward(X_weighted, final_proc_params[Y_idx], A=A_norm)
     else:
         Y_pred_logits = processor.forward(X_weighted, final_proc_params[Y_idx])
     Y_flat = Y_train.flatten()
 
     # Task-dependent post-training metrics
-    if task == 'regression':
+    if task == "regression":
         Y_pred = Y_pred_logits.flatten()
         ss_res = float(jnp.sum((Y_flat - Y_pred) ** 2))
         ss_tot = float(jnp.sum((Y_flat - jnp.mean(Y_flat)) ** 2))
@@ -5500,7 +5775,11 @@ def learn_structure(
             if n_pos > 0 and n_neg > 0:
                 tpr_cumsum = jnp.cumsum(Y_sorted) / n_pos
                 fpr_cumsum = jnp.cumsum(1 - Y_sorted) / n_neg
-                auc_roc = float(jnp.sum((fpr_cumsum[1:] - fpr_cumsum[:-1]) * (tpr_cumsum[1:] + tpr_cumsum[:-1]) / 2))
+                auc_roc = float(
+                    jnp.sum(
+                        (fpr_cumsum[1:] - fpr_cumsum[:-1]) * (tpr_cumsum[1:] + tpr_cumsum[:-1]) / 2
+                    )
+                )
             else:
                 auc_roc = 0.5
         except Exception:
@@ -5511,7 +5790,7 @@ def learn_structure(
     causal_effects = {}
     final_effect_loss = 0.0
     if use_amortized_effects:
-        eff_params = all_params['effect_params']
+        eff_params = all_params["effect_params"]
         n_effects = 0
 
         # Compute adjustment sets for final evaluation (use final A matrix)
@@ -5530,24 +5809,33 @@ def learn_structure(
 
             if use_structural_dml:
                 t_loss, t_metrics = structural_dml_effect_loss(
-                    data, Y_effect, t_idx, Y_idx, eff_params,
+                    data,
+                    Y_effect,
+                    t_idx,
+                    Y_idx,
+                    eff_params,
                     valid_covariates=valid_covs,
                     A_weights=A_direct if valid_covs is None else None,
                 )
-                ate_value = t_metrics['ate_aipw']
+                ate_value = t_metrics["ate_aipw"]
             elif use_dragonnet:
                 t_loss, t_metrics = compute_dragonnet_loss(
-                    data, Y_effect, t_idx, Y_idx, eff_params, targeted_reg,
-                    valid_covariates=valid_covs
+                    data,
+                    Y_effect,
+                    t_idx,
+                    Y_idx,
+                    eff_params,
+                    targeted_reg,
+                    valid_covariates=valid_covs,
                 )
                 # Use AIPW estimate (doubly robust) when available
-                ate_value = t_metrics.get('ate_aipw', t_metrics['ate'])
+                ate_value = t_metrics.get("ate_aipw", t_metrics["ate"])
             else:
                 t_loss, t_metrics = compute_amortized_effect_loss(
                     data, Y_effect, t_idx, Y_idx, eff_params
                 )
-                ate_value = t_metrics['ate']
-            causal_effects[f'X{t_idx}->Y'] = float(ate_value)
+                ate_value = t_metrics["ate"]
+            causal_effects[f"X{t_idx}->Y"] = float(ate_value)
             final_effect_loss += float(t_loss)
             n_effects += 1
         if n_effects > 0:
@@ -5592,11 +5880,11 @@ def learn_structure(
                             hidden_dim=32,  # Smaller architecture for X→X
                             verbose=False,
                         )
-                        causal_effects[f'X{i}->X{j}'] = float(ate_xx)
+                        causal_effects[f"X{i}->X{j}"] = float(ate_xx)
                         xx_edges_computed += 1
 
-                    except Exception as e:
-                        causal_effects[f'X{i}->X{j}'] = 0.0  # Default to zero on failure
+                    except Exception:
+                        causal_effects[f"X{i}->X{j}"] = 0.0  # Default to zero on failure
 
     # Build metrics
     max_edges = n_vars * (n_vars - 1)
@@ -5604,99 +5892,90 @@ def learn_structure(
 
     metrics = {
         # Structure
-        'n_edges': int(jnp.sum(A_binary)),
-        'sparsity': sparsity,
-        'final_h_A': float(h_A),
-        'markov_blanket': markov_blanket,
-        'markov_blanket_size': len(markov_blanket),
-
+        "n_edges": int(jnp.sum(A_binary)),
+        "sparsity": sparsity,
+        "final_h_A": float(h_A),
+        "markov_blanket": markov_blanket,
+        "markov_blanket_size": len(markov_blanket),
         # MB components for detailed analysis
-        'mb_components': mb_components,
-        'n_parents': len(mb_components['parents']),
-        'n_children': len(mb_components['children']),
-        'n_spouses': len(mb_components['spouses']),
-        'n_confound_neighbors': len(mb_components['confound_neighbors']),
-
+        "mb_components": mb_components,
+        "n_parents": len(mb_components["parents"]),
+        "n_children": len(mb_components["children"]),
+        "n_spouses": len(mb_components["spouses"]),
+        "n_confound_neighbors": len(mb_components["confound_neighbors"]),
         # Classification/Regression metrics (v16: task-aware)
-        'classification_accuracy': classification_accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1_score': f1_score,
-        'balanced_accuracy': balanced_accuracy,
-        'auc_roc': auc_roc,
-        'r2': r2,
-        'rmse': rmse,
-        'mae': mae,
-        'task': task,
-
+        "classification_accuracy": classification_accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1_score": f1_score,
+        "balanced_accuracy": balanced_accuracy,
+        "auc_roc": auc_roc,
+        "r2": r2,
+        "rmse": rmse,
+        "mae": mae,
+        "task": task,
         # Loss components
-        'final_loss': float(loss_val),
-        'final_recon_loss': float(recon_loss),
-        'final_class_loss': float(class_loss),
-
+        "final_loss": float(loss_val),
+        "final_recon_loss": float(recon_loss),
+        "final_class_loss": float(class_loss),
         # Effect metrics
-        'effect_loss': final_effect_loss,  # For NSGA-II fitness!
-        'causal_effects': causal_effects,
-        'trained_treatments': trained_treatments,
-
+        "effect_loss": final_effect_loss,  # For NSGA-II fitness!
+        "causal_effects": causal_effects,
+        "trained_treatments": trained_treatments,
         # Bi-directed edges
-        'bow_loss': float(bow_loss),
-
+        "bow_loss": float(bow_loss),
         # Training
-        'iterations': iter + 1,
-
+        "iterations": iter + 1,
         # Gradient diagnostics (cosine similarity between loss components)
-        'gradient_diagnostics': gradient_diagnostics,
-
+        "gradient_diagnostics": gradient_diagnostics,
         # Adjacency matrices
-        'A_direct': A_binary.tolist(),
-        'A_weights': A_final.tolist(),
+        "A_direct": A_binary.tolist(),
+        "A_weights": A_final.tolist(),
     }
 
     # Add A_confound if used
-    if use_confound_matrix and 'B_confound' in all_params:
+    if use_confound_matrix and "B_confound" in all_params:
         # Low-rank path: compute Ω = B@B.T + σ²I, store Ω_offdiag under backward-compat keys
-        B_conf_final = all_params['B_confound']
-        log_var_c = all_params['log_var_confound']
+        B_conf_final = all_params["B_confound"]
+        log_var_c = all_params["log_var_confound"]
         sigma2 = float(jnp.maximum(jnp.exp(log_var_c), 1e-6))
         Omega = B_conf_final @ B_conf_final.T + sigma2 * jnp.eye(B_conf_final.shape[0])
         Omega_offdiag = Omega.at[jnp.diag_indices(Omega.shape[0])].set(0.0)
         A_conf_binary = (jnp.abs(Omega_offdiag) > threshold).astype(jnp.float32)
-        metrics['A_confound'] = A_conf_binary.tolist()  # backward compat
-        metrics['A_confound_weights'] = Omega_offdiag.tolist()  # backward compat
-        metrics['n_confound_edges'] = int(jnp.sum(A_conf_binary) / 2)  # Symmetric
+        metrics["A_confound"] = A_conf_binary.tolist()  # backward compat
+        metrics["A_confound_weights"] = Omega_offdiag.tolist()  # backward compat
+        metrics["n_confound_edges"] = int(jnp.sum(A_conf_binary) / 2)  # Symmetric
         # New low-rank specific keys
-        metrics['B_confound'] = B_conf_final.tolist()
-        metrics['log_var_confound'] = float(log_var_c)
-        metrics['n_latent_confounders'] = B_conf_final.shape[1]
-    elif use_confound_matrix and 'A_confound' in all_params:
+        metrics["B_confound"] = B_conf_final.tolist()
+        metrics["log_var_confound"] = float(log_var_c)
+        metrics["n_latent_confounders"] = B_conf_final.shape[1]
+    elif use_confound_matrix and "A_confound" in all_params:
         # Legacy path
-        A_conf_final = symmetrize_confound_matrix(all_params['A_confound'])
+        A_conf_final = symmetrize_confound_matrix(all_params["A_confound"])
         A_conf_binary = (jnp.abs(A_conf_final) > threshold).astype(jnp.float32)
-        metrics['A_confound'] = A_conf_binary.tolist()
-        metrics['A_confound_weights'] = A_conf_final.tolist()
-        metrics['n_confound_edges'] = int(jnp.sum(A_conf_binary) / 2)  # Symmetric
+        metrics["A_confound"] = A_conf_binary.tolist()
+        metrics["A_confound_weights"] = A_conf_final.tolist()
+        metrics["n_confound_edges"] = int(jnp.sum(A_conf_binary) / 2)  # Symmetric
 
     # Add effect params if used
     if use_amortized_effects:
-        metrics['effect_params'] = all_params['effect_params']
+        metrics["effect_params"] = all_params["effect_params"]
 
     # ========== Bow-Free Post-Hoc Checks (Option A + C) ==========
     # A: Check no variable pair has both strong directed AND bi-directed edges
     # C: Test residual normality (non-Gaussian → cite Wang & Drton 2023 for identifiability)
-    if use_confound_matrix and metrics.get('A_confound_weights') is not None:
+    if use_confound_matrix and metrics.get("A_confound_weights") is not None:
         A_dir_abs = jnp.abs(A_final)
-        Omega_abs = jnp.abs(jnp.array(metrics['A_confound_weights']))
+        Omega_abs = jnp.abs(jnp.array(metrics["A_confound_weights"]))
         # Pairs with both directed and bi-directed edges above threshold
-        bow_violations = int(jnp.sum(
-            (A_dir_abs > threshold) & (Omega_abs > threshold)
-        ))
-        metrics['bow_free_violations'] = bow_violations
+        bow_violations = int(jnp.sum((A_dir_abs > threshold) & (Omega_abs > threshold)))
+        metrics["bow_free_violations"] = bow_violations
 
     # Residual normality test (Option C)
     try:
         import numpy as np
         from scipy.stats import shapiro
+
         # Compute residuals for first 5 variables (sample for speed)
         n_test = min(5, n_vars)
         normality_pvals = []
@@ -5706,22 +5985,27 @@ def learn_structure(
             pred_j = processor.forward(X_w[:200], final_proc_params[j])
             residuals = np.array(data_train[:200, j] - pred_j)
             if len(np.unique(residuals)) > 3:  # Need variability for Shapiro
-                _, p = shapiro(residuals[:min(200, len(residuals))])
+                _, p = shapiro(residuals[: min(200, len(residuals))])
                 normality_pvals.append(float(p))
-        metrics['residual_normality_pvals'] = normality_pvals
-        metrics['residuals_non_gaussian'] = all(p < 0.05 for p in normality_pvals) if normality_pvals else False
+        metrics["residual_normality_pvals"] = normality_pvals
+        metrics["residuals_non_gaussian"] = (
+            all(p < 0.05 for p in normality_pvals) if normality_pvals else False
+        )
     except Exception as _res_err:
-        if verbose >= 1: print(f"  [Residual normality test failed: {_res_err}]")
+        if verbose >= 1:
+            print(f"  [Residual normality test failed: {_res_err}]")
 
     if verbose >= 1:
-        print(f"\n{'='*60}")
-        print(f"Training Complete!")
+        print(f"\n{'=' * 60}")
+        print("Training Complete!")
         print(f"Directed edges: {metrics['n_edges']}, h(A)={h_A:.4f}")
         if use_confound_matrix:
             print(f"Bi-directed edges: {metrics.get('n_confound_edges', 0)}")
         print(f"MB: {markov_blanket} ({len(markov_blanket)} members)")
-        print(f"Acc: {classification_accuracy:.4f}, BAcc: {balanced_accuracy:.4f}, "
-              f"F1: {f1_score:.4f}, AUC: {auc_roc:.4f}, Effect loss: {final_effect_loss:.4f}")
+        print(
+            f"Acc: {classification_accuracy:.4f}, BAcc: {balanced_accuracy:.4f}, "
+            f"F1: {f1_score:.4f}, AUC: {auc_roc:.4f}, Effect loss: {final_effect_loss:.4f}"
+        )
         if verbose >= 2 and causal_effects:
             print(f"Effects: {causal_effects}")
 
@@ -5732,10 +6016,9 @@ def learn_structure(
 # Phase 2.2: ANM Direction Tests for Edge Validation
 # ============================================================================
 
+
 def anm_direction_test(
-    X_cause: jnp.ndarray,
-    X_effect: jnp.ndarray,
-    sigma: float = 1.0
+    X_cause: jnp.ndarray, X_effect: jnp.ndarray, sigma: float = 1.0
 ) -> Tuple[float, float]:
     """
     Additive Noise Model (ANM) direction test using HSIC.
@@ -5790,10 +6073,10 @@ def _compute_hsic(X: jnp.ndarray, Y: jnp.ndarray, sigma: float = 1.0) -> float:
 
     # RBF kernel
     def rbf_kernel(A, B):
-        A_sq = jnp.sum(A ** 2, axis=1, keepdims=True)
-        B_sq = jnp.sum(B ** 2, axis=1, keepdims=True)
+        A_sq = jnp.sum(A**2, axis=1, keepdims=True)
+        B_sq = jnp.sum(B**2, axis=1, keepdims=True)
         sq_dists = A_sq + B_sq.T - 2 * (A @ B.T)
-        return jnp.exp(-sq_dists / (2 * sigma ** 2))
+        return jnp.exp(-sq_dists / (2 * sigma**2))
 
     K = rbf_kernel(X, X)
     L = rbf_kernel(Y, Y)
@@ -5802,7 +6085,7 @@ def _compute_hsic(X: jnp.ndarray, Y: jnp.ndarray, sigma: float = 1.0) -> float:
     H = jnp.eye(n) - jnp.ones((n, n)) / n
 
     # HSIC = trace(KHLH) / n²
-    hsic = jnp.trace(K @ H @ L @ H) / (n ** 2)
+    hsic = jnp.trace(K @ H @ L @ H) / (n**2)
 
     return float(hsic)
 
@@ -5812,7 +6095,7 @@ def validate_edge_directions(
     A_directed: jnp.ndarray,
     Y_idx: int,
     threshold: float = 0.1,
-    verbose: bool = False
+    verbose: bool = False,
 ) -> Dict:
     """
     Validate learned edge directions using ANM tests.
@@ -5878,25 +6161,25 @@ def validate_edge_directions(
             edges_to_Y.append(i)
 
     result = {
-        'valid_edges': valid_edges,
-        'reversed_edges': reversed_edges,
-        'uncertain_edges': uncertain_edges,
-        'direction_scores': direction_scores,
-        'edges_to_Y': edges_to_Y,
-        'n_valid': len(valid_edges),
-        'n_reversed': len(reversed_edges),
-        'n_uncertain': len(uncertain_edges),
+        "valid_edges": valid_edges,
+        "reversed_edges": reversed_edges,
+        "uncertain_edges": uncertain_edges,
+        "direction_scores": direction_scores,
+        "edges_to_Y": edges_to_Y,
+        "n_valid": len(valid_edges),
+        "n_reversed": len(reversed_edges),
+        "n_uncertain": len(uncertain_edges),
     }
 
     if verbose:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("ANM Direction Validation")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Valid edges (correct direction): {len(valid_edges)}")
         print(f"Reversed edges (wrong direction): {len(reversed_edges)}")
         print(f"Uncertain edges: {len(uncertain_edges)}")
         if reversed_edges:
-            print(f"WARNING: Edges to consider reversing: {[(i,j) for i,j,_ in reversed_edges]}")
+            print(f"WARNING: Edges to consider reversing: {[(i, j) for i, j, _ in reversed_edges]}")
 
     return result
 
@@ -5905,11 +6188,12 @@ def validate_edge_directions(
 # Phase 2.4: Negative Control Calibration
 # ============================================================================
 
+
 def compute_negative_control_penalty(
     markov_blanket: List[int],
     causal_effects: Dict[str, float],
     negative_control_idx: int,
-    verbose: bool = False
+    verbose: bool = False,
 ) -> Tuple[float, Dict]:
     """
     Compute penalty for negative control variable appearing in results.
@@ -5931,7 +6215,7 @@ def compute_negative_control_penalty(
         penalty: Value to subtract from fitness (0 if NC correctly excluded)
         diagnostics: Dict with details
     """
-    nc_key = f'X{negative_control_idx}->Y'
+    nc_key = f"X{negative_control_idx}->Y"
 
     # Check if negative control is in MB
     nc_in_mb = negative_control_idx in markov_blanket
@@ -5947,16 +6231,16 @@ def compute_negative_control_penalty(
     penalty += nc_effect  # Add effect magnitude as additional penalty
 
     diagnostics = {
-        'negative_control_idx': negative_control_idx,
-        'in_markov_blanket': nc_in_mb,
-        'effect_magnitude': nc_effect,
-        'penalty': penalty,
+        "negative_control_idx": negative_control_idx,
+        "in_markov_blanket": nc_in_mb,
+        "effect_magnitude": nc_effect,
+        "penalty": penalty,
     }
 
     if verbose:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("Negative Control Calibration")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
         print(f"Negative control: X{negative_control_idx}")
         print(f"In Markov Blanket: {nc_in_mb}")
         print(f"Effect magnitude: {nc_effect:.4f}")
@@ -5968,9 +6252,7 @@ def compute_negative_control_penalty(
 
 
 def calibrate_effects_with_negative_control(
-    causal_effects: Dict[str, float],
-    negative_control_idx: int,
-    verbose: bool = False
+    causal_effects: Dict[str, float], negative_control_idx: int, verbose: bool = False
 ) -> Dict[str, float]:
     """
     Calibrate causal effects using negative control as baseline noise.
@@ -5985,7 +6267,7 @@ def calibrate_effects_with_negative_control(
     Returns:
         calibrated_effects: Effects with noise baseline subtracted
     """
-    nc_key = f'X{negative_control_idx}->Y'
+    nc_key = f"X{negative_control_idx}->Y"
     baseline_noise = abs(causal_effects.get(nc_key, 0.0))
 
     calibrated = {}
@@ -6012,11 +6294,9 @@ def calibrate_effects_with_negative_control(
 # Phase 2.3: Optional PC Algorithm Warm-Start
 # ============================================================================
 
+
 def get_pc_warmstart(
-    data: jnp.ndarray,
-    alpha: float = 0.05,
-    max_cond_size: int = 2,
-    verbose: bool = False
+    data: jnp.ndarray, alpha: float = 0.05, max_cond_size: int = 2, verbose: bool = False
 ) -> jnp.ndarray:
     """
     Run PC algorithm to get initial adjacency matrix for warm-starting GOLEM.
@@ -6033,22 +6313,19 @@ def get_pc_warmstart(
     Returns:
         A_init: (n_vars, n_vars) initial adjacency matrix from PC
     """
-    from jcce.structure_learning.pc import learn_with_pc
     from jax import random
 
+    from jcce.structure_learning.pc import learn_with_pc
+
     if verbose:
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print("PC Algorithm Warm-Start")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
     key = random.PRNGKey(0)  # Deterministic for reproducibility
 
     A_pc = learn_with_pc(
-        data=data,
-        key=key,
-        alpha=alpha,
-        max_cond_size=max_cond_size,
-        verbose=verbose
+        data=data, key=key, alpha=alpha, max_cond_size=max_cond_size, verbose=verbose
     )
 
     if verbose:

@@ -5,11 +5,13 @@ Tests the ImprovedWarmStartCache standalone behavior and its integration
 into UnifiedSCDProblem.
 """
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import unittest
+
 import numpy as np
 
 
@@ -20,11 +22,11 @@ class TestCacheAddGetRoundTrip(unittest.TestCase):
         from jcce.structure_learning.warm_start_cache import ImprovedWarmStartCache
 
         cache = ImprovedWarmStartCache(max_size=50)
-        config = {'processor_type': 'mlp', 'lambda_1_idx': 2, 'lr_idx': 1}
+        config = {"processor_type": "mlp", "lambda_1_idx": 2, "lr_idx": 1}
         A = np.random.randn(5, 5) * 0.1
         fitness = 0.85
 
-        cache.add(config, A, fitness, generation=0, processor_type='mlp')
+        cache.add(config, A, fitness, generation=0, processor_type="mlp")
 
         # Get should return a copy of A
         A_retrieved = cache.get(config)
@@ -45,10 +47,10 @@ class TestSampleFromTop20(unittest.TestCase):
 
         # Add 10 entries with increasing fitness
         for i in range(10):
-            config = {'processor_type': 'mlp', 'lambda_1_idx': i}
+            config = {"processor_type": "mlp", "lambda_1_idx": i}
             A = np.eye(5) * (i + 1) * 0.01
             fitness = 0.5 + i * 0.05  # 0.5 to 0.95
-            cache.add(config, A, fitness, generation=0, processor_type='mlp')
+            cache.add(config, A, fitness, generation=0, processor_type="mlp")
 
         # Top 20% = top 2 entries (fitness 0.90 and 0.95)
         # Sample many times and check all come from top entries
@@ -75,17 +77,17 @@ class TestProcessorTypeMatchingPreference(unittest.TestCase):
         cache = ImprovedWarmStartCache(max_size=50)
 
         # Add entry for 'mlp' with lower fitness
-        config_mlp = {'processor_type': 'mlp', 'lambda_1_idx': 0}
+        config_mlp = {"processor_type": "mlp", "lambda_1_idx": 0}
         A_mlp = np.ones((5, 5)) * 0.1
-        cache.add(config_mlp, A_mlp, fitness=0.75, generation=0, processor_type='mlp')
+        cache.add(config_mlp, A_mlp, fitness=0.75, generation=0, processor_type="mlp")
 
         # Add entry for 'transformer' with higher fitness
-        config_trans = {'processor_type': 'transformer', 'lambda_1_idx': 1}
+        config_trans = {"processor_type": "transformer", "lambda_1_idx": 1}
         A_trans = np.ones((5, 5)) * 0.2
-        cache.add(config_trans, A_trans, fitness=0.95, generation=0, processor_type='transformer')
+        cache.add(config_trans, A_trans, fitness=0.95, generation=0, processor_type="transformer")
 
         # Query with new mlp config (different hash, same processor_type)
-        query_config = {'processor_type': 'mlp', 'lambda_1_idx': 99}
+        query_config = {"processor_type": "mlp", "lambda_1_idx": 99}
         A_result = cache.get(query_config)
 
         # Should prefer mlp match despite lower fitness
@@ -104,16 +106,16 @@ class TestEvictionAtMaxSize(unittest.TestCase):
 
         # Add more entries than max_size
         for i in range(15):
-            config = {'processor_type': 'mlp', 'lambda_1_idx': i, 'lr_idx': i}
+            config = {"processor_type": "mlp", "lambda_1_idx": i, "lr_idx": i}
             A = np.random.randn(5, 5) * 0.1
             fitness = 0.5 + i * 0.03  # 0.5 to 0.92
-            cache.add(config, A, fitness, generation=0, processor_type='mlp')
+            cache.add(config, A, fitness, generation=0, processor_type="mlp")
 
         # Cache should not exceed max_size
         self.assertLessEqual(len(cache.cache), max_size)
 
         # Evictions should have happened
-        self.assertGreater(cache.stats['evictions'], 0)
+        self.assertGreater(cache.stats["evictions"], 0)
 
 
 class TestSkipLowFitness(unittest.TestCase):
@@ -124,15 +126,15 @@ class TestSkipLowFitness(unittest.TestCase):
 
         cache = ImprovedWarmStartCache(max_size=50)
 
-        config = {'processor_type': 'mlp', 'lambda_1_idx': 0}
+        config = {"processor_type": "mlp", "lambda_1_idx": 0}
         A = np.random.randn(5, 5) * 0.1
 
         # Low fitness should not be cached
-        cache.add(config, A, fitness=0.3, generation=0, processor_type='mlp')
+        cache.add(config, A, fitness=0.3, generation=0, processor_type="mlp")
         self.assertEqual(len(cache.cache), 0)
 
         # Adequate fitness should be cached
-        cache.add(config, A, fitness=0.6, generation=0, processor_type='mlp')
+        cache.add(config, A, fitness=0.6, generation=0, processor_type="mlp")
         self.assertEqual(len(cache.cache), 1)
 
 
@@ -142,6 +144,7 @@ class TestIntegrationUnifiedSCDProblem(unittest.TestCase):
     def test_warm_start_enabled_on_problem(self):
         """Verify warm_start_cache is initialized and wired up."""
         import jax.numpy as jnp
+
         from jcce.structure_learning.nsga2_search import UnifiedSCDProblem
 
         n_vars = 3
@@ -176,5 +179,5 @@ class TestIntegrationUnifiedSCDProblem(unittest.TestCase):
         self.assertIsNone(problem_no_ws.warm_start_cache)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

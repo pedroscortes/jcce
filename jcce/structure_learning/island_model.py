@@ -27,19 +27,21 @@ Usage:
         pareto = model.get_global_pareto_front()
 """
 
-import numpy as np
-from typing import Dict, List, Tuple, Optional, Any
-from dataclasses import dataclass, field
+import gc
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import random
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import gc
 
 
 @dataclass
 class IslandConfig:
     """Configuration for a single island."""
+
     processor_type: str
     gpu_id: int
     population_size: int
@@ -49,6 +51,7 @@ class IslandConfig:
 @dataclass
 class Individual:
     """Individual in the population."""
+
     A_topology: np.ndarray  # Adjacency matrix
     lambda_1: float
     lambda_2: float
@@ -57,13 +60,13 @@ class Individual:
     fitness: float = 0.0
     accuracy: float = 0.0
     sparsity: float = 0.0
-    h_A: float = float('inf')
+    h_A: float = float("inf")
     effect_loss: float = 1.0
     processor_params: Optional[Any] = None
     generation: int = 0
     causal_effects: Optional[Dict[str, float]] = None
 
-    def copy(self) -> 'Individual':
+    def copy(self) -> "Individual":
         """Create a copy of this individual."""
         return Individual(
             A_topology=self.A_topology.copy(),
@@ -172,9 +175,10 @@ class Island:
             Dictionary with evaluation statistics
         """
         from jcce.structure_learning.jcce_learner import (
-            create_processor,
             _learn_structure_legacy,
+            create_processor,
         )
+
         if use_v7:
             from jcce.structure_learning.jcce_learner import learn_structure
 
@@ -188,27 +192,25 @@ class Island:
         X_aug = np.concatenate([X_train, Y_train.reshape(-1, 1)], axis=1)
 
         results = {
-            'evaluated': 0,
-            'best_accuracy': 0.0,
-            'best_fitness': 0.0,
-            'mean_accuracy': 0.0,
+            "evaluated": 0,
+            "best_accuracy": 0.0,
+            "best_fitness": 0.0,
+            "mean_accuracy": 0.0,
         }
 
         for i, ind in enumerate(self.population):
             try:
                 # Get JAX device - support both GPU and CPU backends
                 backend = jax.default_backend()
-                if backend == 'gpu':
-                    device = jax.devices('gpu')[self.config.gpu_id]
+                if backend == "gpu":
+                    device = jax.devices("gpu")[self.config.gpu_id]
                 else:
-                    device = jax.devices('cpu')[0]
+                    device = jax.devices("cpu")[0]
 
                 with jax.default_device(device):
                     # Create processor
                     key = random.PRNGKey(self.seed + self.generation * 1000 + i)
-                    processor = create_processor(
-                        self.config.processor_type, key
-                    )
+                    processor = create_processor(self.config.processor_type, key)
 
                     # Run GOLEM with individual's hyperparameters
                     if use_v7:
@@ -236,7 +238,9 @@ class Island:
                             lambda_confound_sparse=0.001,
                             lambda_bow=0.01,  # Function uses lambda_bow
                             # Continuous Y for effect estimation
-                            Y_continuous=jnp.array(Y_continuous) if Y_continuous is not None else None,
+                            Y_continuous=jnp.array(Y_continuous)
+                            if Y_continuous is not None
+                            else None,
                             # Post-hoc effect refinement
                             effect_refinement_iters=50,
                         )
@@ -262,8 +266,8 @@ class Island:
 
                     # Extract metrics
                     # Compute classification accuracy via cross-validation
-                    from sklearn.model_selection import cross_val_score
                     from sklearn.linear_model import LogisticRegression
+                    from sklearn.model_selection import cross_val_score
 
                     # Extract Markov Blanket features
                     A_np = np.array(A_est)
@@ -281,7 +285,7 @@ class Island:
 
                     clf = LogisticRegression(max_iter=500, random_state=42)
                     try:
-                        cv_scores = cross_val_score(clf, X_mb, Y_train, cv=3, scoring='accuracy')
+                        cv_scores = cross_val_score(clf, X_mb, Y_train, cv=3, scoring="accuracy")
                         accuracy = float(np.mean(cv_scores))
                     except:
                         accuracy = 0.5
@@ -293,7 +297,7 @@ class Island:
                     sparsity = 1.0 - n_edges / max_edges if max_edges > 0 else 0.0
 
                     # Get h_A from metrics
-                    h_A = metrics.get('final_h_A', float('inf'))
+                    h_A = metrics.get("final_h_A", float("inf"))
 
                     # Update individual
                     ind.A_topology = A_np
@@ -305,20 +309,24 @@ class Island:
 
                     # Extract effect metrics if available
                     if use_v7:
-                        ind.effect_loss = metrics.get('effect_loss', 1.0)
-                        ind.causal_effects = metrics.get('causal_effects', {})
+                        ind.effect_loss = metrics.get("effect_loss", 1.0)
+                        ind.causal_effects = metrics.get("causal_effects", {})
                         # 4-objective fitness: include effect_loss
-                        ind.fitness = 0.5 * accuracy + 0.2 * sparsity + 0.3 * (1.0 - ind.effect_loss)
+                        ind.fitness = (
+                            0.5 * accuracy + 0.2 * sparsity + 0.3 * (1.0 - ind.effect_loss)
+                        )
                     else:
                         ind.fitness = 0.7 * accuracy + 0.3 * sparsity
 
-                    results['evaluated'] += 1
+                    results["evaluated"] += 1
 
             except Exception as e:
                 if verbose:
                     backend_name = jax.default_backend().upper()
-                    print(f"  Island {self.config.processor_type} {backend_name} {self.config.gpu_id}: "
-                          f"Individual {i} failed: {e}")
+                    print(
+                        f"  Island {self.config.processor_type} {backend_name} {self.config.gpu_id}: "
+                        f"Individual {i} failed: {e}"
+                    )
                 # Assign poor fitness to failed individuals
                 ind.fitness = 0.0
                 ind.accuracy = 0.0
@@ -331,9 +339,9 @@ class Island:
         accuracies = [ind.accuracy for ind in self.population]
         fitnesses = [ind.fitness for ind in self.population]
 
-        results['best_accuracy'] = max(accuracies) if accuracies else 0.0
-        results['best_fitness'] = max(fitnesses) if fitnesses else 0.0
-        results['mean_accuracy'] = np.mean(accuracies) if accuracies else 0.0
+        results["best_accuracy"] = max(accuracies) if accuracies else 0.0
+        results["best_fitness"] = max(fitnesses) if fitnesses else 0.0
+        results["mean_accuracy"] = np.mean(accuracies) if accuracies else 0.0
 
         # Update Pareto front
         self._update_pareto_front()
@@ -356,16 +364,8 @@ class Island:
     @staticmethod
     def _dominates(a: Individual, b: Individual) -> bool:
         """Check if individual a dominates individual b."""
-        better_in_all = (
-            a.accuracy >= b.accuracy and
-            a.sparsity >= b.sparsity and
-            a.h_A <= b.h_A
-        )
-        strictly_better = (
-            a.accuracy > b.accuracy or
-            a.sparsity > b.sparsity or
-            a.h_A < b.h_A
-        )
+        better_in_all = a.accuracy >= b.accuracy and a.sparsity >= b.sparsity and a.h_A <= b.h_A
+        strictly_better = a.accuracy > b.accuracy or a.sparsity > b.sparsity or a.h_A < b.h_A
         return better_in_all and strictly_better
 
     def select_and_reproduce(self):
@@ -394,12 +394,14 @@ class Island:
 
             new_population.append(child)
 
-        self.population = new_population[:self.config.population_size]
+        self.population = new_population[: self.config.population_size]
         self.generation += 1
 
     def _tournament_select(self, k: int = 3) -> Individual:
         """Tournament selection."""
-        candidates = self.rng.choice(self.population, size=min(k, len(self.population)), replace=False)
+        candidates = self.rng.choice(
+            self.population, size=min(k, len(self.population)), replace=False
+        )
         return max(candidates, key=lambda x: x.fitness)
 
     def _crossover(self, parent1: Individual, parent2: Individual) -> Individual:
@@ -466,17 +468,12 @@ class Island:
     def inject_migrant(self, migrant: Individual):
         """Inject a single migrant, replacing worst individual."""
         if self.population:
-            worst_idx = min(range(len(self.population)),
-                          key=lambda i: self.population[i].fitness)
+            worst_idx = min(range(len(self.population)), key=lambda i: self.population[i].fitness)
             migrant.processor_type = self.config.processor_type
             self.population[worst_idx] = migrant
 
     def create_from_structure(
-        self,
-        A_topology: np.ndarray,
-        lambda_1: float,
-        lambda_2: float,
-        lr: float
+        self, A_topology: np.ndarray, lambda_1: float, lambda_2: float, lr: float
     ) -> Individual:
         """Create new individual from structure (inter-processor migration)."""
         return Individual(
@@ -503,11 +500,11 @@ class HierarchicalIslandModel:
     """
 
     PROCESSOR_BUDGETS = {
-        'elm': 10,
-        'mlp': 20,
-        'gnn': 25,
-        'transformer': 30,
-        'mamba': 40,
+        "elm": 10,
+        "mlp": 20,
+        "gnn": 25,
+        "transformer": 30,
+        "mamba": 40,
     }
 
     def __init__(
@@ -567,10 +564,10 @@ class HierarchicalIslandModel:
                         processor_type=proc,
                         gpu_id=gpu_id,
                         population_size=population_per_island,
-                        golem_iterations=self.PROCESSOR_BUDGETS.get(proc, 20)
+                        golem_iterations=self.PROCESSOR_BUDGETS.get(proc, 20),
                     ),
                     n_vars=n_vars,
-                    seed=island_seed
+                    seed=island_seed,
                 )
                 self.islands[proc].append(island)
                 island_seed += 1
@@ -582,15 +579,15 @@ class HierarchicalIslandModel:
         # Statistics
         self.generation = 0
         self.stats = {
-            'intra_migrations': 0,
-            'inter_migrations': 0,
-            'best_accuracy_per_gen': [],
+            "intra_migrations": 0,
+            "inter_migrations": 0,
+            "best_accuracy_per_gen": [],
         }
 
         if verbose:
             total_pop = self.get_total_population()
             backend = jax.default_backend()
-            print(f"Initialized HierarchicalIslandModel:")
+            print("Initialized HierarchicalIslandModel:")
             print(f"  Processors: {processor_types}")
             print(f"  Backend: {backend}")
             print(f"  Device IDs: {gpu_ids}")
@@ -627,10 +624,10 @@ class HierarchicalIslandModel:
 
             # Distribute elites round-robin to shards
             for i, shard in enumerate(shards):
-                incoming = all_elites[i::len(shards)]
+                incoming = all_elites[i :: len(shards)]
                 shard.accept_migrants(incoming, replace_worst=True)
 
-        self.stats['intra_migrations'] += 1
+        self.stats["intra_migrations"] += 1
 
     def inter_processor_migration(self):
         """
@@ -646,7 +643,7 @@ class HierarchicalIslandModel:
         # Step 1: Collect best structures from each processor type
         for proc_type, shards in self.islands.items():
             best_individual = None
-            best_fitness = -float('inf')
+            best_fitness = -float("inf")
 
             for shard in shards:
                 elite = shard.get_best()
@@ -656,12 +653,12 @@ class HierarchicalIslandModel:
 
             if best_individual and best_fitness > 0.5:  # Only share good structures
                 structure_info = {
-                    'A_topology': best_individual.A_topology.copy(),
-                    'lambda_1': best_individual.lambda_1,
-                    'lambda_2': best_individual.lambda_2,
-                    'lr': best_individual.lr,
-                    'source_processor': proc_type,
-                    'fitness': best_fitness,
+                    "A_topology": best_individual.A_topology.copy(),
+                    "lambda_1": best_individual.lambda_1,
+                    "lambda_2": best_individual.lambda_2,
+                    "lr": best_individual.lr,
+                    "source_processor": proc_type,
+                    "fitness": best_fitness,
                 }
                 self._add_to_structure_pool(structure_info)
 
@@ -674,36 +671,33 @@ class HierarchicalIslandModel:
                 # Create new individual with foreign structure
                 for shard in shards:
                     new_individual = shard.create_from_structure(
-                        A_topology=foreign_structure['A_topology'],
-                        lambda_1=foreign_structure['lambda_1'],
-                        lambda_2=foreign_structure['lambda_2'],
-                        lr=foreign_structure['lr'],
+                        A_topology=foreign_structure["A_topology"],
+                        lambda_1=foreign_structure["lambda_1"],
+                        lambda_2=foreign_structure["lambda_2"],
+                        lr=foreign_structure["lr"],
                     )
                     shard.inject_migrant(new_individual)
 
-        self.stats['inter_migrations'] += 1
+        self.stats["inter_migrations"] += 1
 
     def _add_to_structure_pool(self, structure: dict):
         """Add structure to global pool (keep best)."""
         self.structure_pool.append(structure)
 
         # Sort by fitness, keep top
-        self.structure_pool.sort(key=lambda x: x['fitness'], reverse=True)
-        self.structure_pool = self.structure_pool[:self.structure_pool_max_size]
+        self.structure_pool.sort(key=lambda x: x["fitness"], reverse=True)
+        self.structure_pool = self.structure_pool[: self.structure_pool_max_size]
 
     def _get_foreign_structure(self, exclude: str) -> Optional[dict]:
         """Get best structure from different processor type."""
-        candidates = [s for s in self.structure_pool if s['source_processor'] != exclude]
+        candidates = [s for s in self.structure_pool if s["source_processor"] != exclude]
         if not candidates:
             return None
         # Return best (already sorted)
         return candidates[0]
 
     def run_generation(
-        self,
-        X_train: np.ndarray,
-        Y_train: np.ndarray,
-        parallel: bool = True
+        self, X_train: np.ndarray, Y_train: np.ndarray, parallel: bool = True
     ) -> Dict[str, Any]:
         """
         Run one generation across all islands.
@@ -717,10 +711,10 @@ class HierarchicalIslandModel:
             Dictionary with generation results
         """
         results = {
-            'generation': self.generation,
-            'processor_results': {},
-            'best_accuracy': 0.0,
-            'best_processor': None,
+            "generation": self.generation,
+            "processor_results": {},
+            "best_accuracy": 0.0,
+            "best_processor": None,
         }
 
         if parallel and len(self.gpu_ids) > 1:
@@ -732,7 +726,8 @@ class HierarchicalIslandModel:
                     for shard in shards:
                         future = executor.submit(
                             shard.evaluate,
-                            X_train, Y_train,
+                            X_train,
+                            Y_train,
                             verbose=self.verbose,
                             use_spectral_constraint=self.use_spectral_constraint,
                             enable_pruning=self.enable_pruning,
@@ -746,11 +741,11 @@ class HierarchicalIslandModel:
                     try:
                         shard_result = future.result()
                         key = f"{proc_type}_gpu{gpu_id}"
-                        results['processor_results'][key] = shard_result
+                        results["processor_results"][key] = shard_result
 
-                        if shard_result['best_accuracy'] > results['best_accuracy']:
-                            results['best_accuracy'] = shard_result['best_accuracy']
-                            results['best_processor'] = proc_type
+                        if shard_result["best_accuracy"] > results["best_accuracy"]:
+                            results["best_accuracy"] = shard_result["best_accuracy"]
+                            results["best_processor"] = proc_type
                     except Exception as e:
                         if self.verbose:
                             backend_name = jax.default_backend().upper()
@@ -760,7 +755,8 @@ class HierarchicalIslandModel:
             for proc_type, shards in self.islands.items():
                 for shard in shards:
                     shard_result = shard.evaluate(
-                        X_train, Y_train,
+                        X_train,
+                        Y_train,
                         verbose=self.verbose,
                         use_spectral_constraint=self.use_spectral_constraint,
                         enable_pruning=self.enable_pruning,
@@ -768,11 +764,11 @@ class HierarchicalIslandModel:
                         Y_continuous=self.Y_continuous,
                     )
                     key = f"{proc_type}_gpu{shard.config.gpu_id}"
-                    results['processor_results'][key] = shard_result
+                    results["processor_results"][key] = shard_result
 
-                    if shard_result['best_accuracy'] > results['best_accuracy']:
-                        results['best_accuracy'] = shard_result['best_accuracy']
-                        results['best_processor'] = proc_type
+                    if shard_result["best_accuracy"] > results["best_accuracy"]:
+                        results["best_accuracy"] = shard_result["best_accuracy"]
+                        results["best_processor"] = proc_type
 
         # Selection and reproduction
         for proc_type, shards in self.islands.items():
@@ -791,12 +787,14 @@ class HierarchicalIslandModel:
                 print(f"  Gen {self.generation}: Inter-processor migration")
 
         # Update stats
-        self.stats['best_accuracy_per_gen'].append(results['best_accuracy'])
+        self.stats["best_accuracy_per_gen"].append(results["best_accuracy"])
         self.generation += 1
 
         if self.verbose:
-            print(f"Gen {self.generation-1}: Best accuracy={results['best_accuracy']:.4f} "
-                  f"({results['best_processor']})")
+            print(
+                f"Gen {self.generation - 1}: Best accuracy={results['best_accuracy']:.4f} "
+                f"({results['best_processor']})"
+            )
 
         return results
 
@@ -830,22 +828,14 @@ class HierarchicalIslandModel:
     @staticmethod
     def _dominates(a: Individual, b: Individual) -> bool:
         """Check if solution a dominates solution b."""
-        better_in_all = (
-            a.accuracy >= b.accuracy and
-            a.sparsity >= b.sparsity and
-            a.h_A <= b.h_A
-        )
-        strictly_better_in_one = (
-            a.accuracy > b.accuracy or
-            a.sparsity > b.sparsity or
-            a.h_A < b.h_A
-        )
+        better_in_all = a.accuracy >= b.accuracy and a.sparsity >= b.sparsity and a.h_A <= b.h_A
+        strictly_better_in_one = a.accuracy > b.accuracy or a.sparsity > b.sparsity or a.h_A < b.h_A
         return better_in_all and strictly_better_in_one
 
     def get_best_solution(self) -> Optional[Individual]:
         """Get overall best solution across all islands."""
         best = None
-        best_fitness = -float('inf')
+        best_fitness = -float("inf")
 
         for proc_type, shards in self.islands.items():
             for shard in shards:
@@ -860,9 +850,11 @@ class HierarchicalIslandModel:
         """Get model statistics."""
         return {
             **self.stats,
-            'generation': self.generation,
-            'structure_pool_size': len(self.structure_pool),
-            'best_accuracy': max(self.stats['best_accuracy_per_gen']) if self.stats['best_accuracy_per_gen'] else 0.0,
+            "generation": self.generation,
+            "structure_pool_size": len(self.structure_pool),
+            "best_accuracy": max(self.stats["best_accuracy_per_gen"])
+            if self.stats["best_accuracy_per_gen"]
+            else 0.0,
         }
 
 
@@ -870,12 +862,13 @@ class HierarchicalIslandModel:
 # Convenience function for running v5.0 experiments
 # ============================================================================
 
+
 def run_island_model_experiment(
     X_train: np.ndarray,
     Y_train: np.ndarray,
     X_test: np.ndarray,
     Y_test: np.ndarray,
-    processor_types: List[str] = ['elm', 'mlp', 'transformer'],
+    processor_types: List[str] = ["elm", "mlp", "transformer"],
     gpu_ids: List[int] = [0, 1],
     n_generations: int = 15,
     population_per_island: int = 8,
@@ -955,11 +948,11 @@ def run_island_model_experiment(
         test_accuracy = 0.0
 
     return {
-        'pareto_front': pareto_front,
-        'best_solution': best_solution,
-        'test_accuracy': test_accuracy,
-        'stats': stats,
-        'n_pareto_solutions': len(pareto_front),
+        "pareto_front": pareto_front,
+        "best_solution": best_solution,
+        "test_accuracy": test_accuracy,
+        "stats": stats,
+        "n_pareto_solutions": len(pareto_front),
     }
 
 
@@ -967,7 +960,7 @@ def run_island_model_experiment(
 # Quick Test
 # ============================================================================
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("Testing Hierarchical Island Model...")
     print("=" * 60)
 
@@ -987,12 +980,12 @@ if __name__ == '__main__':
 
     # Test with single GPU (CPU mode for testing)
     model = HierarchicalIslandModel(
-        processor_types=['elm', 'mlp'],
+        processor_types=["elm", "mlp"],
         gpu_ids=[0],
         n_vars=n_features,  # Just features, not +1 (GOLEM handles Y internally)
         population_per_island=4,
         seed=42,
-        verbose=True
+        verbose=True,
     )
 
     print(f"\nTotal population: {model.get_total_population()}")

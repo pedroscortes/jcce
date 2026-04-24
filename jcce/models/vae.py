@@ -10,8 +10,8 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 
-from jcce.models.encoder import Encoder, reparameterize
 from jcce.models.decoder import Decoder
+from jcce.models.encoder import Encoder, reparameterize
 
 
 class BaselineVAE(nn.Module):
@@ -35,12 +35,8 @@ class BaselineVAE(nn.Module):
 
     def setup(self):
         """Initialize encoder and decoder."""
-        self.encoder = Encoder(
-            latent_dim=self.latent_dim, hidden_dims=self.encoder_hidden_dims
-        )
-        self.decoder = Decoder(
-            output_dim=self.output_dim, hidden_dims=self.decoder_hidden_dims
-        )
+        self.encoder = Encoder(latent_dim=self.latent_dim, hidden_dims=self.encoder_hidden_dims)
+        self.decoder = Decoder(output_dim=self.output_dim, hidden_dims=self.decoder_hidden_dims)
 
     def __call__(
         self, x: jnp.ndarray, key: jax.random.PRNGKey, *, training: bool = True
@@ -139,11 +135,7 @@ def reconstruction_loss(
         # Binary Cross-Entropy (for binary data)
         # Assumes x_reconstructed are logits
         # Sum over features, mean over batch
-        return jnp.mean(
-            jnp.sum(
-                jax.nn.sigmoid_binary_cross_entropy(x_reconstructed, x), axis=-1
-            )
-        )
+        return jnp.mean(jnp.sum(jax.nn.sigmoid_binary_cross_entropy(x_reconstructed, x), axis=-1))
     else:
         raise ValueError(f"Unknown loss_type: {loss_type}")
 

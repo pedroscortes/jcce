@@ -36,11 +36,11 @@ import warnings
 import numpy as np
 
 # Suppress sklearn warnings (MDS FutureWarning, convergence warnings)
-warnings.filterwarnings('ignore', category=FutureWarning, module='sklearn')
-warnings.filterwarnings('ignore', category=RuntimeWarning, module='sklearn')
-warnings.filterwarnings('ignore', message='Number of distinct clusters')
+warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="sklearn")
+warnings.filterwarnings("ignore", message="Number of distinct clusters")
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 try:
     from sklearn.cluster import KMeans
@@ -62,10 +62,10 @@ from jcce.gbs.gbs_utils import (
     spectral_distance,
 )
 
-
 # =============================================================================
 # Robust GBS kernel computation (handles near-degenerate graphs)
 # =============================================================================
+
 
 def safe_dequantized_features(W_tilde: np.ndarray, n_mean=None, max_order: int = 3) -> np.ndarray:
     """
@@ -128,8 +128,10 @@ def robust_dequantized_kernel_matrix(
 # DAG generation
 # =============================================================================
 
-def generate_erdos_renyi(d: int, p: float = 0.2, rng: np.random.Generator = None,
-                         min_edges: int = 3) -> np.ndarray:
+
+def generate_erdos_renyi(
+    d: int, p: float = 0.2, rng: np.random.Generator = None, min_edges: int = 3
+) -> np.ndarray:
     """
     Generate a random DAG from the Erdos-Renyi model.
 
@@ -173,10 +175,9 @@ def generate_scale_free(d: int, rng: np.random.Generator = None) -> np.ndarray:
     for new_node in range(2, d):
         # Compute attachment probabilities for existing nodes
         existing = list(range(new_node))
-        degrees = np.array([
-            np.sum(A[v, :] > 0) + np.sum(A[:, v] > 0) + 1
-            for v in existing
-        ], dtype=float)
+        degrees = np.array(
+            [np.sum(A[v, :] > 0) + np.sum(A[:, v] > 0) + 1 for v in existing], dtype=float
+        )
         probs = degrees / degrees.sum()
 
         # Number of parents: at least 1, up to min(3, existing)
@@ -191,8 +192,9 @@ def generate_scale_free(d: int, rng: np.random.Generator = None) -> np.ndarray:
     return A
 
 
-def generate_small_world(d: int, k: int = 4, p_rewire: float = 0.3,
-                         rng: np.random.Generator = None) -> np.ndarray:
+def generate_small_world(
+    d: int, k: int = 4, p_rewire: float = 0.3, rng: np.random.Generator = None
+) -> np.ndarray:
     """
     Generate a DAG with small-world (Watts-Strogatz) structure.
 
@@ -240,7 +242,7 @@ def generate_dag_families(d: int, n_per_family: int = 50, seed: int = 42):
         family_names: list of family name strings
     """
     rng = np.random.default_rng(seed)
-    family_names = ['Erdos-Renyi', 'Scale-Free', 'Small-World']
+    family_names = ["Erdos-Renyi", "Scale-Free", "Small-World"]
 
     dags = []
     labels = []
@@ -266,6 +268,7 @@ def generate_dag_families(d: int, n_per_family: int = 50, seed: int = 42):
 # =============================================================================
 # Pairwise distance matrices for classical methods
 # =============================================================================
+
 
 def compute_distance_matrix(dags, metric_fn):
     """Compute pairwise distance matrix using a given metric function."""
@@ -299,8 +302,10 @@ def distance_to_kernel(D: np.ndarray) -> np.ndarray:
 # Evaluation: embed + cluster + score
 # =============================================================================
 
-def evaluate_kernel_method(K: np.ndarray, labels: np.ndarray, n_clusters: int = 3,
-                           n_components: int = 2, seed: int = 42):
+
+def evaluate_kernel_method(
+    K: np.ndarray, labels: np.ndarray, n_clusters: int = 3, n_components: int = 2, seed: int = 42
+):
     """
     Evaluate a kernel matrix: kernel PCA embedding -> KMeans -> ARI + silhouette.
 
@@ -314,7 +319,7 @@ def evaluate_kernel_method(K: np.ndarray, labels: np.ndarray, n_clusters: int = 
     try:
         kpca = KernelPCA(
             n_components=n_components,
-            kernel='precomputed',
+            kernel="precomputed",
             random_state=seed,
         )
         embedding = kpca.fit_transform(K_reg)
@@ -323,8 +328,12 @@ def evaluate_kernel_method(K: np.ndarray, labels: np.ndarray, n_clusters: int = 
         # Convert kernel to distance: D = sqrt(K_ii + K_jj - 2*K_ij)
         diag = np.diag(K_reg)
         D_from_K = np.sqrt(np.maximum(diag[:, None] + diag[None, :] - 2 * K_reg, 0))
-        mds = MDS(n_components=n_components, dissimilarity='precomputed',
-                   random_state=seed, normalized_stress='auto')
+        mds = MDS(
+            n_components=n_components,
+            dissimilarity="precomputed",
+            random_state=seed,
+            normalized_stress="auto",
+        )
         embedding = mds.fit_transform(D_from_K)
 
     # KMeans clustering
@@ -340,16 +349,21 @@ def evaluate_kernel_method(K: np.ndarray, labels: np.ndarray, n_clusters: int = 
     else:
         sil = silhouette_score(embedding, pred_labels)
 
-    return {'ari': ari, 'silhouette': sil, 'embedding': embedding}
+    return {"ari": ari, "silhouette": sil, "embedding": embedding}
 
 
-def evaluate_distance_method(D: np.ndarray, labels: np.ndarray, n_clusters: int = 3,
-                              n_components: int = 2, seed: int = 42):
+def evaluate_distance_method(
+    D: np.ndarray, labels: np.ndarray, n_clusters: int = 3, n_components: int = 2, seed: int = 42
+):
     """
     Evaluate a distance matrix: MDS embedding -> KMeans -> ARI + silhouette.
     """
-    mds = MDS(n_components=n_components, dissimilarity='precomputed',
-               random_state=seed, normalized_stress='auto')
+    mds = MDS(
+        n_components=n_components,
+        dissimilarity="precomputed",
+        random_state=seed,
+        normalized_stress="auto",
+    )
     embedding = mds.fit_transform(D)
 
     kmeans = KMeans(n_clusters=n_clusters, random_state=seed, n_init=10)
@@ -363,18 +377,19 @@ def evaluate_distance_method(D: np.ndarray, labels: np.ndarray, n_clusters: int 
     else:
         sil = silhouette_score(embedding, pred_labels)
 
-    return {'ari': ari, 'silhouette': sil, 'embedding': embedding}
+    return {"ari": ari, "silhouette": sil, "embedding": embedding}
 
 
 # =============================================================================
 # Main experiment
 # =============================================================================
 
+
 def run_experiment(d: int, n_per_family: int = 50, seed: int = 42):
     """Run the full discriminative power experiment for a given dimension."""
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  Experiment 1: Kernel Discriminative Power  (d={d})")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     # --- Generate DAGs ---
     print(f"\nGenerating {n_per_family} DAGs x 3 families (d={d})...")
@@ -388,8 +403,10 @@ def run_experiment(d: int, n_per_family: int = 50, seed: int = 42):
     for fam_idx, fam_name in enumerate(family_names):
         fam_dags = [dags[i] for i in range(n_total) if labels[i] == fam_idx]
         densities = [np.sum(np.abs(dag) > 0.1) / (d * (d - 1)) for dag in fam_dags]
-        print(f"  {fam_name}: avg edge density = {np.mean(densities):.3f} "
-              f"(+/- {np.std(densities):.3f})")
+        print(
+            f"  {fam_name}: avg edge density = {np.mean(densities):.3f} "
+            f"(+/- {np.std(densities):.3f})"
+        )
 
     # --- Encode DAGs for GBS ---
     print("\nEncoding DAGs to GBS graph matrices...")
@@ -405,7 +422,7 @@ def run_experiment(d: int, n_per_family: int = 50, seed: int = 42):
     t_gbs2 = time.time() - t0
     print(f"  Kernel matrix computed in {t_gbs2:.2f}s")
     res = evaluate_kernel_method(K_gbs2, labels, seed=seed)
-    results['GBS-deq (order 2)'] = {**res, 'time': t_gbs2}
+    results["GBS-deq (order 2)"] = {**res, "time": t_gbs2}
     print(f"  ARI = {res['ari']:.4f}, Silhouette = {res['silhouette']:.4f}")
 
     # 2. Dequantized GBS kernel (order 3)
@@ -416,7 +433,7 @@ def run_experiment(d: int, n_per_family: int = 50, seed: int = 42):
     t_gbs3 = time.time() - t0
     print(f"  Kernel matrix computed in {t_gbs3:.2f}s")
     res = evaluate_kernel_method(K_gbs3, labels, seed=seed)
-    results['GBS-deq (order 3)'] = {**res, 'time': t_gbs3}
+    results["GBS-deq (order 3)"] = {**res, "time": t_gbs3}
     print(f"  ARI = {res['ari']:.4f}, Silhouette = {res['silhouette']:.4f}")
 
     # 3. SHD distance
@@ -426,7 +443,7 @@ def run_experiment(d: int, n_per_family: int = 50, seed: int = 42):
     t_shd = time.time() - t0
     print(f"  Distance matrix computed in {t_shd:.2f}s")
     res = evaluate_distance_method(D_shd, labels, seed=seed)
-    results['SHD'] = {**res, 'time': t_shd}
+    results["SHD"] = {**res, "time": t_shd}
     print(f"  ARI = {res['ari']:.4f}, Silhouette = {res['silhouette']:.4f}")
 
     # 4. Frobenius norm
@@ -436,7 +453,7 @@ def run_experiment(d: int, n_per_family: int = 50, seed: int = 42):
     t_frob = time.time() - t0
     print(f"  Distance matrix computed in {t_frob:.2f}s")
     res = evaluate_distance_method(D_frob, labels, seed=seed)
-    results['Frobenius'] = {**res, 'time': t_frob}
+    results["Frobenius"] = {**res, "time": t_frob}
     print(f"  ARI = {res['ari']:.4f}, Silhouette = {res['silhouette']:.4f}")
 
     # 5. Spectral distance
@@ -446,17 +463,17 @@ def run_experiment(d: int, n_per_family: int = 50, seed: int = 42):
     t_spec = time.time() - t0
     print(f"  Distance matrix computed in {t_spec:.2f}s")
     res = evaluate_distance_method(D_spec, labels, seed=seed)
-    results['Spectral'] = {**res, 'time': t_spec}
+    results["Spectral"] = {**res, "time": t_spec}
     print(f"  ARI = {res['ari']:.4f}, Silhouette = {res['silhouette']:.4f}")
 
     # 6. Jaccard edge distance
-    print("\n[6/6] Jaccard edge distance..."    )
+    print("\n[6/6] Jaccard edge distance...")
     t0 = time.time()
     D_jacc = compute_distance_matrix(dags, jaccard_edge_distance)
     t_jacc = time.time() - t0
     print(f"  Distance matrix computed in {t_jacc:.2f}s")
     res = evaluate_distance_method(D_jacc, labels, seed=seed)
-    results['Jaccard'] = {**res, 'time': t_jacc}
+    results["Jaccard"] = {**res, "time": t_jacc}
     print(f"  ARI = {res['ari']:.4f}, Silhouette = {res['silhouette']:.4f}")
 
     return results
@@ -464,9 +481,9 @@ def run_experiment(d: int, n_per_family: int = 50, seed: int = 42):
 
 def print_summary_table(all_results: dict):
     """Print a formatted summary table across dimensions."""
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  SUMMARY: Kernel Discriminative Power")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     method_names = list(next(iter(all_results.values())).keys())
     dims = sorted(all_results.keys())
@@ -476,9 +493,9 @@ def print_summary_table(all_results: dict):
     for d in dims:
         header += f" | {'ARI':>7} {'Sil':>7} {'Time':>8}  "
     print(f"\n{header}")
-    print(f"{'':22}", end='')
+    print(f"{'':22}", end="")
     for d in dims:
-        print(f" | {'d=' + str(d):^25}", end='')
+        print(f" | {'d=' + str(d):^25}", end="")
     print()
     print("-" * (22 + len(dims) * 29))
 
@@ -494,7 +511,7 @@ def print_summary_table(all_results: dict):
 
     # Ranking
     for d in dims:
-        ranked = sorted(all_results[d].items(), key=lambda x: x[1]['ari'], reverse=True)
+        ranked = sorted(all_results[d].items(), key=lambda x: x[1]["ari"], reverse=True)
         print(f"  d={d} ranking by ARI:")
         for rank, (method, r) in enumerate(ranked, 1):
             print(f"    {rank}. {method}: ARI={r['ari']:.4f}")
@@ -517,5 +534,5 @@ def main():
     print("\nExperiment 1 complete.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

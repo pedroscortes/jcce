@@ -4,7 +4,7 @@ VAE training utilities.
 Provides training step, training loop, and utilities for baseline VAE.
 """
 
-from typing import Any, Callable, Optional
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
@@ -58,17 +58,13 @@ def create_train_state(
     tx = optax.adam(learning_rate)
 
     # Create train state
-    state = TrainState.create(
-        apply_fn=model.apply, params=variables["params"], tx=tx, key=key
-    )
+    state = TrainState.create(apply_fn=model.apply, params=variables["params"], tx=tx, key=key)
 
     return state
 
 
 @jax.jit
-def train_step(
-    state: TrainState, batch: jnp.ndarray, beta: float = 1.0
-) -> tuple[TrainState, dict]:
+def train_step(state: TrainState, batch: jnp.ndarray, beta: float = 1.0) -> tuple[TrainState, dict]:
     """
     Single training step for VAE.
 
@@ -92,9 +88,7 @@ def train_step(
 
     def loss_fn(params):
         # Forward pass
-        x_recon, info = state.apply_fn(
-            {"params": params}, batch, subkey, training=True
-        )
+        x_recon, info = state.apply_fn({"params": params}, batch, subkey, training=True)
 
         # Compute ELBO loss
         loss, metrics = elbo_loss(
@@ -289,9 +283,7 @@ def evaluate_batch(
     return metrics
 
 
-def evaluate_vae(
-    state: TrainState, data: jnp.ndarray, batch_size: int, beta: float = 1.0
-) -> dict:
+def evaluate_vae(state: TrainState, data: jnp.ndarray, batch_size: int, beta: float = 1.0) -> dict:
     """
     Evaluate VAE on dataset.
 

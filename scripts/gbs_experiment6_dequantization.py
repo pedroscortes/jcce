@@ -23,24 +23,22 @@ import sys
 import time
 
 import numpy as np
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import pearsonr
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from jcce.gbs.gbs_utils import (
     dequantized_cooccurrence,
     dequantized_features,
-    dequantized_kernel,
     dequantized_kernel_matrix,
     encode_dag_to_gbs,
     gbs_cooccurrence,
-    graph_to_gbs_state,
 )
-
 
 # =============================================================================
 # DAG generators (minimal set for analysis)
 # =============================================================================
+
 
 def make_chain(d, rng=None):
     if rng is None:
@@ -50,6 +48,7 @@ def make_chain(d, rng=None):
         A[i, i + 1] = rng.uniform(0.5, 1.5)
     return A
 
+
 def make_hub(d, rng=None):
     if rng is None:
         rng = np.random.default_rng(42)
@@ -57,6 +56,7 @@ def make_hub(d, rng=None):
     for i in range(1, d):
         A[0, i] = rng.uniform(0.5, 1.5)
     return A
+
 
 def make_random(d, p=0.2, rng=None):
     if rng is None:
@@ -67,6 +67,7 @@ def make_random(d, p=0.2, rng=None):
             if rng.random() < p:
                 A[i, j] = rng.uniform(0.3, 1.5)
     return A
+
 
 def make_ring(d, rng=None):
     if rng is None:
@@ -85,6 +86,7 @@ def make_ring(d, rng=None):
 # Experiment 1: Dequantized vs Sampling-based kernel accuracy
 # =============================================================================
 
+
 def experiment_1_accuracy():
     """Compare exact dequantized features vs sampling-based co-occurrence."""
     print("\n" + "=" * 70)
@@ -95,14 +97,16 @@ def experiment_1_accuracy():
     d = 8
     rng = np.random.default_rng(42)
     graphs = {
-        'Chain': make_chain(d, rng),
-        'Hub': make_hub(d, rng),
-        'Random': make_random(d, rng=rng),
+        "Chain": make_chain(d, rng),
+        "Hub": make_hub(d, rng),
+        "Random": make_random(d, rng=rng),
     }
 
     print(f"\n  d={d}, comparing co-occurrence matrices:")
-    print(f"  {'Graph':<10} | {'N_samples':>10} | {'Pearson r':>10} | {'Max |diff|':>10} | {'Time (deq)':>10} | {'Time (samp)':>10}")
-    print(f"  {'-'*70}")
+    print(
+        f"  {'Graph':<10} | {'N_samples':>10} | {'Pearson r':>10} | {'Max |diff|':>10} | {'Time (deq)':>10} | {'Time (samp)':>10}"
+    )
+    print(f"  {'-' * 70}")
 
     for name, A in graphs.items():
         W = encode_dag_to_gbs(A, scale=0.9)
@@ -114,7 +118,7 @@ def experiment_1_accuracy():
 
         for n_samples in [500, 2000, 5000]:
             t0 = time.time()
-            C_samp = gbs_cooccurrence(W, n_samples=n_samples, n_mean=d/2)
+            C_samp = gbs_cooccurrence(W, n_samples=n_samples, n_mean=d / 2)
             t_samp = time.time() - t0
 
             # Compare upper triangles
@@ -129,13 +133,16 @@ def experiment_1_accuracy():
 
             max_diff = np.max(np.abs(deq_upper - samp_upper))
 
-            print(f"  {name:<10} | {n_samples:>10} | {r:>10.4f} | {max_diff:>10.4f} | "
-                  f"{t_deq:>9.4f}s | {t_samp:>9.4f}s")
+            print(
+                f"  {name:<10} | {n_samples:>10} | {r:>10.4f} | {max_diff:>10.4f} | "
+                f"{t_deq:>9.4f}s | {t_samp:>9.4f}s"
+            )
 
 
 # =============================================================================
 # Experiment 2: Feature hierarchy analysis
 # =============================================================================
+
 
 def experiment_2_feature_hierarchy():
     """Analyze what each order captures and its contribution to discrimination."""
@@ -156,9 +163,15 @@ def experiment_2_feature_hierarchy():
             f_rand = dequantized_features(random_W, max_order=order)
 
             # Kernel values between pairs
-            k_ch_hub = np.dot(f_chain, f_hub) / (np.linalg.norm(f_chain) * np.linalg.norm(f_hub) + 1e-10)
-            k_ch_rand = np.dot(f_chain, f_rand) / (np.linalg.norm(f_chain) * np.linalg.norm(f_rand) + 1e-10)
-            k_hub_rand = np.dot(f_hub, f_rand) / (np.linalg.norm(f_hub) * np.linalg.norm(f_rand) + 1e-10)
+            k_ch_hub = np.dot(f_chain, f_hub) / (
+                np.linalg.norm(f_chain) * np.linalg.norm(f_hub) + 1e-10
+            )
+            k_ch_rand = np.dot(f_chain, f_rand) / (
+                np.linalg.norm(f_chain) * np.linalg.norm(f_rand) + 1e-10
+            )
+            k_hub_rand = np.dot(f_hub, f_rand) / (
+                np.linalg.norm(f_hub) * np.linalg.norm(f_rand) + 1e-10
+            )
 
             # Feature statistics
             n_feats = len(f_chain)
@@ -168,14 +181,17 @@ def experiment_2_feature_hierarchy():
             # Higher discrimination = lower inter-class similarity
             avg_inter = (k_ch_hub + k_ch_rand + k_hub_rand) / 3
 
-            print(f"    Order {order}: {n_feats:>5} features ({nonzero} nonzero), "
-                  f"avg inter-class sim={avg_inter:.4f}, "
-                  f"K(chain,hub)={k_ch_hub:.4f}, K(chain,rand)={k_ch_rand:.4f}")
+            print(
+                f"    Order {order}: {n_feats:>5} features ({nonzero} nonzero), "
+                f"avg inter-class sim={avg_inter:.4f}, "
+                f"K(chain,hub)={k_ch_hub:.4f}, K(chain,rand)={k_ch_rand:.4f}"
+            )
 
 
 # =============================================================================
 # Experiment 3: Feature semantics — what do click probabilities encode?
 # =============================================================================
+
 
 def experiment_3_feature_semantics():
     """Investigate what the marginal click probabilities actually measure."""
@@ -193,26 +209,27 @@ def experiment_3_feature_semantics():
 
     # Order 1: single-mode click probabilities
     order1 = f_chain[:d]
-    print(f"\n  Chain DAG (0→1→2→...→7):")
-    print(f"  Order 1 (single-mode click probabilities):")
+    print("\n  Chain DAG (0→1→2→...→7):")
+    print("  Order 1 (single-mode click probabilities):")
     for i in range(d):
         print(f"    P(mode {i} clicks) = {order1[i]:.4f}")
-    print(f"  → Nodes with more edges have higher click probability")
-    print(f"    (middle nodes: parents+children, endpoints: fewer connections)")
+    print("  → Nodes with more edges have higher click probability")
+    print("    (middle nodes: parents+children, endpoints: fewer connections)")
 
     # Order 2: pairwise co-click probabilities
-    print(f"\n  Order 2 (pairwise co-click): highest pairs")
+    print("\n  Order 2 (pairwise co-click): highest pairs")
     import itertools
+
     pairs = list(itertools.combinations(range(d), 2))
-    order2 = f_chain[d:d + len(pairs)]
+    order2 = f_chain[d : d + len(pairs)]
     pair_probs = sorted(zip(pairs, order2), key=lambda x: x[1], reverse=True)
     for (i, j), p in pair_probs[:8]:
         edge = "→" if A_chain[i, j] > 0 or A_chain[j, i] > 0 else "·"
         print(f"    P(modes {i},{j} co-click) = {p:.4f}  [{i}{edge}{j}]")
 
-    print(f"\n  → Adjacent nodes (connected by edge) have highest co-click probability")
-    print(f"    This is the mathematical mechanism: GBS click probabilities encode")
-    print(f"    graph connectivity patterns via the hafnian of the adjacency submatrix")
+    print("\n  → Adjacent nodes (connected by edge) have highest co-click probability")
+    print("    This is the mathematical mechanism: GBS click probabilities encode")
+    print("    graph connectivity patterns via the hafnian of the adjacency submatrix")
 
     # Hub: 0→{1,2,...,7}
     A_hub = make_hub(d, rng=rng)
@@ -220,17 +237,18 @@ def experiment_3_feature_semantics():
     f_hub = dequantized_features(W_hub, max_order=2)
 
     order1_hub = f_hub[:d]
-    print(f"\n  Hub DAG (0→{{1,...,7}}):")
-    print(f"  Order 1:")
+    print("\n  Hub DAG (0→{1,...,7}):")
+    print("  Order 1:")
     for i in range(d):
         print(f"    P(mode {i} clicks) = {order1_hub[i]:.4f}")
-    print(f"  → Hub node (0) has highest click prob (most connections)")
-    print(f"    Leaves have equal, lower click prob")
+    print("  → Hub node (0) has highest click prob (most connections)")
+    print("    Leaves have equal, lower click prob")
 
 
 # =============================================================================
 # Experiment 4: Computational complexity
 # =============================================================================
+
 
 def experiment_4_complexity():
     """Measure computation time scaling for dequantized features."""
@@ -240,9 +258,11 @@ def experiment_4_complexity():
 
     dimensions = [8, 11, 13, 15, 20, 25, 30]
 
-    print(f"\n  {'d':>4} | {'Order 1':>10} | {'Order 2':>10} | {'Order 3':>10} | "
-          f"{'#Feat o2':>8} | {'#Feat o3':>8}")
-    print(f"  {'-'*65}")
+    print(
+        f"\n  {'d':>4} | {'Order 1':>10} | {'Order 2':>10} | {'Order 3':>10} | "
+        f"{'#Feat o2':>8} | {'#Feat o3':>8}"
+    )
+    print(f"  {'-' * 65}")
 
     for d in dimensions:
         rng = np.random.default_rng(42)
@@ -264,13 +284,12 @@ def experiment_4_complexity():
         f3 = dequantized_features(W, max_order=3)
         t3 = time.time() - t0
 
-        print(f"  {d:>4} | {t1:>9.4f}s | {t2:>9.4f}s | {t3:>9.4f}s | "
-              f"{len(f2):>8} | {len(f3):>8}")
+        print(f"  {d:>4} | {t1:>9.4f}s | {t2:>9.4f}s | {t3:>9.4f}s | {len(f2):>8} | {len(f3):>8}")
 
     # Kernel matrix timing (for a set of 10 graphs)
-    print(f"\n  Kernel matrix timing (10 graphs):")
+    print("\n  Kernel matrix timing (10 graphs):")
     print(f"  {'d':>4} | {'Order 2':>10} | {'Order 3':>10}")
-    print(f"  {'-'*30}")
+    print(f"  {'-' * 30}")
 
     for d in [8, 11, 15, 20, 30]:
         rng = np.random.default_rng(42)
@@ -290,6 +309,7 @@ def experiment_4_complexity():
 # =============================================================================
 # Experiment 5: Mathematical derivation summary
 # =============================================================================
+
 
 def experiment_5_math_summary():
     """Print the mathematical derivation pipeline."""
@@ -355,6 +375,7 @@ def experiment_5_math_summary():
 # Main
 # =============================================================================
 
+
 def main():
     print("=" * 70)
     print("  GBS Experiment 6: Dequantization Formalization")
@@ -370,20 +391,20 @@ def main():
 
     elapsed = time.time() - t_total
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  SUMMARY")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"\n  Total time: {elapsed:.1f}s")
-    print(f"\n  Key conclusions:")
-    print(f"  1. Dequantized kernel matches sampling (r>0.999 at N=5000)")
-    print(f"  2. Higher order features (o2, o3) improve discrimination at larger d")
-    print(f"  3. Click probabilities encode graph connectivity (hafnian-weighted)")
-    print(f"  4. Polynomial-time computation (vs exponential sampling)")
-    print(f"  5. Non-negativity of |A| ensures exact classical computation (Oh et al.)")
-    print(f"\n  This IS the dequantization (Step 4.1 from roadmap):")
-    print(f"  We extracted a purely classical kernel from the GBS formalism.")
-    print(f"  Following Ewin Tang's tradition of quantum → classical algorithm extraction.")
+    print("\n  Key conclusions:")
+    print("  1. Dequantized kernel matches sampling (r>0.999 at N=5000)")
+    print("  2. Higher order features (o2, o3) improve discrimination at larger d")
+    print("  3. Click probabilities encode graph connectivity (hafnian-weighted)")
+    print("  4. Polynomial-time computation (vs exponential sampling)")
+    print("  5. Non-negativity of |A| ensures exact classical computation (Oh et al.)")
+    print("\n  This IS the dequantization (Step 4.1 from roadmap):")
+    print("  We extracted a purely classical kernel from the GBS formalism.")
+    print("  Following Ewin Tang's tradition of quantum → classical algorithm extraction.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

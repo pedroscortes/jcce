@@ -13,15 +13,17 @@ Usage:
     A_init = cache.get(config)
 """
 
-import numpy as np
 import hashlib
 from dataclasses import dataclass
-from typing import Optional, Dict, List, Any
+from typing import Dict, Optional
+
+import numpy as np
 
 
 @dataclass
 class CacheEntry:
     """Single cache entry with metadata."""
+
     A_matrix: np.ndarray
     fitness: float
     generation: int
@@ -32,6 +34,7 @@ class CacheEntry:
     def to_jax(self):
         """Convert to JAX array for use in optimization."""
         import jax.numpy as jnp
+
         return jnp.array(self.A_matrix)
 
 
@@ -62,7 +65,7 @@ class ImprovedWarmStartCache:
         self.cache: Dict[str, CacheEntry] = {}
         self.max_size = max_size
         self.similarity_threshold = similarity_threshold
-        self.stats = {'hits': 0, 'misses': 0, 'evictions': 0, 'errors': 0}
+        self.stats = {"hits": 0, "misses": 0, "evictions": 0, "errors": 0}
         self.generation = 0
 
     def _config_to_hash(self, config: dict) -> str:
@@ -77,10 +80,16 @@ class ImprovedWarmStartCache:
         """
         # Extract and sort relevant keys
         relevant_keys = [
-            'processor_type', 'lambda_1_idx', 'lambda_2_idx',
-            'lr_idx', 'hidden_dim_idx', 'n_layers_idx',
-            'sl_lambda_1_idx', 'sl_lambda_2_idx', 'sl_lr_idx',
-            'processor_type_idx'
+            "processor_type",
+            "lambda_1_idx",
+            "lambda_2_idx",
+            "lr_idx",
+            "hidden_dim_idx",
+            "n_layers_idx",
+            "sl_lambda_1_idx",
+            "sl_lambda_2_idx",
+            "sl_lr_idx",
+            "processor_type_idx",
         ]
 
         hash_parts = []
@@ -88,7 +97,7 @@ class ImprovedWarmStartCache:
             if key in config:
                 # Convert value to string, handling both regular and JAX types
                 val = config[key]
-                if hasattr(val, 'item'):  # JAX/numpy scalar
+                if hasattr(val, "item"):  # JAX/numpy scalar
                     val = val.item()
                 hash_parts.append(f"{key}:{val}")
 
@@ -128,7 +137,7 @@ class ImprovedWarmStartCache:
         A_matrix,
         fitness: float,
         generation: int = None,
-        processor_type: str = 'unknown'
+        processor_type: str = "unknown",
     ) -> None:
         """
         Add structure to cache.
@@ -173,8 +182,8 @@ class ImprovedWarmStartCache:
             while len(self.cache) > self.max_size:
                 self._evict_worst()
 
-        except Exception as e:
-            self.stats['errors'] += 1
+        except Exception:
+            self.stats["errors"] += 1
             # Silently fail - cache is non-essential
 
     def get(self, config: dict) -> Optional[np.ndarray]:
@@ -194,18 +203,18 @@ class ImprovedWarmStartCache:
             if config_hash in self.cache:
                 entry = self.cache[config_hash]
                 entry.hit_count += 1
-                self.stats['hits'] += 1
+                self.stats["hits"] += 1
                 return entry.A_matrix.copy()
 
             # Find similar (same processor type, best fitness)
-            processor_type = config.get('processor_type', config.get('processor_type_idx', ''))
+            processor_type = config.get("processor_type", config.get("processor_type_idx", ""))
             if isinstance(processor_type, int):
                 # Map index to type name
-                type_map = {0: 'mlp', 1: 'transformer', 2: 'elm', 3: 'gnn', 4: 'mamba'}
-                processor_type = type_map.get(processor_type, '')
+                type_map = {0: "mlp", 1: "transformer", 2: "elm", 3: "gnn", 4: "mamba"}
+                processor_type = type_map.get(processor_type, "")
 
             best_entry = None
-            best_fitness = -float('inf')
+            best_fitness = -float("inf")
 
             for entry in self.cache.values():
                 if entry.processor_type == processor_type and entry.fitness > best_fitness:
@@ -214,7 +223,7 @@ class ImprovedWarmStartCache:
 
             if best_entry is not None:
                 best_entry.hit_count += 1
-                self.stats['hits'] += 1
+                self.stats["hits"] += 1
                 return best_entry.A_matrix.copy()
 
             # No match found - try any high-fitness structure
@@ -222,15 +231,15 @@ class ImprovedWarmStartCache:
                 best_entry = max(self.cache.values(), key=lambda e: e.fitness)
                 if best_entry.fitness > 0.6:  # Only use if reasonably good
                     best_entry.hit_count += 1
-                    self.stats['hits'] += 1
+                    self.stats["hits"] += 1
                     return best_entry.A_matrix.copy()
 
-            self.stats['misses'] += 1
+            self.stats["misses"] += 1
             return None
 
-        except Exception as e:
-            self.stats['errors'] += 1
-            self.stats['misses'] += 1
+        except Exception:
+            self.stats["errors"] += 1
+            self.stats["misses"] += 1
             return None
 
     def sample(self, rng_key=None) -> Optional[np.ndarray]:
@@ -262,18 +271,19 @@ class ImprovedWarmStartCache:
             # Randomly sample from top 20%
             if rng_key is not None:
                 import jax.random as random
+
                 idx = int(random.randint(rng_key, (), 0, len(top_entries)))
             else:
                 idx = np.random.randint(0, len(top_entries))
 
             entry = top_entries[idx]
             entry.hit_count += 1
-            self.stats['hits'] += 1
+            self.stats["hits"] += 1
 
             return entry.A_matrix.copy()
 
-        except Exception as e:
-            self.stats['errors'] += 1
+        except Exception:
+            self.stats["errors"] += 1
             return None
 
     def _evict_worst(self) -> None:
@@ -288,7 +298,7 @@ class ImprovedWarmStartCache:
 
         worst_key = min(self.cache.keys(), key=lambda k: eviction_score(self.cache[k]))
         del self.cache[worst_key]
-        self.stats['evictions'] += 1
+        self.stats["evictions"] += 1
 
     def next_generation(self):
         """Increment generation counter."""
@@ -299,28 +309,28 @@ class ImprovedWarmStartCache:
         if len(self.cache) == 0:
             return {
                 **self.stats,
-                'size': 0,
-                'best_fitness': 0.0,
-                'worst_fitness': 0.0,
-                'mean_fitness': 0.0,
-                'hit_rate': 0.0,
+                "size": 0,
+                "best_fitness": 0.0,
+                "worst_fitness": 0.0,
+                "mean_fitness": 0.0,
+                "hit_rate": 0.0,
             }
 
         fitnesses = [e.fitness for e in self.cache.values()]
-        total = self.stats['hits'] + self.stats['misses']
-        hit_rate = self.stats['hits'] / total if total > 0 else 0
+        total = self.stats["hits"] + self.stats["misses"]
+        hit_rate = self.stats["hits"] / total if total > 0 else 0
 
         return {
             **self.stats,
-            'size': len(self.cache),
-            'best_fitness': max(fitnesses),
-            'worst_fitness': min(fitnesses),
-            'mean_fitness': np.mean(fitnesses),
-            'hit_rate': hit_rate,
+            "size": len(self.cache),
+            "best_fitness": max(fitnesses),
+            "worst_fitness": min(fitnesses),
+            "mean_fitness": np.mean(fitnesses),
+            "hit_rate": hit_rate,
         }
 
     def clear(self):
         """Clear the cache."""
         self.cache.clear()
-        self.stats = {'hits': 0, 'misses': 0, 'evictions': 0, 'errors': 0}
+        self.stats = {"hits": 0, "misses": 0, "evictions": 0, "errors": 0}
         self.generation = 0

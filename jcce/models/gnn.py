@@ -9,10 +9,8 @@ This module implements GNN variants that respect the causal (DAG) structure:
 - CausalGINLayer: Graph Isomorphism Network (more expressive)
 """
 
-import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from typing import Optional
 
 
 class CausalGCNLayer(nn.Module):
@@ -29,12 +27,7 @@ class CausalGCNLayer(nn.Module):
     hidden_dim: int
 
     @nn.compact
-    def __call__(
-        self,
-        h: jnp.ndarray,
-        A: jnp.ndarray,
-        training: bool = True
-    ) -> jnp.ndarray:
+    def __call__(self, h: jnp.ndarray, A: jnp.ndarray, training: bool = True) -> jnp.ndarray:
         """
         GCN layer forward pass.
 
@@ -80,15 +73,10 @@ class CausalGraphSAGELayer(nn.Module):
     """
 
     hidden_dim: int
-    aggregation: str = 'mean'
+    aggregation: str = "mean"
 
     @nn.compact
-    def __call__(
-        self,
-        h: jnp.ndarray,
-        A: jnp.ndarray,
-        training: bool = True
-    ) -> jnp.ndarray:
+    def __call__(self, h: jnp.ndarray, A: jnp.ndarray, training: bool = True) -> jnp.ndarray:
         """
         GraphSAGE layer forward pass.
 
@@ -106,14 +94,16 @@ class CausalGraphSAGELayer(nn.Module):
         h_neighbors = nn.Dense(self.hidden_dim)(h)  # (B, N, D)
 
         # Aggregate messages from parents
-        if self.aggregation == 'mean':
+        if self.aggregation == "mean":
             # Mean aggregation (same as GCN without normalization by degree)
             degree = jnp.sum(A != 0, axis=1, keepdims=True)  # (N, 1)
             degree = jnp.maximum(degree, 1.0)  # (N, 1)
             # Add batch dimension for broadcasting: (N, 1) -> (1, N, 1)
             degree = degree[None, :, :]  # (1, N, 1)
-            h_agg = jnp.einsum("ij,bjd->bid", A, h_neighbors) / degree  # (B, N, D) / (1, N, 1) = (B, N, D)
-        elif self.aggregation == 'max':
+            h_agg = (
+                jnp.einsum("ij,bjd->bid", A, h_neighbors) / degree
+            )  # (B, N, D) / (1, N, 1) = (B, N, D)
+        elif self.aggregation == "max":
             # Max aggregation
             # For each node, take max over parent features
             # This requires masking non-parents with -inf
@@ -121,7 +111,7 @@ class CausalGraphSAGELayer(nn.Module):
             A_mask = (A != 0)[None, :, :, None]  # (1, N, N, 1)
             h_masked = jnp.where(A_mask, h_expanded, -1e9)  # (B, N, N, D)
             h_agg = jnp.max(h_masked, axis=2)  # (B, N, D)
-        elif self.aggregation == 'sum':
+        elif self.aggregation == "sum":
             # Sum aggregation
             h_agg = jnp.einsum("ij,bjd->bid", A, h_neighbors)  # (B, N, D)
         else:
@@ -155,12 +145,7 @@ class CausalGINLayer(nn.Module):
     epsilon_trainable: bool = True
 
     @nn.compact
-    def __call__(
-        self,
-        h: jnp.ndarray,
-        A: jnp.ndarray,
-        training: bool = True
-    ) -> jnp.ndarray:
+    def __call__(self, h: jnp.ndarray, A: jnp.ndarray, training: bool = True) -> jnp.ndarray:
         """
         GIN layer forward pass.
 
@@ -176,7 +161,7 @@ class CausalGINLayer(nn.Module):
 
         # Epsilon parameter (either trainable or fixed)
         if self.epsilon_trainable:
-            epsilon = self.param('epsilon', nn.initializers.zeros, (1,))
+            epsilon = self.param("epsilon", nn.initializers.zeros, (1,))
         else:
             epsilon = 0.0
 
@@ -212,12 +197,7 @@ class CausalGATLayer(nn.Module):
     dropout_rate: float = 0.0
 
     @nn.compact
-    def __call__(
-        self,
-        h: jnp.ndarray,
-        A: jnp.ndarray,
-        training: bool = True
-    ) -> jnp.ndarray:
+    def __call__(self, h: jnp.ndarray, A: jnp.ndarray, training: bool = True) -> jnp.ndarray:
         """
         Graph attention layer forward pass.
 
@@ -249,7 +229,7 @@ class CausalGATLayer(nn.Module):
 
         # Compute attention scores: Q @ K^T / sqrt(d_head)
         # (B, num_heads, N, d_head) @ (B, num_heads, d_head, N) → (B, num_heads, N, N)
-        scores = jnp.einsum('bhqd,bhkd->bhqk', Q, K) / jnp.sqrt(d_head)
+        scores = jnp.einsum("bhqd,bhkd->bhqk", Q, K) / jnp.sqrt(d_head)
 
         # Mask attention to only parent nodes (using adjacency matrix)
         # A[i,j] != 0 means j is parent of i
@@ -269,7 +249,7 @@ class CausalGATLayer(nn.Module):
 
         # Apply attention to values
         # (B, num_heads, N, N) @ (B, num_heads, N, d_head) → (B, num_heads, N, d_head)
-        h_attn = jnp.einsum('bhqk,bhkd->bhqd', attn_weights, V)
+        h_attn = jnp.einsum("bhqk,bhkd->bhqd", attn_weights, V)
 
         # Reshape back: (B, num_heads, N, d_head) → (B, N, D)
         h_attn = h_attn.transpose(0, 2, 1, 3).reshape(batch_size, num_nodes, self.hidden_dim)
@@ -306,21 +286,16 @@ class CausalGNN(nn.Module):
 
     hidden_dim: int = 32
     n_layers: int = 2
-    layer_type: str = 'gat'  # 'gcn', 'gat', 'graphsage', 'gin'
+    layer_type: str = "gat"  # 'gcn', 'gat', 'graphsage', 'gin'
     num_heads: int = 4
-    sage_aggregation: str = 'mean'
-    aggregation: str = 'last'  # 'last', 'concat', 'sum'
+    sage_aggregation: str = "mean"
+    aggregation: str = "last"  # 'last', 'concat', 'sum'
 
     # Legacy support
     use_attention: bool = True  # Ignored if layer_type is specified
 
     @nn.compact
-    def __call__(
-        self,
-        z: jnp.ndarray,
-        A: jnp.ndarray,
-        training: bool = True
-    ) -> jnp.ndarray:
+    def __call__(self, z: jnp.ndarray, A: jnp.ndarray, training: bool = True) -> jnp.ndarray:
         """
         Process latent factors using causal graph structure.
 
@@ -374,40 +349,34 @@ class CausalGNN(nn.Module):
             h_prev = h
 
             # Select GNN layer type
-            if self.layer_type == 'gcn':
+            if self.layer_type == "gcn":
                 # Graph Convolutional Network
-                h_msg = CausalGCNLayer(
-                    hidden_dim=self.hidden_dim
-                )(h, A, training=training)
+                h_msg = CausalGCNLayer(hidden_dim=self.hidden_dim)(h, A, training=training)
 
-            elif self.layer_type == 'gat':
+            elif self.layer_type == "gat":
                 # Graph Attention Network
                 h_msg = CausalGATLayer(
-                    hidden_dim=self.hidden_dim,
-                    num_heads=self.num_heads,
-                    dropout_rate=0.0
+                    hidden_dim=self.hidden_dim, num_heads=self.num_heads, dropout_rate=0.0
                 )(h, A, training=training)
 
-            elif self.layer_type == 'graphsage':
+            elif self.layer_type == "graphsage":
                 # GraphSAGE
                 h_msg = CausalGraphSAGELayer(
-                    hidden_dim=self.hidden_dim,
-                    aggregation=self.sage_aggregation
+                    hidden_dim=self.hidden_dim, aggregation=self.sage_aggregation
                 )(h, A, training=training)
 
-            elif self.layer_type == 'gin':
+            elif self.layer_type == "gin":
                 # Graph Isomorphism Network
-                h_msg = CausalGINLayer(
-                    hidden_dim=self.hidden_dim,
-                    epsilon_trainable=True
-                )(h, A, training=training)
+                h_msg = CausalGINLayer(hidden_dim=self.hidden_dim, epsilon_trainable=True)(
+                    h, A, training=training
+                )
 
             else:
                 raise ValueError(f"Unknown layer_type: {self.layer_type}")
 
             # For GIN and GraphSAGE, the output is already processed
             # For GCN and GAT, add residual and MLP
-            if self.layer_type in ['gin', 'graphsage']:
+            if self.layer_type in ["gin", "graphsage"]:
                 # These layers already include feature transformation
                 h = h_msg
                 h = nn.LayerNorm()(h)
@@ -429,13 +398,13 @@ class CausalGNN(nn.Module):
             layer_outputs.append(h)
 
         # Aggregate across layers
-        if self.aggregation == 'last':
+        if self.aggregation == "last":
             h_out = layer_outputs[-1]
-        elif self.aggregation == 'concat':
+        elif self.aggregation == "concat":
             # Concatenate all layers and project
             h_concat = jnp.concatenate(layer_outputs, axis=-1)  # (B, N, D * n_layers)
             h_out = nn.Dense(self.hidden_dim)(h_concat)
-        elif self.aggregation == 'sum':
+        elif self.aggregation == "sum":
             h_out = sum(layer_outputs)
         else:
             raise ValueError(f"Unknown aggregation: {self.aggregation}")
@@ -462,12 +431,7 @@ class CausalGNNProcessor(nn.Module):
     num_heads: int = 4
 
     @nn.compact
-    def __call__(
-        self,
-        z: jnp.ndarray,
-        A: jnp.ndarray,
-        training: bool = True
-    ) -> jnp.ndarray:
+    def __call__(self, z: jnp.ndarray, A: jnp.ndarray, training: bool = True) -> jnp.ndarray:
         """
         Process latent factors with GNN.
 
@@ -483,5 +447,5 @@ class CausalGNNProcessor(nn.Module):
             hidden_dim=self.hidden_dim,
             n_layers=self.n_layers,
             use_attention=self.use_attention,
-            num_heads=self.num_heads
+            num_heads=self.num_heads,
         )(z, A, training=training)

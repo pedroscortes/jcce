@@ -36,19 +36,16 @@ Algorithm Steps:
     4. Apply FCI orientation rules R1-R4, R8-R10 (Zhang 2008)
 """
 
-import jax
-import jax.numpy as jnp
-from jax import random
-from typing import Optional, Tuple, Set, Dict, List
 from itertools import combinations
+from typing import Dict, List, Optional, Set, Tuple
+
+import jax.numpy as jnp
 import numpy as np
+from jax import random
 
 from jcce.structure_learning.pc import (
-    partial_correlation_jax,
-    fisher_z_test,
     conditional_independence_test,
 )
-
 
 # PAG edge marks
 NONE = 0
@@ -57,12 +54,13 @@ ARROW = 2
 TAIL = 3
 
 # Human-readable labels
-_MARK_NAMES = {NONE: ' ', CIRCLE: 'o', ARROW: '>', TAIL: '-'}
+_MARK_NAMES = {NONE: " ", CIRCLE: "o", ARROW: ">", TAIL: "-"}
 
 
 # ============================================================================
 # Phase 1: Skeleton Learning (same as PC)
 # ============================================================================
+
 
 def _learn_skeleton(
     data: jnp.ndarray,
@@ -96,10 +94,7 @@ def _learn_skeleton(
                 if skeleton[i, j] == 0:
                     continue
 
-                neighbors_i = [
-                    k for k in range(n_vars)
-                    if skeleton[i, k] == 1 and k != j
-                ]
+                neighbors_i = [k for k in range(n_vars) if skeleton[i, k] == 1 and k != j]
 
                 if len(neighbors_i) < cond_size:
                     continue
@@ -124,6 +119,7 @@ def _learn_skeleton(
 # ============================================================================
 # Phase 2: Possible D-Sep
 # ============================================================================
+
 
 def _get_neighbors(skeleton: np.ndarray, node: int) -> List[int]:
     """Get neighbors of node in the skeleton."""
@@ -280,6 +276,7 @@ def _possible_dsep_phase(
 # Phase 3: Orient V-Structures (PAG encoding)
 # ============================================================================
 
+
 def _orient_v_structures_pag(
     skeleton: np.ndarray,
     sepsets: dict,
@@ -346,6 +343,7 @@ def _orient_v_structures_pag(
 # Phase 4: FCI Orientation Rules (Zhang 2008)
 # ============================================================================
 
+
 def _has_edge(pag: np.ndarray, i: int, j: int) -> bool:
     """Check if any edge exists between i and j."""
     return pag[i, j] != NONE or pag[j, i] != NONE
@@ -407,15 +405,9 @@ def _rule_r2(pag: np.ndarray, n: int) -> bool:
                 if b == a or b == c:
                     continue
                 # Sub-case 1: a -> b *-> c
-                case1 = (
-                    pag[a, b] == ARROW and pag[b, a] == TAIL and
-                    pag[b, c] == ARROW
-                )
+                case1 = pag[a, b] == ARROW and pag[b, a] == TAIL and pag[b, c] == ARROW
                 # Sub-case 2: a *-> b -> c
-                case2 = (
-                    pag[a, b] == ARROW and
-                    pag[b, c] == ARROW and pag[c, b] == TAIL
-                )
+                case2 = pag[a, b] == ARROW and pag[b, c] == ARROW and pag[c, b] == TAIL
                 if case1 or case2:
                     pag[a, c] = ARROW
                     changed = True
@@ -447,9 +439,7 @@ def _rule_r3(pag: np.ndarray, n: int) -> bool:
                 continue
 
             # Find pairs (a, c) that both have arrows into b
-            arrows_into_b = [
-                v for v in range(n) if v != b and v != d and pag[v, b] == ARROW
-            ]
+            arrows_into_b = [v for v in range(n) if v != b and v != d and pag[v, b] == ARROW]
 
             for idx_a in range(len(arrows_into_b)):
                 for idx_c in range(idx_a + 1, len(arrows_into_b)):
@@ -738,7 +728,8 @@ def _rule_r10(pag: np.ndarray, n: int) -> bool:
 
             # Find b, d with b -> c and d -> c
             parents_of_c = [
-                v for v in range(n)
+                v
+                for v in range(n)
                 if v != c and v != a and pag[v, c] == ARROW and pag[c, v] == TAIL
             ]
 
@@ -761,7 +752,7 @@ def _rule_r10(pag: np.ndarray, n: int) -> bool:
                     if path_ad is None or len(path_ad) < 3:
                         continue
 
-                    mu = path_ab[-2]     # node before b on path a->b
+                    mu = path_ab[-2]  # node before b on path a->b
                     omega = path_ad[-2]  # node before d on path a->d
 
                     if mu != omega and not _has_edge(pag, mu, omega):
@@ -810,6 +801,7 @@ def _apply_fci_rules(
 # Initial V-Structure PDAG (for Possible D-Sep computation)
 # ============================================================================
 
+
 def _initial_v_structure_pdag(
     skeleton: np.ndarray,
     sepsets: dict,
@@ -842,6 +834,7 @@ def _initial_v_structure_pdag(
 # ============================================================================
 # Main FCI Algorithm
 # ============================================================================
+
 
 def learn_with_fci(
     data: jnp.ndarray,
@@ -889,26 +882,22 @@ def learn_with_fci(
              extract_markov_blanket_pag() to get the MB directly.
     """
     if verbose:
-        print(f"\n{'='*60}")
-        print(f"FCI ALGORITHM (Fast Causal Inference)")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("FCI ALGORITHM (Fast Causal Inference)")
+        print(f"{'=' * 60}")
         n_samples, n_vars = data.shape
         print(f"Data: {n_samples} samples, {n_vars} variables")
-        print(f"Alpha: {alpha}, max_cond: {max_cond_size}, "
-              f"max_cond_dsep: {max_cond_size_dsep}")
+        print(f"Alpha: {alpha}, max_cond: {max_cond_size}, max_cond_dsep: {max_cond_size_dsep}")
 
     # Phase 1: Skeleton learning
-    skeleton, sepsets = _learn_skeleton(
-        data, alpha, max_cond_size, verbose
-    )
+    skeleton, sepsets = _learn_skeleton(data, alpha, max_cond_size, verbose)
 
     # Initial v-structure orientation (for PDS computation only)
     initial_pdag = _initial_v_structure_pdag(skeleton, sepsets)
 
     # Phase 2: Possible D-Sep — remove additional edges
     skeleton, sepsets = _possible_dsep_phase(
-        data, skeleton, sepsets, initial_pdag,
-        alpha, max_cond_size_dsep, max_pds_size, verbose
+        data, skeleton, sepsets, initial_pdag, alpha, max_cond_size_dsep, max_pds_size, verbose
     )
 
     # Phase 3: Orient v-structures on the thinned skeleton (PAG encoding)
@@ -919,13 +908,13 @@ def learn_with_fci(
 
     if verbose:
         stats = summarize_pag(pag)
-        print(f"\n  PAG Summary:")
+        print("\n  PAG Summary:")
         print(f"    Directed (->):        {stats['n_directed']}")
         print(f"    Bidirected (<->):      {stats['n_bidirected']}")
         print(f"    Partially oriented (o->): {stats['n_partially_oriented']}")
         print(f"    Unoriented (o-o):      {stats['n_unoriented']}")
         print(f"    Total edges:           {stats['n_total_edges']}")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     return pag
 
@@ -933,6 +922,7 @@ def learn_with_fci(
 # ============================================================================
 # PAG Utilities
 # ============================================================================
+
 
 def summarize_pag(pag: np.ndarray) -> dict:
     """
@@ -963,13 +953,11 @@ def summarize_pag(pag: np.ndarray) -> dict:
                 n_unoriented += 1
 
     return {
-        'n_directed': n_directed,
-        'n_bidirected': n_bidirected,
-        'n_partially_oriented': n_partially_oriented,
-        'n_unoriented': n_unoriented,
-        'n_total_edges': (
-            n_directed + n_bidirected + n_partially_oriented + n_unoriented
-        ),
+        "n_directed": n_directed,
+        "n_bidirected": n_bidirected,
+        "n_partially_oriented": n_partially_oriented,
+        "n_unoriented": n_unoriented,
+        "n_total_edges": (n_directed + n_bidirected + n_partially_oriented + n_unoriented),
     }
 
 
@@ -1108,7 +1096,7 @@ def extract_markov_blanket_pag(
         if v == target:
             continue
         mark_at_target = pag_np[v, target]  # mark at target on v-target edge
-        mark_at_v = pag_np[target, v]       # mark at v on target-v edge
+        mark_at_v = pag_np[target, v]  # mark at v on target-v edge
 
         if mark_at_target == NONE and mark_at_v == NONE:
             continue
@@ -1147,15 +1135,11 @@ def extract_markov_blanket_pag(
             mark_at_v_from_child = pag_np[child, v]
 
             # v -> child (definite parent)
-            is_parent = (mark_at_child == ARROW and mark_at_v_from_child == TAIL)
+            is_parent = mark_at_child == ARROW and mark_at_v_from_child == TAIL
             # v o-> child (possible parent)
-            is_possible_parent = (
-                mark_at_child == ARROW and mark_at_v_from_child == CIRCLE
-            )
+            is_possible_parent = mark_at_child == ARROW and mark_at_v_from_child == CIRCLE
             # v <-> child (bidirected)
-            is_bidirected = (
-                mark_at_child == ARROW and mark_at_v_from_child == ARROW
-            )
+            is_bidirected = mark_at_child == ARROW and mark_at_v_from_child == ARROW
 
             if is_parent or (include_possible and is_possible_parent) or is_bidirected:
                 if v not in definite_parents and v not in possible_parents:
@@ -1174,14 +1158,14 @@ def extract_markov_blanket_pag(
     mb_all = sorted(mb_set)
 
     return {
-        'definite_parents': sorted(definite_parents),
-        'definite_children': sorted(definite_children),
-        'possible_parents': sorted(possible_parents),
-        'possible_children': sorted(possible_children),
-        'spouses': sorted(spouses),
-        'bidirected': sorted(bidirected),
-        'mb_all': mb_all,
-        'mb_size': len(mb_all),
+        "definite_parents": sorted(definite_parents),
+        "definite_children": sorted(definite_children),
+        "possible_parents": sorted(possible_parents),
+        "possible_children": sorted(possible_children),
+        "spouses": sorted(spouses),
+        "bidirected": sorted(bidirected),
+        "mb_all": mb_all,
+        "mb_size": len(mb_all),
     }
 
 
@@ -1200,15 +1184,15 @@ def print_pag(pag: np.ndarray, var_names: Optional[List[str]] = None):
         var_names = [f"X{i}" for i in range(n)]
 
     edge_symbols = {
-        (ARROW, TAIL):   '-->',
-        (TAIL, ARROW):   '<--',
-        (ARROW, ARROW):  '<->',
-        (ARROW, CIRCLE): 'o->',
-        (CIRCLE, ARROW): '<-o',
-        (CIRCLE, CIRCLE): 'o-o',
-        (TAIL, CIRCLE):  '--o',
-        (CIRCLE, TAIL):  'o--',
-        (TAIL, TAIL):    '---',
+        (ARROW, TAIL): "-->",
+        (TAIL, ARROW): "<--",
+        (ARROW, ARROW): "<->",
+        (ARROW, CIRCLE): "o->",
+        (CIRCLE, ARROW): "<-o",
+        (CIRCLE, CIRCLE): "o-o",
+        (TAIL, CIRCLE): "--o",
+        (CIRCLE, TAIL): "o--",
+        (TAIL, TAIL): "---",
     }
 
     print("PAG edges:")
@@ -1219,9 +1203,9 @@ def print_pag(pag: np.ndarray, var_names: Optional[List[str]] = None):
             mi = pag_np[i, j]  # mark at j
             mj = pag_np[j, i]  # mark at i
 
-            symbol = edge_symbols.get((mi, mj), '???')
+            symbol = edge_symbols.get((mi, mj), "???")
             # Flip symbol direction for display: show mark_at_i --- mark_at_j
             # pag[j,i] = mark at i, pag[i,j] = mark at j
-            left_mark = _MARK_NAMES.get(mj, '?')
-            right_mark = _MARK_NAMES.get(mi, '?')
+            left_mark = _MARK_NAMES.get(mj, "?")
+            right_mark = _MARK_NAMES.get(mi, "?")
             print(f"  {var_names[i]} {left_mark}--{right_mark} {var_names[j]}")

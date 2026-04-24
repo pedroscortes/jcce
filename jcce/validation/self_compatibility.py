@@ -17,11 +17,12 @@ Usage:
     )
 """
 
-import numpy as np
 import time
 import warnings
-from typing import Dict, List, Optional, Callable, Any, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
+
+import numpy as np
 
 
 @dataclass
@@ -29,18 +30,18 @@ class SelfCompatibilityResult:
     """Result of self-compatibility analysis."""
 
     # Core result
-    compatibility_score: float      # Fraction of resamples recovering the DAG
-    n_resamples: int                # Number of resample iterations completed
-    n_compatible: int               # Number of resamples where DAG was recovered
+    compatibility_score: float  # Fraction of resamples recovering the DAG
+    n_resamples: int  # Number of resample iterations completed
+    n_compatible: int  # Number of resamples where DAG was recovered
 
     # Per-resample metrics
-    per_resample: List[Dict]        # Per-resample F1, SHD, etc.
+    per_resample: List[Dict]  # Per-resample F1, SHD, etc.
 
     # Aggregate
-    mean_f1: float                  # Mean F1(A_relearned, A_original) across resamples
+    mean_f1: float  # Mean F1(A_relearned, A_original) across resamples
     std_f1: float
     mean_shd: float
-    edge_recovery_rate: float       # Fraction of edges recovered on average
+    edge_recovery_rate: float  # Fraction of edges recovered on average
 
     # Timing
     total_time: float
@@ -55,8 +56,7 @@ class SelfCompatibilityResult:
             "SELF-COMPATIBILITY CHECK",
             "=" * 60,
             f"Resamples: {self.n_resamples}",
-            f"Compatible: {self.n_compatible}/{self.n_resamples} "
-            f"({self.compatibility_score:.1%})",
+            f"Compatible: {self.n_compatible}/{self.n_resamples} ({self.compatibility_score:.1%})",
             f"Mean F1(relearned, original): {self.mean_f1:.3f} ± {self.std_f1:.3f}",
             f"Mean SHD: {self.mean_shd:.1f}",
             f"Edge recovery rate: {self.edge_recovery_rate:.1%}",
@@ -68,22 +68,23 @@ class SelfCompatibilityResult:
 
     def to_dict(self) -> Dict:
         return {
-            'compatibility_score': self.compatibility_score,
-            'n_resamples': self.n_resamples,
-            'n_compatible': self.n_compatible,
-            'mean_f1': self.mean_f1,
-            'std_f1': self.std_f1,
-            'mean_shd': self.mean_shd,
-            'edge_recovery_rate': self.edge_recovery_rate,
-            'is_self_compatible': self.is_self_compatible(),
-            'total_time': self.total_time,
-            'per_resample': self.per_resample,
+            "compatibility_score": self.compatibility_score,
+            "n_resamples": self.n_resamples,
+            "n_compatible": self.n_compatible,
+            "mean_f1": self.mean_f1,
+            "std_f1": self.std_f1,
+            "mean_shd": self.mean_shd,
+            "edge_recovery_rate": self.edge_recovery_rate,
+            "is_self_compatible": self.is_self_compatible(),
+            "total_time": self.total_time,
+            "per_resample": self.per_resample,
         }
 
 
 # ============================================================================
 # SCM Fitting
 # ============================================================================
+
 
 def fit_linear_scm(
     data: np.ndarray,
@@ -131,8 +132,8 @@ def fit_linear_scm(
         noise_std[i] = max(np.std(residuals), 1e-6)
 
     return {
-        'A_fitted': A_fitted,
-        'noise_std': noise_std,
+        "A_fitted": A_fitted,
+        "noise_std": noise_std,
     }
 
 
@@ -152,8 +153,8 @@ def sample_from_fitted_scm(
     Returns:
         X: (n_samples, d) synthetic data
     """
-    A = scm_params['A_fitted']
-    noise_std = scm_params['noise_std']
+    A = scm_params["A_fitted"]
+    noise_std = scm_params["noise_std"]
     d = A.shape[0]
 
     rng = np.random.RandomState(seed)
@@ -207,6 +208,7 @@ def _topological_sort_numpy(A: np.ndarray) -> List[int]:
 # Self-Compatibility Check
 # ============================================================================
 
+
 def self_compatibility_check(
     data: np.ndarray,
     A_learned: np.ndarray,
@@ -256,9 +258,11 @@ def self_compatibility_check(
 
     if verbose:
         n_edges = int(np.sum(np.abs(A_learned) > edge_threshold))
-        print(f"Fitted linear SCM: {n_edges} edges, "
-              f"noise_std range [{scm_params['noise_std'].min():.3f}, "
-              f"{scm_params['noise_std'].max():.3f}]")
+        print(
+            f"Fitted linear SCM: {n_edges} edges, "
+            f"noise_std range [{scm_params['noise_std'].min():.3f}, "
+            f"{scm_params['noise_std'].max():.3f}]"
+        )
 
     # Reference: binarized A_learned
     A_ref = (np.abs(A_learned) > edge_threshold).astype(float)
@@ -281,12 +285,18 @@ def self_compatibility_check(
             A_relearned = np.array(A_relearned)
         except Exception as e:
             warnings.warn(f"Self-compat resample {m} failed: {e}")
-            per_resample.append({
-                'resample': m,
-                'f1': 0.0, 'shd': d * d, 'precision': 0.0, 'recall': 0.0,
-                'compatible': False, 'time': time.time() - t0,
-                'error': str(e),
-            })
+            per_resample.append(
+                {
+                    "resample": m,
+                    "f1": 0.0,
+                    "shd": d * d,
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "compatible": False,
+                    "time": time.time() - t0,
+                    "error": str(e),
+                }
+            )
             continue
 
         # 2c. Compare to original
@@ -306,28 +316,32 @@ def self_compatibility_check(
         if compatible:
             n_compatible += 1
 
-        per_resample.append({
-            'resample': m,
-            'f1': float(f1),
-            'shd': shd,
-            'precision': float(precision),
-            'recall': float(recall),
-            'compatible': compatible,
-            'time': time.time() - t0,
-            'n_edges_relearned': int(np.sum(A_pred)),
-        })
+        per_resample.append(
+            {
+                "resample": m,
+                "f1": float(f1),
+                "shd": shd,
+                "precision": float(precision),
+                "recall": float(recall),
+                "compatible": compatible,
+                "time": time.time() - t0,
+                "n_edges_relearned": int(np.sum(A_pred)),
+            }
+        )
 
         if verbose:
-            print(f"  Resample {m+1}/{n_resamples}: F1={f1:.3f} SHD={shd} "
-                  f"{'COMPAT' if compatible else 'INCOMPAT'} ({per_resample[-1]['time']:.1f}s)")
+            print(
+                f"  Resample {m + 1}/{n_resamples}: F1={f1:.3f} SHD={shd} "
+                f"{'COMPAT' if compatible else 'INCOMPAT'} ({per_resample[-1]['time']:.1f}s)"
+            )
 
     total_time = time.time() - total_start
-    n_completed = len([r for r in per_resample if 'error' not in r])
+    n_completed = len([r for r in per_resample if "error" not in r])
 
     # Aggregates
-    f1s = [r['f1'] for r in per_resample if 'error' not in r]
-    shds = [r['shd'] for r in per_resample if 'error' not in r]
-    recalls = [r['recall'] for r in per_resample if 'error' not in r]
+    f1s = [r["f1"] for r in per_resample if "error" not in r]
+    shds = [r["shd"] for r in per_resample if "error" not in r]
+    recalls = [r["recall"] for r in per_resample if "error" not in r]
 
     result = SelfCompatibilityResult(
         compatibility_score=n_compatible / max(n_completed, 1),

@@ -33,16 +33,16 @@ This implementation uses:
     - Linear regression via lstsq
 """
 
-import jax
-import jax.numpy as jnp
-from jax import random, jit, vmap
 from typing import Optional, Tuple
-import numpy as np
 
+import jax.numpy as jnp
+import numpy as np
+from jax import jit, random
 
 # ============================================================================
 # Kernel-based Independence Measure (HSIC)
 # ============================================================================
+
 
 @jit
 def rbf_kernel(X: jnp.ndarray, Y: jnp.ndarray, sigma: float = 1.0) -> jnp.ndarray:
@@ -57,11 +57,11 @@ def rbf_kernel(X: jnp.ndarray, Y: jnp.ndarray, sigma: float = 1.0) -> jnp.ndarra
     Returns:
         K: (n, m) kernel matrix
     """
-    X_sq = jnp.sum(X ** 2, axis=1, keepdims=True)
-    Y_sq = jnp.sum(Y ** 2, axis=1, keepdims=True)
+    X_sq = jnp.sum(X**2, axis=1, keepdims=True)
+    Y_sq = jnp.sum(Y**2, axis=1, keepdims=True)
     XY = X @ Y.T
     sq_dists = X_sq + Y_sq.T - 2 * XY
-    K = jnp.exp(-sq_dists / (2 * sigma ** 2))
+    K = jnp.exp(-sq_dists / (2 * sigma**2))
     return K
 
 
@@ -94,7 +94,7 @@ def hsic_statistic(X: jnp.ndarray, Y: jnp.ndarray, sigma: float = 1.0) -> float:
 
     H = jnp.eye(n) - jnp.ones((n, n)) / n
     KHLH = K @ H @ L @ H
-    hsic = jnp.trace(KHLH) / (n ** 2)
+    hsic = jnp.trace(KHLH) / (n**2)
 
     return hsic
 
@@ -102,6 +102,7 @@ def hsic_statistic(X: jnp.ndarray, Y: jnp.ndarray, sigma: float = 1.0) -> float:
 # ============================================================================
 # Causal Order Estimation (with iterative residualization)
 # ============================================================================
+
 
 def _compute_residuals(
     data: jnp.ndarray,
@@ -117,11 +118,7 @@ def _compute_residuals(
     return y - X_design @ beta
 
 
-def estimate_causal_order(
-    data: jnp.ndarray,
-    sigma: float = 1.0,
-    verbose: bool = False
-) -> list:
+def estimate_causal_order(data: jnp.ndarray, sigma: float = 1.0, verbose: bool = False) -> list:
     """
     Estimate causal ordering using iterative residualization (DirectLiNGAM).
 
@@ -156,7 +153,7 @@ def estimate_causal_order(
     work_data = jnp.array(data)
 
     if verbose:
-        print(f"  Estimating causal order (iterative residualization)...")
+        print("  Estimating causal order (iterative residualization)...")
 
     for step in range(n_vars):
         n_remaining = len(remaining)
@@ -167,9 +164,9 @@ def estimate_causal_order(
 
         # For each remaining variable, compute total HSIC with all others
         # Lower total HSIC = more independent of others = more exogenous
-        best_score = float('inf')
+        best_score = float("inf")
         best_idx = None  # index into remaining list
-        best_var = None   # original variable index
+        best_var = None  # original variable index
 
         for local_idx in range(n_remaining):
             total_hsic = 0.0
@@ -189,8 +186,9 @@ def estimate_causal_order(
         causal_order.append(best_var)
 
         if verbose and step < 5:
-            print(f"    Step {step+1}: Selected variable {best_var} "
-                  f"(total_hsic={best_score:.4f})")
+            print(
+                f"    Step {step + 1}: Selected variable {best_var} (total_hsic={best_score:.4f})"
+            )
 
         # Residualize: regress all remaining variables on the selected root
         # and replace with residuals
@@ -220,11 +218,10 @@ def estimate_causal_order(
 # DirectLiNGAM Algorithm
 # ============================================================================
 
+
 @jit
 def linear_regression_coefficients(
-    data: jnp.ndarray,
-    target_idx: int,
-    predictor_indices: jnp.ndarray
+    data: jnp.ndarray, target_idx: int, predictor_indices: jnp.ndarray
 ) -> jnp.ndarray:
     """
     Compute linear regression coefficients.
@@ -287,9 +284,9 @@ def learn_with_directlingam(
     n_samples, n_vars = data_np.shape
 
     if verbose:
-        print(f"\n{'='*60}")
-        print(f"DIRECTLINGAM ALGORITHM")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("DIRECTLINGAM ALGORITHM")
+        print(f"{'=' * 60}")
         print(f"Data: {n_samples} samples, {n_vars} variables")
 
     # Step 1: Estimate causal ordering
@@ -299,7 +296,7 @@ def learn_with_directlingam(
     A = np.zeros((n_vars, n_vars))
 
     if verbose:
-        print(f"\n  Regression phase...")
+        print("\n  Regression phase...")
 
     for idx, var in enumerate(causal_order):
         if idx == 0:
@@ -308,16 +305,16 @@ def learn_with_directlingam(
         predecessors = causal_order[:idx]
         predecessors_arr = jnp.array(predecessors, dtype=jnp.int32)
 
-        coefficients = linear_regression_coefficients(
-            jnp.array(data_np), var, predecessors_arr
-        )
+        coefficients = linear_regression_coefficients(jnp.array(data_np), var, predecessors_arr)
 
         for i, pred_var in enumerate(predecessors):
             A[pred_var, var] = float(coefficients[i])
 
         if verbose and idx <= 3:
-            print(f"    Variable {var}: {len(predecessors)} parents, "
-                  f"avg coef = {np.mean(np.abs(coefficients)):.3f}")
+            print(
+                f"    Variable {var}: {len(predecessors)} parents, "
+                f"avg coef = {np.mean(np.abs(coefficients)):.3f}"
+            )
 
     # Step 3: Prune weak edges
     edge_weights = np.abs(A[A != 0])
@@ -338,16 +335,16 @@ def learn_with_directlingam(
             print(f"    Edges after: {int(np.sum(np.abs(A) > 0))}")
     else:
         if verbose:
-            print(f"\n  No edges found!")
+            print("\n  No edges found!")
 
     # Convert to binary adjacency (0/1)
     A_binary = (np.abs(A) > 1e-6).astype(np.float32)
 
     if verbose:
         n_edges = int(np.sum(A_binary))
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"DIRECTLINGAM FINAL: {n_edges} edges")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     A_jax = jnp.array(A_binary)
     return A_jax
@@ -367,16 +364,16 @@ def learn_with_directlingam_weighted(
     """
     data_np = np.array(data)
     n_samples, n_vars = data_np.shape
-    verbose = kwargs.get('verbose', False)
-    sigma = kwargs.get('sigma', 1.0)
-    prune_threshold = kwargs.get('prune_threshold', 0.7)
-    A_prior = kwargs.get('A_prior', None)
-    lambda_prior = kwargs.get('lambda_prior', 0.1)
+    verbose = kwargs.get("verbose", False)
+    sigma = kwargs.get("sigma", 1.0)
+    prune_threshold = kwargs.get("prune_threshold", 0.7)
+    A_prior = kwargs.get("A_prior", None)
+    lambda_prior = kwargs.get("lambda_prior", 0.1)
 
     if verbose:
-        print(f"\n{'='*60}")
-        print(f"DIRECTLINGAM ALGORITHM (weighted)")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("DIRECTLINGAM ALGORITHM (weighted)")
+        print(f"{'=' * 60}")
         print(f"Data: {n_samples} samples, {n_vars} variables")
 
     causal_order = estimate_causal_order(jnp.array(data_np), sigma, verbose)
@@ -384,22 +381,22 @@ def learn_with_directlingam_weighted(
     A = np.zeros((n_vars, n_vars))
 
     if verbose:
-        print(f"\n  Regression phase...")
+        print("\n  Regression phase...")
 
     for idx, var in enumerate(causal_order):
         if idx == 0:
             continue
         predecessors = causal_order[:idx]
         predecessors_arr = jnp.array(predecessors, dtype=jnp.int32)
-        coefficients = linear_regression_coefficients(
-            jnp.array(data_np), var, predecessors_arr
-        )
+        coefficients = linear_regression_coefficients(jnp.array(data_np), var, predecessors_arr)
         for i, pred_var in enumerate(predecessors):
             A[pred_var, var] = float(coefficients[i])
 
         if verbose and idx <= 3:
-            print(f"    Variable {var}: {len(predecessors)} parents, "
-                  f"avg coef = {np.mean(np.abs(coefficients)):.3f}")
+            print(
+                f"    Variable {var}: {len(predecessors)} parents, "
+                f"avg coef = {np.mean(np.abs(coefficients)):.3f}"
+            )
 
     # Prune
     edge_weights = np.abs(A[A != 0])
@@ -417,8 +414,8 @@ def learn_with_directlingam_weighted(
 
     if verbose:
         n_edges = int(jnp.sum(A_binary))
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"DIRECTLINGAM FINAL: {n_edges} edges")
-        print(f"{'='*60}\n")
+        print(f"{'=' * 60}\n")
 
     return A_binary, A_weights

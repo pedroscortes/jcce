@@ -6,13 +6,14 @@ Solution (Hwang & Yoon, 1981). Used to select the "best" Pareto solution
 when multiple competing objectives exist.
 """
 
-import numpy as np
 from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 
 
 def topsis_rank(
     solutions: List[Dict],
-    criteria: List[str] = ('balanced_accuracy', 'mb_sparsity'),
+    criteria: List[str] = ("balanced_accuracy", "mb_sparsity"),
     weights: Optional[List[float]] = None,
     beneficial: Optional[List[bool]] = None,
 ) -> Tuple[List[int], np.ndarray]:
@@ -57,12 +58,12 @@ def topsis_rank(
     # Build decision matrix (n solutions × m criteria)
     D = np.zeros((n, m))
     for i, sol in enumerate(solutions):
-        metrics = sol.get('metrics', sol)
+        metrics = sol.get("metrics", sol)
         for j, crit in enumerate(criteria):
             D[i, j] = float(metrics.get(crit, 0.0))
 
     # Vector normalization: x_ij / sqrt(sum_i x_ij^2)
-    norms = np.sqrt(np.sum(D ** 2, axis=0))
+    norms = np.sqrt(np.sum(D**2, axis=0))
     norms = np.where(norms == 0, 1.0, norms)  # avoid div-by-zero
     R = D / norms
 

@@ -18,15 +18,17 @@ References:
 - Deb et al. (2002) "NSGA-II: A Fast and Elitist Multi-Objective GA"
 """
 
-import numpy as np
-from typing import Dict, List, Optional, Callable, Any, Tuple
-from dataclasses import dataclass, field
 import warnings
+from dataclasses import dataclass, field
+from typing import Callable, Dict, List, Optional, Tuple
+
+import numpy as np
 
 
 @dataclass
 class PostHocValidationResult:
     """Complete result of post-hoc validation pipeline."""
+
     # Random Common Cause
     rcc_passed: bool
     rcc_effect_change: float
@@ -58,24 +60,24 @@ class PostHocValidationResult:
 
     def to_dict(self) -> Dict:
         result = {
-            'rcc_passed': self.rcc_passed,
-            'rcc_effect_change': self.rcc_effect_change,
-            'rcc_details': self.rcc_details,
-            'k10_variance': self.k10_variance,
-            'k10_ate': self.k10_ate,
-            'k10_fold_estimates': self.k10_fold_estimates,
-            'hypervolume': self.hypervolume,
-            'pareto_diversity': self.pareto_diversity,
-            'ensemble_ate': self.ensemble_ate,
-            'ensemble_variance': self.ensemble_variance,
-            'structural_uncertainty': self.structural_uncertainty,
-            'validation_passed': self.validation_passed,
-            'summary_metrics': self.summary_metrics,
+            "rcc_passed": self.rcc_passed,
+            "rcc_effect_change": self.rcc_effect_change,
+            "rcc_details": self.rcc_details,
+            "k10_variance": self.k10_variance,
+            "k10_ate": self.k10_ate,
+            "k10_fold_estimates": self.k10_fold_estimates,
+            "hypervolume": self.hypervolume,
+            "pareto_diversity": self.pareto_diversity,
+            "ensemble_ate": self.ensemble_ate,
+            "ensemble_variance": self.ensemble_variance,
+            "structural_uncertainty": self.structural_uncertainty,
+            "validation_passed": self.validation_passed,
+            "summary_metrics": self.summary_metrics,
         }
         if self.identifiability_summary is not None:
-            result['identifiability'] = self.identifiability_summary
+            result["identifiability"] = self.identifiability_summary
         if self.refutation_summary is not None:
-            result['refutation'] = self.refutation_summary
+            result["refutation"] = self.refutation_summary
         return result
 
     def summary(self) -> str:
@@ -88,13 +90,13 @@ class PostHocValidationResult:
             "1. RANDOM COMMON CAUSE (Confounding Sensitivity)",
             f"   Passed: {'YES' if self.rcc_passed else 'NO'}",
             f"   Effect Change: {self.rcc_effect_change:.1%}",
-            f"   (Threshold: <20% change for stability)",
+            "   (Threshold: <20% change for stability)",
             "",
             "2. K=10 DML VALIDATION (Statistical Precision)",
             f"   ATE: {self.k10_ate:.4f}",
             f"   Variance: {self.k10_variance:.6f}",
-            f"   95% CI: [{self.k10_ate - 1.96*np.sqrt(self.k10_variance):.4f}, "
-            f"{self.k10_ate + 1.96*np.sqrt(self.k10_variance):.4f}]",
+            f"   95% CI: [{self.k10_ate - 1.96 * np.sqrt(self.k10_variance):.4f}, "
+            f"{self.k10_ate + 1.96 * np.sqrt(self.k10_variance):.4f}]",
             "",
             "3. HYPERVOLUME METRICS (Many-Objective Validation)",
             f"   Hypervolume: {self.hypervolume:.4f}",
@@ -110,41 +112,53 @@ class PostHocValidationResult:
             ident = self.identifiability_summary
             lines.append("5. IDENTIFIABILITY DIAGNOSTICS")
             lines.append(f"   DAGs analyzed: {ident.get('n_dags', 0)}")
-            lines.append(f"   BIC landscape: best={ident.get('bic_best', float('nan')):.1f}, "
-                        f"median={ident.get('bic_median', float('nan')):.1f}, "
-                        f"worst={ident.get('bic_worst', float('nan')):.1f}")
-            lines.append(f"   Condition numbers: mean={ident.get('condition_number_mean', float('nan')):.1f}, "
-                        f"max={ident.get('condition_number_max', float('nan')):.1f}")
-            grades = ident.get('grades', [])
+            lines.append(
+                f"   BIC landscape: best={ident.get('bic_best', float('nan')):.1f}, "
+                f"median={ident.get('bic_median', float('nan')):.1f}, "
+                f"worst={ident.get('bic_worst', float('nan')):.1f}"
+            )
+            lines.append(
+                f"   Condition numbers: mean={ident.get('condition_number_mean', float('nan')):.1f}, "
+                f"max={ident.get('condition_number_max', float('nan')):.1f}"
+            )
+            grades = ident.get("grades", [])
             if grades:
                 grade_counts = {}
                 for g in grades:
                     grade_counts[g] = grade_counts.get(g, 0) + 1
-                lines.append(f"   Grades: " + ", ".join(f"{g}={c}" for g, c in sorted(grade_counts.items())))
+                lines.append(
+                    "   Grades: " + ", ".join(f"{g}={c}" for g, c in sorted(grade_counts.items()))
+                )
 
         if self.refutation_summary is not None:
             lines.append("")
             ref = self.refutation_summary
             lines.append("6. REFUTATION SUITE (Placebo + Subset Stability)")
-            lines.append(f"   Passed: {ref.get('n_passed', 0)}/{ref.get('n_total', 0)} "
-                        f"({ref.get('pass_rate', 0):.0%})")
-            for name, test_result in ref.get('results', {}).items():
-                status = "PASS" if test_result.get('passed') else "FAIL"
-                lines.append(f"   {name}: {status} "
-                           f"(p={test_result.get('p_value', float('nan')):.4f})")
+            lines.append(
+                f"   Passed: {ref.get('n_passed', 0)}/{ref.get('n_total', 0)} "
+                f"({ref.get('pass_rate', 0):.0%})"
+            )
+            for name, test_result in ref.get("results", {}).items():
+                status = "PASS" if test_result.get("passed") else "FAIL"
+                lines.append(
+                    f"   {name}: {status} (p={test_result.get('p_value', float('nan')):.4f})"
+                )
 
-        lines.extend([
-            "",
-            "-" * 70,
-            f"OVERALL VALIDATION: {'PASSED' if self.validation_passed else 'NEEDS REVIEW'}",
-            "=" * 70,
-        ])
+        lines.extend(
+            [
+                "",
+                "-" * 70,
+                f"OVERALL VALIDATION: {'PASSED' if self.validation_passed else 'NEEDS REVIEW'}",
+                "=" * 70,
+            ]
+        )
         return "\n".join(lines)
 
 
 # =============================================================================
 # 1. RANDOM COMMON CAUSE REFUTATION
 # =============================================================================
+
 
 def run_random_common_cause_test(
     X: np.ndarray,
@@ -178,11 +192,11 @@ def run_random_common_cause_test(
     rng = np.random.RandomState(random_state)
 
     # Convert JAX arrays if needed
-    if hasattr(X, 'device_buffer') or 'jax' in str(type(X)):
+    if hasattr(X, "device_buffer") or "jax" in str(type(X)):
         X = np.array(X)
-    if hasattr(T, 'device_buffer') or 'jax' in str(type(T)):
+    if hasattr(T, "device_buffer") or "jax" in str(type(T)):
         T = np.array(T)
-    if hasattr(Y, 'device_buffer') or 'jax' in str(type(Y)):
+    if hasattr(Y, "device_buffer") or "jax" in str(type(Y)):
         Y = np.array(Y)
 
     T = np.asarray(T).flatten()
@@ -203,7 +217,7 @@ def run_random_common_cause_test(
             continue
 
     if len(confounded_effects) < 10:
-        return False, 1.0, {'error': 'Too few successful simulations'}
+        return False, 1.0, {"error": "Too few successful simulations"}
 
     confounded_mean = np.mean(confounded_effects)
     confounded_std = np.std(confounded_effects)
@@ -215,12 +229,12 @@ def run_random_common_cause_test(
     passed = bool(effect_change < effect_change_threshold)
 
     details = {
-        'original_effect': original_effect,
-        'confounded_mean': confounded_mean,
-        'confounded_std': confounded_std,
-        'effect_change': effect_change,
-        'n_simulations': len(confounded_effects),
-        'threshold': effect_change_threshold,
+        "original_effect": original_effect,
+        "confounded_mean": confounded_mean,
+        "confounded_std": confounded_std,
+        "effect_change": effect_change,
+        "n_simulations": len(confounded_effects),
+        "threshold": effect_change_threshold,
     }
 
     return passed, effect_change, details
@@ -229,6 +243,7 @@ def run_random_common_cause_test(
 # =============================================================================
 # 2. K=10 DML VALIDATION
 # =============================================================================
+
 
 def run_k10_dml_validation(
     X: np.ndarray,
@@ -256,11 +271,11 @@ def run_k10_dml_validation(
     from jcce.validation.dml_crossfitting import DMLCrossFitter, create_simple_nuisance_functions
 
     # Convert arrays
-    if hasattr(X, 'device_buffer') or 'jax' in str(type(X)):
+    if hasattr(X, "device_buffer") or "jax" in str(type(X)):
         X = np.array(X)
-    if hasattr(T, 'device_buffer') or 'jax' in str(type(T)):
+    if hasattr(T, "device_buffer") or "jax" in str(type(T)):
         T = np.array(T)
-    if hasattr(Y, 'device_buffer') or 'jax' in str(type(Y)):
+    if hasattr(Y, "device_buffer") or "jax" in str(type(Y)):
         Y = np.array(Y)
 
     T = np.asarray(T).flatten()
@@ -278,7 +293,9 @@ def run_k10_dml_validation(
 
     try:
         result = dml.estimate_ate(
-            X_mb, T, Y,
+            X_mb,
+            T,
+            Y,
             train_nuisance_fn=train_nuisance,
             predict_nuisance_fn=predict_nuisance,
         )
@@ -288,19 +305,19 @@ def run_k10_dml_validation(
         fold_estimates = result.ate_per_fold
 
         details = {
-            'standard_error': result.standard_error,
-            'ci_lower': ate - 1.96 * result.standard_error,
-            'ci_upper': ate + 1.96 * result.standard_error,
-            'n_folds': 10,
+            "standard_error": result.standard_error,
+            "ci_lower": ate - 1.96 * result.standard_error,
+            "ci_upper": ate + 1.96 * result.standard_error,
+            "n_folds": 10,
         }
 
     except Exception as e:
         # Fallback if DML fails
         warnings.warn(f"K=10 DML failed: {e}")
-        variance = float('nan')
-        ate = float('nan')
+        variance = float("nan")
+        ate = float("nan")
         fold_estimates = []
-        details = {'error': str(e)}
+        details = {"error": str(e)}
 
     return variance, ate, fold_estimates, details
 
@@ -308,6 +325,7 @@ def run_k10_dml_validation(
 # =============================================================================
 # 3. HYPERVOLUME METRICS
 # =============================================================================
+
 
 def compute_hypervolume(
     pareto_front: np.ndarray,
@@ -381,11 +399,7 @@ def _hypervolume_monte_carlo(
 
     # Sample random points in the box [ideal, reference]
     rng = np.random.RandomState(42)
-    samples = rng.uniform(
-        ideal_point,
-        reference_point,
-        size=(n_samples, n_objectives)
-    )
+    samples = rng.uniform(ideal_point, reference_point, size=(n_samples, n_objectives))
 
     # Count points dominated by at least one Pareto solution
     dominated_count = 0
@@ -453,6 +467,7 @@ def compute_pareto_diversity(pareto_front: np.ndarray) -> float:
 # 4. ENSEMBLE COUNTERFACTUAL AGGREGATION
 # =============================================================================
 
+
 def compute_ensemble_counterfactuals(
     pareto_solutions: List[Dict],
     X: np.ndarray,
@@ -485,11 +500,11 @@ def compute_ensemble_counterfactuals(
         effect_estimator = _simple_effect_estimator
 
     # Convert arrays
-    if hasattr(X, 'device_buffer') or 'jax' in str(type(X)):
+    if hasattr(X, "device_buffer") or "jax" in str(type(X)):
         X = np.array(X)
-    if hasattr(T, 'device_buffer') or 'jax' in str(type(T)):
+    if hasattr(T, "device_buffer") or "jax" in str(type(T)):
         T = np.array(T)
-    if hasattr(Y, 'device_buffer') or 'jax' in str(type(Y)):
+    if hasattr(Y, "device_buffer") or "jax" in str(type(Y)):
         Y = np.array(Y)
 
     T = np.asarray(T).flatten()
@@ -500,11 +515,11 @@ def compute_ensemble_counterfactuals(
     mb_sizes = []
 
     for sol in pareto_solutions:
-        mb = sol.get('markov_blanket', [])
+        mb = sol.get("markov_blanket", [])
 
         # Use pre-computed ATE if available
-        if 'ate' in sol and np.isfinite(sol['ate']):
-            effects.append(sol['ate'])
+        if "ate" in sol and np.isfinite(sol["ate"]):
+            effects.append(sol["ate"])
             mb_sizes.append(len(mb))
             continue
 
@@ -523,7 +538,7 @@ def compute_ensemble_counterfactuals(
             continue
 
     if len(effects) == 0:
-        return float('nan'), float('nan'), float('nan'), {'error': 'No valid effects'}
+        return float("nan"), float("nan"), float("nan"), {"error": "No valid effects"}
 
     effects = np.array(effects)
 
@@ -541,12 +556,12 @@ def compute_ensemble_counterfactuals(
     weighted_ate = np.sum(effects * weights)
 
     details = {
-        'n_solutions': len(effects),
-        'individual_effects': effects.tolist(),
-        'mb_sizes': mb_sizes,
-        'weighted_ate': weighted_ate,
-        'effect_range': [float(np.min(effects)), float(np.max(effects))],
-        'effect_std': float(np.std(effects)),
+        "n_solutions": len(effects),
+        "individual_effects": effects.tolist(),
+        "mb_sizes": mb_sizes,
+        "weighted_ate": weighted_ate,
+        "effect_range": [float(np.min(effects)), float(np.max(effects))],
+        "effect_std": float(np.std(effects)),
     }
 
     return ensemble_ate, ensemble_variance, structural_uncertainty, details
@@ -564,7 +579,7 @@ def _simple_effect_estimator(X: np.ndarray, T: np.ndarray, Y: np.ndarray) -> flo
         T = (T > np.median(T)).astype(float)
 
     try:
-        ps_model = LogisticRegression(max_iter=1000, solver='lbfgs')
+        ps_model = LogisticRegression(max_iter=1000, solver="lbfgs")
         ps_model.fit(X, T.astype(int))
         e = ps_model.predict_proba(X)[:, 1]
         e = np.clip(e, 0.01, 0.99)
@@ -579,6 +594,7 @@ def _simple_effect_estimator(X: np.ndarray, T: np.ndarray, Y: np.ndarray) -> flo
 # =============================================================================
 # UNIFIED POST-HOC VALIDATION PIPELINE
 # =============================================================================
+
 
 class PostHocValidationPipeline:
     """
@@ -683,9 +699,9 @@ class PostHocValidationPipeline:
         original_effect = 0.0
         if len(pareto_solutions) > representative_solution_idx:
             rep_sol = pareto_solutions[representative_solution_idx]
-            mb = rep_sol.get('markov_blanket', [])
-            if 'ate' in rep_sol:
-                original_effect = rep_sol['ate']
+            mb = rep_sol.get("markov_blanket", [])
+            if "ate" in rep_sol:
+                original_effect = rep_sol["ate"]
             else:
                 X_mb = X[:, mb] if len(mb) > 0 else X
                 original_effect = effect_estimator(X_mb, T, Y)
@@ -695,7 +711,7 @@ class PostHocValidationPipeline:
         # 1. Random Common Cause Test
         rcc_passed = True  # Default to pass if skipped
         rcc_effect_change = 0.0
-        rcc_details = {'skipped': True}
+        rcc_details = {"skipped": True}
 
         if run_rcc:
             if self.verbose:
@@ -703,7 +719,8 @@ class PostHocValidationPipeline:
 
             rcc_passed, rcc_effect_change, rcc_details = run_random_common_cause_test(
                 X=X[:, mb] if len(mb) > 0 else X,
-                T=T, Y=Y,
+                T=T,
+                Y=Y,
                 estimate_effect_fn=effect_estimator,
                 original_effect=original_effect,
                 n_simulations=self.rcc_n_simulations,
@@ -719,8 +736,8 @@ class PostHocValidationPipeline:
                 print("\n[1/6] Random Common Cause: Skipped")
 
         # 2. K=10 DML Validation
-        k10_variance = float('nan')
-        k10_ate = float('nan')
+        k10_variance = float("nan")
+        k10_ate = float("nan")
         k10_fold_estimates = []
 
         if run_k10:
@@ -728,7 +745,9 @@ class PostHocValidationPipeline:
                 print("\n[2/6] Running K=10 DML validation...")
 
             k10_variance, k10_ate, k10_fold_estimates, k10_details = run_k10_dml_validation(
-                X=X, T=T, Y=Y,
+                X=X,
+                T=T,
+                Y=Y,
                 markov_blanket=mb,
                 random_state=self.random_state,
             )
@@ -761,27 +780,30 @@ class PostHocValidationPipeline:
                 print("\n[3/6] Hypervolume: Skipped")
 
         # 4. Ensemble Counterfactuals
-        ensemble_ate = float('nan')
-        ensemble_variance = float('nan')
-        structural_uncertainty = float('nan')
+        ensemble_ate = float("nan")
+        ensemble_variance = float("nan")
+        structural_uncertainty = float("nan")
 
         if run_ensemble:
             if self.verbose:
                 print("\n[4/6] Computing ensemble counterfactuals...")
 
-            ensemble_ate, ensemble_variance, structural_uncertainty, ensemble_details = \
+            ensemble_ate, ensemble_variance, structural_uncertainty, ensemble_details = (
                 compute_ensemble_counterfactuals(
                     pareto_solutions=pareto_solutions,
-                    X=X, T=T, Y=Y,
+                    X=X,
+                    T=T,
+                    Y=Y,
                     effect_estimator=effect_estimator,
                 )
+            )
 
             if self.verbose:
                 if np.isfinite(ensemble_ate):
                     print(f"   Ensemble ATE: {ensemble_ate:.4f}")
                     print(f"   Structural Uncertainty: {structural_uncertainty:.6f}")
                 else:
-                    print(f"   Ensemble: Failed")
+                    print("   Ensemble: Failed")
         else:
             if self.verbose:
                 print("\n[4/6] Ensemble Counterfactuals: Skipped")
@@ -795,14 +817,14 @@ class PostHocValidationPipeline:
 
             try:
                 from jcce.validation.identifiability_diagnostics import (
-                    compute_full_identifiability_report,
                     IdentifiabilitySummary,
+                    compute_full_identifiability_report,
                 )
 
                 reports = []
                 for sol in pareto_solutions:
-                    sol_mb = sol.get('markov_blanket', [])
-                    sol_dag = sol.get('dag', sol.get('adjacency_matrix', None))
+                    sol_mb = sol.get("markov_blanket", [])
+                    sol_dag = sol.get("dag", sol.get("adjacency_matrix", None))
                     if sol_dag is None:
                         continue
 
@@ -811,7 +833,7 @@ class PostHocValidationPipeline:
                         A=np.asarray(sol_dag),
                         mb_indices=sol_mb,
                         feature_names=feature_names,
-                        processor_type=sol.get('processor_type', 'linear'),
+                        processor_type=sol.get("processor_type", "linear"),
                     )
                     reports.append(report)
 
@@ -875,19 +897,19 @@ class PostHocValidationPipeline:
             validation_passed = validation_passed and (refutation_result.pass_rate >= 0.5)
 
         summary_metrics = {
-            'rcc_passed': rcc_passed,
-            'rcc_effect_change': rcc_effect_change,
-            'k10_variance': k10_variance,
-            'hypervolume': hypervolume,
-            'pareto_diversity': pareto_diversity,
-            'ensemble_ate': ensemble_ate,
-            'structural_uncertainty': structural_uncertainty,
-            'n_pareto_solutions': len(pareto_solutions),
+            "rcc_passed": rcc_passed,
+            "rcc_effect_change": rcc_effect_change,
+            "k10_variance": k10_variance,
+            "hypervolume": hypervolume,
+            "pareto_diversity": pareto_diversity,
+            "ensemble_ate": ensemble_ate,
+            "structural_uncertainty": structural_uncertainty,
+            "n_pareto_solutions": len(pareto_solutions),
         }
         if refutation_result is not None:
-            summary_metrics['refutation_pass_rate'] = refutation_result.pass_rate
-            summary_metrics['refutation_n_passed'] = refutation_result.n_passed
-            summary_metrics['refutation_n_total'] = refutation_result.n_total
+            summary_metrics["refutation_pass_rate"] = refutation_result.pass_rate
+            summary_metrics["refutation_n_passed"] = refutation_result.n_passed
+            summary_metrics["refutation_n_total"] = refutation_result.n_total
 
         # Build refutation summary dict for storage
         refutation_summary_dict = None
@@ -921,6 +943,7 @@ class PostHocValidationPipeline:
 # =============================================================================
 # CONVENIENCE FUNCTION
 # =============================================================================
+
 
 def validate_pareto_front(
     pareto_solutions: List[Dict],
@@ -956,7 +979,9 @@ def validate_pareto_front(
     return pipeline.validate(
         pareto_solutions=pareto_solutions,
         pareto_front=pareto_front,
-        X=X, T=T, Y=Y,
+        X=X,
+        T=T,
+        Y=Y,
         run_rcc=run_rcc,
         run_k10=run_k10,
         run_hypervolume=run_hypervolume,

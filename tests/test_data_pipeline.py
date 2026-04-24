@@ -9,14 +9,15 @@ Validates that:
 5. Performance: fewer Python↔XLA round trips vs old approach
 """
 
+import os
+import sys
+import time
+
 import jax
 import jax.numpy as jnp
 from jax import random
-import time
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 def test_device_put():
@@ -69,8 +70,7 @@ def test_batch_selection_inside_jit():
     # JIT function that selects batch internally (like our train_step)
     @jax.jit
     def select_batch(batch_key):
-        batch_idx = random.choice(batch_key, n_samples,
-                                  shape=(batch_size,), replace=False)
+        batch_idx = random.choice(batch_key, n_samples, shape=(batch_size,), replace=False)
         batch_data = data[batch_idx]
         batch_Y = Y[batch_idx]
         return batch_data, batch_Y, batch_idx
@@ -98,7 +98,7 @@ def test_batch_selection_inside_jit():
     manual_Y = Y[batch_idx_np]
     assert float(jnp.max(jnp.abs(batch_data - manual_data))) == 0.0
     assert float(jnp.max(jnp.abs(batch_Y - manual_Y))) == 0.0
-    print(f"  values match manual indexing")
+    print("  values match manual indexing")
 
     # Different keys → different batches
     key, batch_key2 = random.split(key)
@@ -126,13 +126,12 @@ def test_batch_y_returned():
     # Simulate a minimal train_step that returns batch_Y
     @jax.jit
     def mock_step(batch_key):
-        batch_idx = random.choice(batch_key, n_samples,
-                                  shape=(batch_size,), replace=False)
+        batch_idx = random.choice(batch_key, n_samples, shape=(batch_size,), replace=False)
         batch_data = data[batch_idx]
         batch_Y = Y[batch_idx]
 
         # Simulate some computation (like loss_fn)
-        loss = jnp.mean(batch_data ** 2) + jnp.mean(batch_Y)
+        loss = jnp.mean(batch_data**2) + jnp.mean(batch_Y)
         Y_logits = jnp.sum(batch_data, axis=1)  # fake logits
 
         return loss, Y_logits, batch_Y
@@ -150,7 +149,7 @@ def test_batch_y_returned():
 
     # batch_Y values should be subset of original Y
     assert jnp.all((batch_Y_out == 0.0) | (batch_Y_out == 1.0))
-    print(f"  all values binary")
+    print("  all values binary")
 
     print("  PASSED\n")
 
@@ -167,8 +166,9 @@ def test_cached_jax_scalars():
 
     # Pre-allocated (our approach)
     lambda_2_jax = jnp.float32(lambda_2)
-    curriculum_w_jax = jnp.array([curriculum_weights[0], curriculum_weights[1],
-                                   curriculum_weights[2]], dtype=jnp.float32)
+    curriculum_w_jax = jnp.array(
+        [curriculum_weights[0], curriculum_weights[1], curriculum_weights[2]], dtype=jnp.float32
+    )
 
     @jax.jit
     def compute_with_cached(lam, cw):
@@ -183,7 +183,9 @@ def test_cached_jax_scalars():
     result_cached = compute_with_cached(lambda_2_jax, curriculum_w_jax)
     result_fresh = compute_with_fresh(lambda_2, curriculum_weights)
     diff = abs(float(result_cached) - float(result_fresh))
-    print(f"  initial: cached={float(result_cached):.6f} fresh={float(result_fresh):.6f} diff={diff:.2e}")
+    print(
+        f"  initial: cached={float(result_cached):.6f} fresh={float(result_fresh):.6f} diff={diff:.2e}"
+    )
     assert diff < 1e-7
 
     # After lambda_2 changes
@@ -192,17 +194,22 @@ def test_cached_jax_scalars():
     result_cached = compute_with_cached(lambda_2_jax, curriculum_w_jax)
     result_fresh = compute_with_fresh(lambda_2, curriculum_weights)
     diff = abs(float(result_cached) - float(result_fresh))
-    print(f"  λ₂ update: cached={float(result_cached):.6f} fresh={float(result_fresh):.6f} diff={diff:.2e}")
+    print(
+        f"  λ₂ update: cached={float(result_cached):.6f} fresh={float(result_fresh):.6f} diff={diff:.2e}"
+    )
     assert diff < 1e-7
 
     # After curriculum changes
     curriculum_weights = (0.1, 0.6, 0.3)
-    curriculum_w_jax = jnp.array([curriculum_weights[0], curriculum_weights[1],
-                                   curriculum_weights[2]], dtype=jnp.float32)
+    curriculum_w_jax = jnp.array(
+        [curriculum_weights[0], curriculum_weights[1], curriculum_weights[2]], dtype=jnp.float32
+    )
     result_cached = compute_with_cached(lambda_2_jax, curriculum_w_jax)
     result_fresh = compute_with_fresh(lambda_2, curriculum_weights)
     diff = abs(float(result_cached) - float(result_fresh))
-    print(f"  cw update: cached={float(result_cached):.6f} fresh={float(result_fresh):.6f} diff={diff:.2e}")
+    print(
+        f"  cw update: cached={float(result_cached):.6f} fresh={float(result_fresh):.6f} diff={diff:.2e}"
+    )
     assert diff < 1e-7
 
     print("  PASSED\n")
@@ -232,7 +239,7 @@ def test_no_batching_path():
             batch_data = data
             batch_Y = Y
 
-        loss = jnp.mean(batch_data ** 2)
+        loss = jnp.mean(batch_data**2)
         return loss, batch_Y
 
     key, batch_key = random.split(key)
@@ -249,7 +256,7 @@ def test_no_batching_path():
     key, batch_key2 = random.split(key)
     loss2, batch_Y_out2 = step_no_batch(batch_key2)
     assert float(jnp.max(jnp.abs(batch_Y_out - batch_Y_out2))) == 0.0
-    print(f"  deterministic (no batch selection)")
+    print("  deterministic (no batch selection)")
 
     print("  PASSED\n")
 
@@ -272,17 +279,16 @@ def test_performance_batch_inside_jit():
     # Old approach: batch selection OUTSIDE JIT
     @jax.jit
     def step_outside(batch_data, batch_Y):
-        loss = jnp.mean(batch_data ** 2) + jnp.mean(batch_Y)
+        loss = jnp.mean(batch_data**2) + jnp.mean(batch_Y)
         return loss
 
     # New approach: batch selection INSIDE JIT
     @jax.jit
     def step_inside(batch_key):
-        batch_idx = random.choice(batch_key, n_samples,
-                                  shape=(batch_size,), replace=False)
+        batch_idx = random.choice(batch_key, n_samples, shape=(batch_size,), replace=False)
         batch_data = data[batch_idx]
         batch_Y = Y[batch_idx]
-        loss = jnp.mean(batch_data ** 2) + jnp.mean(batch_Y)
+        loss = jnp.mean(batch_data**2) + jnp.mean(batch_Y)
         return loss
 
     # Warmup
@@ -310,9 +316,9 @@ def test_performance_batch_inside_jit():
         step_inside(batch_key).block_until_ready()
     inside_time = (time.perf_counter() - t0) / n_runs
 
-    ratio = outside_time / inside_time if inside_time > 0 else float('inf')
-    print(f"  outside JIT: {outside_time*1000:.3f}ms/iter")
-    print(f"  inside JIT:  {inside_time*1000:.3f}ms/iter")
+    ratio = outside_time / inside_time if inside_time > 0 else float("inf")
+    print(f"  outside JIT: {outside_time * 1000:.3f}ms/iter")
+    print(f"  inside JIT:  {inside_time * 1000:.3f}ms/iter")
     print(f"  speedup:     {ratio:.2f}x")
 
     # Also benchmark scalar allocation
@@ -335,15 +341,15 @@ def test_performance_batch_inside_jit():
         _ = cw_cached
     cached_time = (time.perf_counter() - t0) / n_runs
 
-    scalar_ratio = fresh_time / cached_time if cached_time > 0 else float('inf')
-    print(f"  scalar fresh:  {fresh_time*1000:.4f}ms/iter")
-    print(f"  scalar cached: {cached_time*1000:.4f}ms/iter")
+    scalar_ratio = fresh_time / cached_time if cached_time > 0 else float("inf")
+    print(f"  scalar fresh:  {fresh_time * 1000:.4f}ms/iter")
+    print(f"  scalar cached: {cached_time * 1000:.4f}ms/iter")
     print(f"  scalar ratio:  {scalar_ratio:.1f}x")
 
     print("  DONE\n")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("DATA PIPELINE OPTIMIZATION TEST SUITE")
     print("=" * 60 + "\n")

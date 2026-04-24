@@ -28,27 +28,22 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from jcce.gbs.gbs_utils import (
     dequantized_features,
-    dequantized_hellinger,
     encode_dag_to_gbs,
-    shd,
 )
 from jcce.gbs.pareto_uncertainty import (
     dequantized_hellinger_matrix,
-    hellinger_coverage,
-    hellinger_diameter,
     hellinger_vs_shd_correlation,
-    mean_hellinger_dispersion,
     pareto_uncertainty_report,
 )
-
 
 # =============================================================================
 # Synthetic Pareto front generators
 # =============================================================================
+
 
 def perturb_dag(A: np.ndarray, n_flips: int, rng: np.random.Generator) -> np.ndarray:
     """
@@ -60,18 +55,18 @@ def perturb_dag(A: np.ndarray, n_flips: int, rng: np.random.Generator) -> np.nda
     A_new = A.copy()
 
     for _ in range(n_flips):
-        action = rng.choice(['add', 'remove', 'reweight'])
+        action = rng.choice(["add", "remove", "reweight"])
         i, j = rng.integers(0, d), rng.integers(0, d)
         if i >= j:
             i, j = min(i, j), max(i, j)
             if i == j:
                 continue
 
-        if action == 'add' and A_new[i, j] == 0:
+        if action == "add" and A_new[i, j] == 0:
             A_new[i, j] = rng.uniform(0.3, 1.5)
-        elif action == 'remove' and A_new[i, j] > 0:
+        elif action == "remove" and A_new[i, j] > 0:
             A_new[i, j] = 0.0
-        elif action == 'reweight' and A_new[i, j] > 0:
+        elif action == "reweight" and A_new[i, j] > 0:
             A_new[i, j] = max(0.1, A_new[i, j] + rng.normal(0, 0.3))
 
     return A_new
@@ -165,6 +160,7 @@ def generate_mixed_pareto(d: int, n_dags: int = 20, seed: int = 42) -> list:
 # Experiment scenarios
 # =============================================================================
 
+
 def run_scenario_1_uncertainty_levels():
     """Test that Hellinger metrics correctly order tight < mixed < diverse."""
     print("\n" + "=" * 70)
@@ -174,9 +170,11 @@ def run_scenario_1_uncertainty_levels():
 
     d = 15
     results = {}
-    for name, gen_fn in [('Tight', generate_tight_pareto),
-                          ('Mixed', generate_mixed_pareto),
-                          ('Diverse', generate_diverse_pareto)]:
+    for name, gen_fn in [
+        ("Tight", generate_tight_pareto),
+        ("Mixed", generate_mixed_pareto),
+        ("Diverse", generate_diverse_pareto),
+    ]:
         dags = gen_fn(d, n_dags=20, seed=42)
         t0 = time.time()
         report = pareto_uncertainty_report(dags, max_order=2)
@@ -192,13 +190,15 @@ def run_scenario_1_uncertainty_levels():
         print(f"    Time:       {elapsed:.2f}s")
 
     # Verify ordering
-    tight_d = results['Tight']['mean_dispersion']
-    mixed_d = results['Mixed']['mean_dispersion']
-    diverse_d = results['Diverse']['mean_dispersion']
+    tight_d = results["Tight"]["mean_dispersion"]
+    mixed_d = results["Mixed"]["mean_dispersion"]
+    diverse_d = results["Diverse"]["mean_dispersion"]
 
-    print(f"\n  Dispersion ordering: Tight={tight_d:.4f} {'<' if tight_d < mixed_d else '>='} "
-          f"Mixed={mixed_d:.4f} {'<' if mixed_d < diverse_d else '>='} "
-          f"Diverse={diverse_d:.4f}")
+    print(
+        f"\n  Dispersion ordering: Tight={tight_d:.4f} {'<' if tight_d < mixed_d else '>='} "
+        f"Mixed={mixed_d:.4f} {'<' if mixed_d < diverse_d else '>='} "
+        f"Diverse={diverse_d:.4f}"
+    )
 
     ordering_correct = tight_d < diverse_d
     print(f"  Tight < Diverse: {'YES' if ordering_correct else 'NO'}")
@@ -215,11 +215,15 @@ def run_scenario_2_scaling_with_front_size():
     d = 15
     sizes = [5, 10, 20, 40]
 
-    for front_type, gen_fn in [('Diverse', generate_diverse_pareto),
-                                ('Tight', generate_tight_pareto)]:
+    for front_type, gen_fn in [
+        ("Diverse", generate_diverse_pareto),
+        ("Tight", generate_tight_pareto),
+    ]:
         print(f"\n  {front_type} fronts:")
-        print(f"  {'N':>5} | {'Diameter':>10} | {'Dispersion':>10} | {'Coverage':>10} | {'Time':>8}")
-        print(f"  {'-'*50}")
+        print(
+            f"  {'N':>5} | {'Diameter':>10} | {'Dispersion':>10} | {'Coverage':>10} | {'Time':>8}"
+        )
+        print(f"  {'-' * 50}")
 
         for n in sizes:
             dags = gen_fn(d, n_dags=n, seed=42)
@@ -227,9 +231,11 @@ def run_scenario_2_scaling_with_front_size():
             report = pareto_uncertainty_report(dags, max_order=2)
             elapsed = time.time() - t0
 
-            print(f"  {n:>5} | {report['diameter']:>10.4f} | "
-                  f"{report['mean_dispersion']:>10.4f} | "
-                  f"{report['coverage']:>10.4f} | {elapsed:>7.2f}s")
+            print(
+                f"  {n:>5} | {report['diameter']:>10.4f} | "
+                f"{report['mean_dispersion']:>10.4f} | "
+                f"{report['coverage']:>10.4f} | {elapsed:>7.2f}s"
+            )
 
 
 def run_scenario_3_hellinger_vs_shd_detailed():
@@ -240,9 +246,11 @@ def run_scenario_3_hellinger_vs_shd_detailed():
 
     for d in [8, 15, 20]:
         print(f"\n  d={d}:")
-        for name, gen_fn in [('Tight', generate_tight_pareto),
-                              ('Mixed', generate_mixed_pareto),
-                              ('Diverse', generate_diverse_pareto)]:
+        for name, gen_fn in [
+            ("Tight", generate_tight_pareto),
+            ("Mixed", generate_mixed_pareto),
+            ("Diverse", generate_diverse_pareto),
+        ]:
             dags = gen_fn(d, n_dags=20, seed=42)
             H = dequantized_hellinger_matrix(dags, max_order=2)
             corr = hellinger_vs_shd_correlation(dags, H=H, max_order=2)
@@ -251,16 +259,18 @@ def run_scenario_3_hellinger_vs_shd_detailed():
             # on which pairs are most similar/dissimilar?
             n = len(dags)
             h_upper = H[np.triu_indices(n, k=1)]
-            s_upper = corr['shd_matrix'][np.triu_indices(n, k=1)]
+            s_upper = corr["shd_matrix"][np.triu_indices(n, k=1)]
 
             # Top-5 most similar pairs by each metric
             h_rank = np.argsort(h_upper)
             s_rank = np.argsort(s_upper)
             top5_overlap = len(set(h_rank[:5]) & set(s_rank[:5]))
 
-            print(f"    {name:>8}: r={corr['pearson_r']:>6.3f}, "
-                  f"rho={corr['spearman_rho']:>6.3f}, "
-                  f"top-5 agreement={top5_overlap}/5")
+            print(
+                f"    {name:>8}: r={corr['pearson_r']:>6.3f}, "
+                f"rho={corr['spearman_rho']:>6.3f}, "
+                f"top-5 agreement={top5_overlap}/5"
+            )
 
 
 def run_scenario_4_dimension_scaling():
@@ -272,9 +282,11 @@ def run_scenario_4_dimension_scaling():
     dimensions = [8, 11, 15, 20, 25, 30]
     n_dags = 15
 
-    print(f"\n  {'d':>4} | {'Feats':>6} | {'Diameter':>10} | {'Dispersion':>10} | "
-          f"{'H-SHD r':>8} | {'Time':>8}")
-    print(f"  {'-'*60}")
+    print(
+        f"\n  {'d':>4} | {'Feats':>6} | {'Diameter':>10} | {'Dispersion':>10} | "
+        f"{'H-SHD r':>8} | {'Time':>8}"
+    )
+    print(f"  {'-' * 60}")
 
     for d in dimensions:
         dags = generate_diverse_pareto(d, n_dags=n_dags, seed=42)
@@ -287,9 +299,11 @@ def run_scenario_4_dimension_scaling():
         report = pareto_uncertainty_report(dags, max_order=2)
         elapsed = time.time() - t0
 
-        print(f"  {d:>4} | {n_feats:>6} | {report['diameter']:>10.4f} | "
-              f"{report['mean_dispersion']:>10.4f} | "
-              f"{report['pearson_r']:>8.3f} | {elapsed:>7.2f}s")
+        print(
+            f"  {d:>4} | {n_feats:>6} | {report['diameter']:>10.4f} | "
+            f"{report['mean_dispersion']:>10.4f} | "
+            f"{report['pearson_r']:>8.3f} | {elapsed:>7.2f}s"
+        )
 
 
 def run_scenario_5_cluster_detection():
@@ -308,18 +322,19 @@ def run_scenario_5_cluster_detection():
 
     # Convert to condensed distance
     condensed = squareform(H)
-    Z = linkage(condensed, method='ward')
-    labels = fcluster(Z, t=2, criterion='maxclust')
+    Z = linkage(condensed, method="ward")
+    labels = fcluster(Z, t=2, criterion="maxclust")
 
     # Check if clustering recovers the chain/hub split
     # First half are chain-like (indices 0-9), second half hub-like (10-19)
     true_labels = np.array([0] * 10 + [1] * 10)
 
     from sklearn.metrics import adjusted_rand_score
+
     ari = adjusted_rand_score(true_labels, labels)
 
     print(f"\n  Mixed Pareto (d={d}, n=20): 10 chain-like + 10 hub-like")
-    print(f"  Hierarchical clustering (Ward) on Hellinger matrix:")
+    print("  Hierarchical clustering (Ward) on Hellinger matrix:")
     print(f"    Cluster 1: {list(np.where(labels == 1)[0])}")
     print(f"    Cluster 2: {list(np.where(labels == 2)[0])}")
     print(f"    ARI vs true split: {ari:.4f}")
@@ -337,7 +352,7 @@ def run_scenario_5_cluster_detection():
 
     print(f"\n    Within-cluster mean H:  {np.mean(within):.4f}")
     print(f"    Between-cluster mean H: {np.mean(between):.4f}")
-    print(f"    Ratio (between/within): {np.mean(between)/np.mean(within):.2f}x")
+    print(f"    Ratio (between/within): {np.mean(between) / np.mean(within):.2f}x")
 
 
 def run_scenario_6_comparison_with_classical():
@@ -347,9 +362,11 @@ def run_scenario_6_comparison_with_classical():
     print("=" * 70)
 
     d = 15
-    for name, gen_fn in [('Tight', generate_tight_pareto),
-                          ('Mixed', generate_mixed_pareto),
-                          ('Diverse', generate_diverse_pareto)]:
+    for name, gen_fn in [
+        ("Tight", generate_tight_pareto),
+        ("Mixed", generate_mixed_pareto),
+        ("Diverse", generate_diverse_pareto),
+    ]:
         dags = gen_fn(d, n_dags=20, seed=42)
         n = len(dags)
 
@@ -357,7 +374,7 @@ def run_scenario_6_comparison_with_classical():
         report = pareto_uncertainty_report(dags, max_order=2)
 
         # Classical SHD-based metrics
-        S = report['shd_matrix']
+        S = report["shd_matrix"]
         s_upper = S[np.triu_indices(n, k=1)]
         shd_diameter = float(np.max(s_upper))
         shd_dispersion = float(np.mean(s_upper))
@@ -376,13 +393,16 @@ def run_scenario_6_comparison_with_classical():
         print(f"    Hellinger dispersion:{report['mean_dispersion']:.4f}")
         print(f"    SHD diameter:        {shd_diameter:.0f}")
         print(f"    SHD dispersion:      {shd_dispersion:.1f}")
-        print(f"    Edge stability:      {stability:.3f} ({n_stable_edges}/{n_any_edges} stable edges)")
+        print(
+            f"    Edge stability:      {stability:.3f} ({n_stable_edges}/{n_any_edges} stable edges)"
+        )
         print(f"    H-SHD correlation:   r={report['pearson_r']:.3f}")
 
 
 # =============================================================================
 # Main
 # =============================================================================
+
 
 def main():
     print("=" * 70)
@@ -405,27 +425,27 @@ def main():
     # ==========================================================================
     # Summary
     # ==========================================================================
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  EXPERIMENT 4 SUMMARY")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
     print(f"\n  Total time: {elapsed:.1f}s")
 
-    print(f"\n  Key findings:")
-    print(f"  1. Uncertainty ordering: tight < diverse confirmed")
+    print("\n  Key findings:")
+    print("  1. Uncertainty ordering: tight < diverse confirmed")
     print(f"     Tight dispersion:   {results_1['Tight']['mean_dispersion']:.4f}")
     print(f"     Diverse dispersion: {results_1['Diverse']['mean_dispersion']:.4f}")
-    print(f"  2. Hellinger-SHD correlation: see Scenario 3")
-    print(f"  3. Cluster detection: see Scenario 5")
-    print(f"  4. Dimension scaling: see Scenario 4")
+    print("  2. Hellinger-SHD correlation: see Scenario 3")
+    print("  3. Cluster detection: see Scenario 5")
+    print("  4. Dimension scaling: see Scenario 4")
 
-    print(f"\n  Application D validation:")
-    print(f"  - Hellinger metrics correctly order structural uncertainty")
-    print(f"  - Hellinger captures structural info beyond edge counting")
-    print(f"  - Hierarchical clustering on Hellinger recovers known clusters")
-    print(f"  - Metrics scale tractably to d=30")
+    print("\n  Application D validation:")
+    print("  - Hellinger metrics correctly order structural uncertainty")
+    print("  - Hellinger captures structural info beyond edge counting")
+    print("  - Hierarchical clustering on Hellinger recovers known clusters")
+    print("  - Metrics scale tractably to d=30")
 
-    print(f"\n  Ready for real Pareto fronts when server results available.")
+    print("\n  Ready for real Pareto fronts when server results available.")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

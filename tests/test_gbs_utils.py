@@ -16,33 +16,31 @@ Tests:
 12. Dequantized kernel scales to large d (d=30, 37)
 """
 
-import sys
 import os
+import sys
+
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from jcce.gbs.gbs_utils import (
-    encode_dag_to_gbs,
-    encode_dependency_to_gbs,
-    encode_moralized_to_gbs,
-    sample_gbs,
-    gbs_kernel,
-    gbs_kernel_matrix,
-    gbs_cooccurrence,
-    hellinger_distance,
-    hellinger_matrix,
-    compute_event_probabilities,
-    compute_orbit_features,
-    shd,
-    frobenius_distance,
-    spectral_distance,
-    jaccard_edge_distance,
+    dequantized_cooccurrence,
     dequantized_features,
     dequantized_kernel,
     dequantized_kernel_matrix,
-    dequantized_cooccurrence,
-    dequantized_hellinger,
+    encode_dag_to_gbs,
+    encode_dependency_to_gbs,
+    encode_moralized_to_gbs,
+    frobenius_distance,
+    gbs_cooccurrence,
+    gbs_kernel,
+    gbs_kernel_matrix,
+    hellinger_distance,
+    hellinger_matrix,
+    jaccard_edge_distance,
+    sample_gbs,
+    shd,
+    spectral_distance,
 )
 
 
@@ -69,6 +67,7 @@ def _make_confound(d=11, n_confounds=3, seed=42):
 # =========================================================================
 # Test 1: Encoding validity
 # =========================================================================
+
 
 def test_encoding_validity():
     """Encoded GBS matrix must be symmetric, non-negative, spectral radius < 1."""
@@ -103,7 +102,7 @@ def test_encoding_validity():
     # Encoding B (data → GBS)
     rng = np.random.RandomState(0)
     X = rng.randn(200, 11)
-    W_data = encode_dependency_to_gbs(X, method='partial_corr', scale=0.9)
+    W_data = encode_dependency_to_gbs(X, method="partial_corr", scale=0.9)
     assert np.allclose(W_data, W_data.T), "Data encoding not symmetric"
     sr_data = np.max(np.abs(np.linalg.eigvalsh(W_data)))
     assert sr_data < 1.0, f"Data encoding spectral radius {sr_data} >= 1"
@@ -124,6 +123,7 @@ def test_encoding_validity():
 # Test 2: GBS sampling validity
 # =========================================================================
 
+
 def test_sampling_validity():
     """GBS samples must be valid photon patterns."""
     print("=" * 60)
@@ -134,16 +134,18 @@ def test_sampling_validity():
     W = encode_dag_to_gbs(A, scale=0.9)
 
     # Threshold (binary) samples
-    samples_thr = sample_gbs(W, n_samples=50, mode='threshold')
+    samples_thr = sample_gbs(W, n_samples=50, mode="threshold")
     assert samples_thr.shape == (50, 8), f"Threshold shape: {samples_thr.shape}"
     assert set(np.unique(samples_thr)).issubset({0, 1}), "Threshold samples not binary"
     print(f"  Threshold: shape={samples_thr.shape}, unique={np.unique(samples_thr)}")
 
     # PNR samples
-    samples_pnr = sample_gbs(W, n_samples=50, mode='pnr', max_photons=6)
+    samples_pnr = sample_gbs(W, n_samples=50, mode="pnr", max_photons=6)
     assert samples_pnr.shape == (50, 8), f"PNR shape: {samples_pnr.shape}"
     assert np.all(samples_pnr >= 0), "PNR samples have negative values"
-    print(f"  PNR: shape={samples_pnr.shape}, max={samples_pnr.max()}, unique_vals={len(np.unique(samples_pnr))}")
+    print(
+        f"  PNR: shape={samples_pnr.shape}, max={samples_pnr.max()}, unique_vals={len(np.unique(samples_pnr))}"
+    )
 
     # Not all zeros (GBS should detect something with n_mean=d/2)
     nonzero_frac = np.mean(samples_thr.sum(axis=1) > 0)
@@ -156,6 +158,7 @@ def test_sampling_validity():
 # =========================================================================
 # Test 3: Kernel properties
 # =========================================================================
+
 
 def test_kernel_properties():
     """GBS kernel must be symmetric, non-negative, K(G,G) >= K(G,H)."""
@@ -172,12 +175,14 @@ def test_kernel_properties():
     W3 = encode_dag_to_gbs(A3, scale=0.9)
 
     # Kernel matrix
-    K = gbs_kernel_matrix([W1, W2, W3], n_samples=500, mode='threshold')
+    K = gbs_kernel_matrix([W1, W2, W3], n_samples=500, mode="threshold")
 
     print(f"  K matrix:\n{K}")
 
     # Symmetric
-    assert np.allclose(K, K.T, atol=0.05), f"Kernel not symmetric: max diff = {np.max(np.abs(K - K.T))}"
+    assert np.allclose(K, K.T, atol=0.05), (
+        f"Kernel not symmetric: max diff = {np.max(np.abs(K - K.T))}"
+    )
     print(f"  Symmetric: max asymmetry = {np.max(np.abs(K - K.T)):.6f}")
 
     # Non-negative
@@ -187,7 +192,7 @@ def test_kernel_properties():
     # Self-similarity should be largest in each row (or close)
     for i in range(3):
         off_diag_max = max(K[i, j] for j in range(3) if j != i)
-        print(f"  K[{i},{i}]={K[i,i]:.6f}, max off-diag={off_diag_max:.6f}")
+        print(f"  K[{i},{i}]={K[i, i]:.6f}, max off-diag={off_diag_max:.6f}")
 
     print("  PASSED\n")
 
@@ -195,6 +200,7 @@ def test_kernel_properties():
 # =========================================================================
 # Test 4: Kernel convergence
 # =========================================================================
+
 
 def test_kernel_convergence():
     """Kernel values should stabilize as N_samples increases."""
@@ -209,7 +215,7 @@ def test_kernel_convergence():
 
     K_prev = None
     for n_samples in [200, 500, 1000, 2000]:
-        K = gbs_kernel(W1, W2, n_samples=n_samples, mode='threshold')
+        K = gbs_kernel(W1, W2, n_samples=n_samples, mode="threshold")
         if K_prev is not None and K_prev > 1e-6:
             rel_change = abs(K - K_prev) / K_prev
             print(f"  N={n_samples:5d}: K={K:.6f}, rel_change={rel_change:.4f}")
@@ -225,6 +231,7 @@ def test_kernel_convergence():
 # =========================================================================
 # Test 5: Hellinger distance properties
 # =========================================================================
+
 
 def test_hellinger_properties():
     """Hellinger must satisfy: H(P,P)=0, H(P,Q)=H(Q,P), 0<=H<=1, triangle inequality."""
@@ -254,8 +261,9 @@ def test_hellinger_properties():
     # Triangle inequality: H(P,R) <= H(P,Q) + H(Q,R)
     h_pr = hellinger_distance(P, R)
     h_qr = hellinger_distance(Q, R)
-    assert h_pr <= h_pq + h_qr + 1e-10, \
+    assert h_pr <= h_pq + h_qr + 1e-10, (
         f"Triangle violated: H(P,R)={h_pr} > H(P,Q)+H(Q,R)={h_pq + h_qr}"
+    )
     print(f"  Triangle: H(P,R)={h_pr:.6f} <= H(P,Q)+H(Q,R)={h_pq + h_qr:.6f} OK")
 
     # Hellinger matrix
@@ -272,6 +280,7 @@ def test_hellinger_properties():
 # Test 6: Co-occurrence matrix
 # =========================================================================
 
+
 def test_cooccurrence():
     """Co-occurrence matrix should be symmetric with values in [0, 1]."""
     print("=" * 60)
@@ -280,7 +289,7 @@ def test_cooccurrence():
 
     A = _make_dag(8, seed=42)
     W = encode_dag_to_gbs(A, scale=0.9)
-    C = gbs_cooccurrence(W, n_samples=500, mode='threshold')
+    C = gbs_cooccurrence(W, n_samples=500, mode="threshold")
 
     assert C.shape == (8, 8), f"C shape: {C.shape}"
     assert np.allclose(C, C.T), "C not symmetric"
@@ -305,6 +314,7 @@ def test_cooccurrence():
 # Test 7: Moralization adds spouse edges
 # =========================================================================
 
+
 def test_moralization():
     """Moralized encoding should add edges between co-parents (spouses)."""
     print("=" * 60)
@@ -321,13 +331,13 @@ def test_moralization():
     # Without moralization: no 0-1 edge
     W_dag = encode_dag_to_gbs(A, scale=0.9)
     has_01_dag = W_dag[0, 1] > 0.01
-    print(f"  DAG encoding W[0,1] = {W_dag[0,1]:.4f} (spouse edge: {has_01_dag})")
+    print(f"  DAG encoding W[0,1] = {W_dag[0, 1]:.4f} (spouse edge: {has_01_dag})")
     assert not has_01_dag, "DAG encoding should NOT have spouse edge"
 
     # With moralization: 0-1 edge should appear
     W_moral = encode_moralized_to_gbs(A, threshold=0.1, scale=0.9)
     has_01_moral = W_moral[0, 1] > 0.01
-    print(f"  Moralized W[0,1] = {W_moral[0,1]:.4f} (spouse edge: {has_01_moral})")
+    print(f"  Moralized W[0,1] = {W_moral[0, 1]:.4f} (spouse edge: {has_01_moral})")
     assert has_01_moral, "Moralized encoding SHOULD have spouse edge"
 
     print("  PASSED\n")
@@ -336,6 +346,7 @@ def test_moralization():
 # =========================================================================
 # Test 8: Classical distances consistency
 # =========================================================================
+
 
 def test_classical_distances():
     """Classical distance functions should be consistent."""
@@ -369,6 +380,7 @@ def test_classical_distances():
 # Test 9: Dequantized features validity
 # =========================================================================
 
+
 def test_dequantized_features():
     """Dequantized features must be non-negative with correct dimensions."""
     print("=" * 60)
@@ -390,14 +402,19 @@ def test_dequantized_features():
             if order >= 3:
                 expected_dim += comb(d, 3)
 
-            assert f.shape == (expected_dim,), \
+            assert f.shape == (expected_dim,), (
                 f"d={d}, order={order}: expected dim {expected_dim}, got {f.shape}"
-            assert np.all(f >= -1e-10), \
+            )
+            assert np.all(f >= -1e-10), (
                 f"d={d}, order={order}: features have negative values (min={f.min()})"
-            assert np.all(f <= 1.0 + 1e-10), \
+            )
+            assert np.all(f <= 1.0 + 1e-10), (
                 f"d={d}, order={order}: features exceed 1 (max={f.max()})"
+            )
 
-            print(f"  d={d}, order={order}: dim={expected_dim}, range=[{f.min():.4f}, {f.max():.4f}]")
+            print(
+                f"  d={d}, order={order}: dim={expected_dim}, range=[{f.min():.4f}, {f.max():.4f}]"
+            )
 
     print("  PASSED\n")
 
@@ -405,6 +422,7 @@ def test_dequantized_features():
 # =========================================================================
 # Test 10: Dequantized kernel properties
 # =========================================================================
+
 
 def test_dequantized_kernel():
     """Dequantized kernel: K(G,G)=1 (normalized), K matrix is PSD."""
@@ -439,11 +457,10 @@ def test_dequantized_kernel():
     eigvals = np.linalg.eigvalsh(K_mat)
     assert np.all(eigvals >= -1e-10), f"K_mat not PSD: eigenvalues = {eigvals}"
     print(f"  K_mat eigenvalues: {eigvals}")
-    print(f"  PSD: True")
+    print("  PSD: True")
 
     # Diagonal should be 1.0 (normalized)
-    assert np.allclose(np.diag(K_mat), 1.0, atol=1e-6), \
-        f"K_mat diagonal: {np.diag(K_mat)}"
+    assert np.allclose(np.diag(K_mat), 1.0, atol=1e-6), f"K_mat diagonal: {np.diag(K_mat)}"
     print(f"  K_mat diagonal: {np.diag(K_mat)}")
 
     print("  PASSED\n")
@@ -452,6 +469,7 @@ def test_dequantized_kernel():
 # =========================================================================
 # Test 11: Dequantized co-occurrence matches sampling
 # =========================================================================
+
 
 def test_dequantized_cooccurrence():
     """Exact co-occurrence should agree with sampling-based co-occurrence."""
@@ -493,6 +511,7 @@ def test_dequantized_cooccurrence():
 # Test 12: Dequantized kernel scales to large d
 # =========================================================================
 
+
 def test_dequantized_scalability():
     """Dequantized kernel should work for d=30, 37 in reasonable time."""
     print("=" * 60)
@@ -513,9 +532,9 @@ def test_dequantized_scalability():
         t1 = time.perf_counter()
 
         assert 0.0 <= K <= 1.0, f"d={d}: K={K} out of [0,1]"
-        assert t1 - t0 < 10.0, f"d={d}: too slow ({t1-t0:.1f}s > 10s)"
+        assert t1 - t0 < 10.0, f"d={d}: too slow ({t1 - t0:.1f}s > 10s)"
 
-        print(f"  d={d}: K={K:.6f}, time={t1-t0:.3f}s")
+        print(f"  d={d}: K={K:.6f}, time={t1 - t0:.3f}s")
 
         # Co-occurrence
         t0 = time.perf_counter()
@@ -525,7 +544,7 @@ def test_dequantized_scalability():
         assert C.shape == (d, d), f"C shape: {C.shape}"
         assert np.allclose(C, C.T), f"d={d}: C not symmetric"
 
-        print(f"  d={d}: cooccurrence time={t1-t0:.3f}s")
+        print(f"  d={d}: cooccurrence time={t1 - t0:.3f}s")
 
     print("  PASSED\n")
 
@@ -534,7 +553,7 @@ def test_dequantized_scalability():
 # Main
 # =========================================================================
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("\nGBS Utilities Test Suite")
     print("=" * 60 + "\n")
 

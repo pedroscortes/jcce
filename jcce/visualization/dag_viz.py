@@ -24,12 +24,14 @@ Usage:
     )
 """
 
-import numpy as np
-from typing import List, Dict, Optional, Union, Tuple
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
+import numpy as np
 
 try:
     import graphviz
+
     HAS_GRAPHVIZ = True
 except ImportError:
     HAS_GRAPHVIZ = False
@@ -42,52 +44,53 @@ except ImportError:
 
 # Publication-friendly color scheme (colorblind-safe)
 COLORS = {
-    'treatment': '#2E86AB',      # Blue - treatment variable
-    'outcome': '#A23B72',        # Magenta - outcome variable
-    'markov_blanket': '#F18F01', # Orange - MB variables
-    'other': '#C5C3C6',          # Gray - non-MB variables
-    'directed_edge': '#1B1B1E',  # Black - directed edges
-    'bidirected_edge': '#E94F37', # Red - bidirected/confounded edges
-    'edge_label': '#495057',     # Dark gray - edge labels
+    "treatment": "#2E86AB",  # Blue - treatment variable
+    "outcome": "#A23B72",  # Magenta - outcome variable
+    "markov_blanket": "#F18F01",  # Orange - MB variables
+    "other": "#C5C3C6",  # Gray - non-MB variables
+    "directed_edge": "#1B1B1E",  # Black - directed edges
+    "bidirected_edge": "#E94F37",  # Red - bidirected/confounded edges
+    "edge_label": "#495057",  # Dark gray - edge labels
 }
 
 # Alternative schemes
 COLORS_MINIMAL = {
-    'treatment': '#000000',
-    'outcome': '#000000',
-    'markov_blanket': '#666666',
-    'other': '#AAAAAA',
-    'directed_edge': '#000000',
-    'bidirected_edge': '#000000',
-    'edge_label': '#333333',
+    "treatment": "#000000",
+    "outcome": "#000000",
+    "markov_blanket": "#666666",
+    "other": "#AAAAAA",
+    "directed_edge": "#000000",
+    "bidirected_edge": "#000000",
+    "edge_label": "#333333",
 }
 
 # Academic style - gray nodes, black text, sober look (matches lucas_sol4_sparsest.png)
 COLORS_ACADEMIC = {
-    'treatment': '#C0C0C0',      # Light gray
-    'outcome': '#C0C0C0',        # Light gray (same as others)
-    'markov_blanket': '#C0C0C0', # Light gray
-    'other': '#C0C0C0',          # Light gray
-    'directed_edge': '#000000',  # Black
-    'bidirected_edge': '#000000', # Black
-    'edge_label': '#000000',     # Black
-    'node_border': '#000000',    # Black border
+    "treatment": "#C0C0C0",  # Light gray
+    "outcome": "#C0C0C0",  # Light gray (same as others)
+    "markov_blanket": "#C0C0C0",  # Light gray
+    "other": "#C0C0C0",  # Light gray
+    "directed_edge": "#000000",  # Black
+    "bidirected_edge": "#000000",  # Black
+    "edge_label": "#000000",  # Black
+    "node_border": "#000000",  # Black border
 }
 
 COLORS_NATURE = {
-    'treatment': '#E64B35',      # Nature red
-    'outcome': '#4DBBD5',        # Nature cyan
-    'markov_blanket': '#00A087', # Nature green
-    'other': '#B09C85',          # Nature tan
-    'directed_edge': '#3C5488',  # Nature blue
-    'bidirected_edge': '#F39B7F', # Nature salmon
-    'edge_label': '#3C5488',
+    "treatment": "#E64B35",  # Nature red
+    "outcome": "#4DBBD5",  # Nature cyan
+    "markov_blanket": "#00A087",  # Nature green
+    "other": "#B09C85",  # Nature tan
+    "directed_edge": "#3C5488",  # Nature blue
+    "bidirected_edge": "#F39B7F",  # Nature salmon
+    "edge_label": "#3C5488",
 }
 
 
 # =============================================================================
 # Main Visualization Function
 # =============================================================================
+
 
 def visualize_jcce_dag(
     A_direct: Union[np.ndarray, List[List[float]]],
@@ -96,24 +99,24 @@ def visualize_jcce_dag(
     causal_effects: Optional[Dict[str, float]] = None,
     markov_blanket: Optional[List[int]] = None,
     treatment_idx: Optional[int] = None,  # None = no special treatment node
-    outcome_idx: Optional[int] = None,    # None = no special outcome node
+    outcome_idx: Optional[int] = None,  # None = no special outcome node
     highlight_nodes: Optional[List[int]] = None,  # Custom nodes to highlight
     threshold: float = 0.01,
     output_path: Optional[str] = None,
-    output_format: str = 'pdf',
+    output_format: str = "pdf",
     title: Optional[str] = None,
     show_edge_weights: bool = False,
     show_ate: bool = True,
-    color_scheme: str = 'default',
-    layout: str = 'dot',
-    rankdir: str = 'TB',
-    node_shape: str = 'ellipse',
-    fontname: str = 'Helvetica',
-    fontsize: str = '12',
+    color_scheme: str = "default",
+    layout: str = "dot",
+    rankdir: str = "TB",
+    node_shape: str = "ellipse",
+    fontname: str = "Helvetica",
+    fontsize: str = "12",
     width: Optional[str] = None,
     height: Optional[str] = None,
-    dpi: str = '300',
-) -> 'graphviz.Digraph':
+    dpi: str = "300",
+) -> "graphviz.Digraph":
     """
     Create publication-quality DAG visualization from JCCE output.
 
@@ -172,57 +175,59 @@ def visualize_jcce_dag(
         outcome_idx = n_vars + outcome_idx
 
     # Select color scheme
-    if color_scheme == 'minimal':
+    if color_scheme == "minimal":
         colors = COLORS_MINIMAL
-    elif color_scheme == 'nature':
+    elif color_scheme == "nature":
         colors = COLORS_NATURE
-    elif color_scheme == 'academic':
+    elif color_scheme == "academic":
         colors = COLORS_ACADEMIC
     else:
         colors = COLORS
 
     # Create directed graph
     dot = graphviz.Digraph(
-        name='jcce_dag',
+        name="jcce_dag",
         engine=layout,
         format=output_format,
     )
 
     # Graph attributes - v13.1: Increased spacing for better label visibility
     graph_attrs = {
-        'rankdir': rankdir,
-        'splines': 'true',  # Curved edges
-        'overlap': 'false',
-        'fontname': fontname,
-        'fontsize': fontsize,
-        'dpi': dpi,
-        'bgcolor': 'white',  # or transparent
-        'ranksep': '0.8',    # Vertical spacing between ranks
-        'nodesep': '0.6',    # Horizontal spacing between nodes
+        "rankdir": rankdir,
+        "splines": "true",  # Curved edges
+        "overlap": "false",
+        "fontname": fontname,
+        "fontsize": fontsize,
+        "dpi": dpi,
+        "bgcolor": "white",  # or transparent
+        "ranksep": "0.8",  # Vertical spacing between ranks
+        "nodesep": "0.6",  # Horizontal spacing between nodes
     }
     if width:
-        graph_attrs['size'] = f'{width},{height}' if height else width
+        graph_attrs["size"] = f"{width},{height}" if height else width
     if title:
-        graph_attrs['label'] = title
-        graph_attrs['labelloc'] = 't'
-        graph_attrs['fontsize'] = '14'
+        graph_attrs["label"] = title
+        graph_attrs["labelloc"] = "t"
+        graph_attrs["fontsize"] = "14"
 
     dot.attr(**graph_attrs)
 
     # Default node attributes
-    dot.attr('node',
+    dot.attr(
+        "node",
         shape=node_shape,
-        style='filled',
+        style="filled",
         fontname=fontname,
         fontsize=fontsize,
-        penwidth='1.5',
+        penwidth="1.5",
     )
 
     # Default edge attributes
-    dot.attr('edge',
+    dot.attr(
+        "edge",
         fontname=fontname,
-        fontsize='10',
-        penwidth='1.2',
+        fontsize="10",
+        penwidth="1.2",
     )
 
     # Add nodes with appropriate styling
@@ -230,39 +235,39 @@ def visualize_jcce_dag(
     highlight_set = set(highlight_nodes) if highlight_nodes else set()
 
     # Academic scheme uses black text on all nodes
-    is_academic = color_scheme == 'academic'
+    is_academic = color_scheme == "academic"
 
     for i, name in enumerate(feature_names):
         # Determine node color based on role
         if treatment_idx is not None and i == treatment_idx:
             # Explicit treatment designation
-            fillcolor = colors['treatment']
-            fontcolor = 'black' if is_academic else 'white'
-            penwidth = '2.5' if not is_academic else '1.5'
+            fillcolor = colors["treatment"]
+            fontcolor = "black" if is_academic else "white"
+            penwidth = "2.5" if not is_academic else "1.5"
             node_label = name  # No "(Treatment)" label
         elif outcome_idx is not None and i == outcome_idx:
             # Explicit outcome designation
-            fillcolor = colors['outcome']
-            fontcolor = 'black' if is_academic else 'white'
-            penwidth = '2.5' if not is_academic else '1.5'
+            fillcolor = colors["outcome"]
+            fontcolor = "black" if is_academic else "white"
+            penwidth = "2.5" if not is_academic else "1.5"
             node_label = name  # No "(Outcome)" label
         elif i in highlight_set:
             # Custom highlighted nodes
-            fillcolor = colors['markov_blanket']
-            fontcolor = 'black' if is_academic else 'white'
-            penwidth = '2.0' if not is_academic else '1.5'
+            fillcolor = colors["markov_blanket"]
+            fontcolor = "black" if is_academic else "white"
+            penwidth = "2.0" if not is_academic else "1.5"
             node_label = name
         elif i in mb_set:
             # Markov Blanket nodes (when no explicit treatment/outcome)
-            fillcolor = colors['markov_blanket']
-            fontcolor = 'black' if is_academic else 'white'
-            penwidth = '2.0' if not is_academic else '1.5'
+            fillcolor = colors["markov_blanket"]
+            fontcolor = "black" if is_academic else "white"
+            penwidth = "2.0" if not is_academic else "1.5"
             node_label = name
         else:
             # Regular nodes
-            fillcolor = colors['other']
-            fontcolor = 'black'
-            penwidth = '1.0' if not is_academic else '1.5'
+            fillcolor = colors["other"]
+            fontcolor = "black"
+            penwidth = "1.0" if not is_academic else "1.5"
             node_label = name
 
         dot.node(
@@ -291,10 +296,10 @@ def visualize_jcce_dag(
                         source_name = feature_names[i]
                         target_name = feature_names[j]
                         possible_keys = [
-                            f'{source_name}->{target_name}',  # X0->Y
-                            f'{source_name}→{target_name}',   # X0→Y (unicode arrow)
-                            f'X{i}->X{j}',                     # X0->X1
-                            f'X{i}->{target_name}',            # X0->Y
+                            f"{source_name}->{target_name}",  # X0->Y
+                            f"{source_name}→{target_name}",  # X0→Y (unicode arrow)
+                            f"X{i}->X{j}",  # X0->X1
+                            f"X{i}->{target_name}",  # X0->Y
                         ]
                         for key in possible_keys:
                             if key in causal_effects:
@@ -306,21 +311,21 @@ def visualize_jcce_dag(
                         ate = weight
 
                     # Always use 2 decimal places
-                    label_parts.append(f'{ate:.2f}')
+                    label_parts.append(f"{ate:.2f}")
 
                 # Add raw weight if requested
                 if show_edge_weights:
-                    label_parts.append(f'w={weight:.2f}')
+                    label_parts.append(f"w={weight:.2f}")
 
-                edge_label = '\n'.join(label_parts) if label_parts else ''
+                edge_label = "\n".join(label_parts) if label_parts else ""
 
                 dot.edge(
                     feature_names[i],
                     feature_names[j],
                     label=edge_label,
-                    color=colors['directed_edge'],
-                    fontcolor=colors['edge_label'],
-                    arrowhead='normal',
+                    color=colors["directed_edge"],
+                    fontcolor=colors["edge_label"],
+                    arrowhead="normal",
                 )
 
     # Add bidirected edges (confounders)
@@ -333,8 +338,9 @@ def visualize_jcce_dag(
                 weight = A_confound[i, j]
                 if abs(weight) > threshold:
                     # Check if directed edge exists in either direction
-                    has_directed = (abs(A_direct[i, j]) > threshold or
-                                   abs(A_direct[j, i]) > threshold)
+                    has_directed = (
+                        abs(A_direct[i, j]) > threshold or abs(A_direct[j, i]) > threshold
+                    )
                     if has_directed:
                         continue  # Skip bidirected if directed exists
 
@@ -342,21 +348,21 @@ def visualize_jcce_dag(
                     dot.edge(
                         feature_names[i],
                         feature_names[j],
-                        color=colors['directed_edge'],  # Same black as directed edges
-                        style='dashed',
-                        dir='both',
-                        arrowhead='normal',
-                        arrowtail='normal',
-                        constraint='false',  # Don't affect layout ranking
+                        color=colors["directed_edge"],  # Same black as directed edges
+                        style="dashed",
+                        dir="both",
+                        arrowhead="normal",
+                        arrowtail="normal",
+                        constraint="false",  # Don't affect layout ranking
                     )
 
     # Save if path provided
     if output_path:
         # Remove extension if provided
         output_path = str(output_path)
-        for ext in ['.pdf', '.png', '.svg', '.gv']:
+        for ext in [".pdf", ".png", ".svg", ".gv"]:
             if output_path.endswith(ext):
-                output_path = output_path[:-len(ext)]
+                output_path = output_path[: -len(ext)]
 
         dot.render(output_path, cleanup=True)
         print(f"DAG saved to: {output_path}.{output_format}")
@@ -368,13 +374,14 @@ def visualize_jcce_dag(
 # Convenience Functions
 # =============================================================================
 
+
 def visualize_from_metrics(
     metrics: Dict,
     feature_names: List[str],
     treatment_idx: int = 0,
     output_path: Optional[str] = None,
-    **kwargs
-) -> 'graphviz.Digraph':
+    **kwargs,
+) -> "graphviz.Digraph":
     """
     Create DAG visualization directly from JCCE v7 metrics dict.
 
@@ -389,14 +396,14 @@ def visualize_from_metrics(
         graphviz.Digraph object
     """
     return visualize_jcce_dag(
-        A_direct=metrics.get('A_direct', metrics.get('A_weights', [])),
-        A_confound=metrics.get('A_confound'),
-        causal_effects=metrics.get('causal_effects', {}),
-        markov_blanket=metrics.get('markov_blanket', []),
+        A_direct=metrics.get("A_direct", metrics.get("A_weights", [])),
+        A_confound=metrics.get("A_confound"),
+        causal_effects=metrics.get("causal_effects", {}),
+        markov_blanket=metrics.get("markov_blanket", []),
         feature_names=feature_names,
         treatment_idx=treatment_idx,
         output_path=output_path,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -405,8 +412,8 @@ def visualize_pareto_solution(
     feature_names: List[str],
     treatment_idx: int = 0,
     output_path: Optional[str] = None,
-    **kwargs
-) -> 'graphviz.Digraph':
+    **kwargs,
+) -> "graphviz.Digraph":
     """
     Create DAG visualization from a Pareto solution's metrics.
 
@@ -421,25 +428,27 @@ def visualize_pareto_solution(
         graphviz.Digraph object
     """
     # Extract adjacency matrix from structure_A_est
-    A_direct = pareto_metrics.get('structure_A_est', np.zeros((len(feature_names), len(feature_names))))
+    A_direct = pareto_metrics.get(
+        "structure_A_est", np.zeros((len(feature_names), len(feature_names)))
+    )
 
     return visualize_jcce_dag(
         A_direct=A_direct,
-        A_confound=pareto_metrics.get('A_confound'),
-        causal_effects=pareto_metrics.get('causal_effects', {}),
-        markov_blanket=pareto_metrics.get('mb_indices', []),
+        A_confound=pareto_metrics.get("A_confound"),
+        causal_effects=pareto_metrics.get("causal_effects", {}),
+        markov_blanket=pareto_metrics.get("mb_indices", []),
         feature_names=feature_names,
         treatment_idx=treatment_idx,
         output_path=output_path,
-        **kwargs
+        **kwargs,
     )
 
 
 def create_legend(
-    output_path: str = 'dag_legend',
-    output_format: str = 'pdf',
-    color_scheme: str = 'default',
-) -> 'graphviz.Digraph':
+    output_path: str = "dag_legend",
+    output_format: str = "pdf",
+    color_scheme: str = "default",
+) -> "graphviz.Digraph":
     """
     Create a standalone legend for JCCE DAG figures.
 
@@ -454,39 +463,45 @@ def create_legend(
     if not HAS_GRAPHVIZ:
         raise ImportError("graphviz package required")
 
-    if color_scheme == 'minimal':
+    if color_scheme == "minimal":
         colors = COLORS_MINIMAL
-    elif color_scheme == 'nature':
+    elif color_scheme == "nature":
         colors = COLORS_NATURE
     else:
         colors = COLORS
 
     dot = graphviz.Digraph(
-        name='legend',
+        name="legend",
         format=output_format,
     )
 
-    dot.attr(rankdir='TB', label='Legend', labelloc='t', fontsize='14')
-    dot.attr('node', shape='ellipse', style='filled', fontsize='10')
+    dot.attr(rankdir="TB", label="Legend", labelloc="t", fontsize="14")
+    dot.attr("node", shape="ellipse", style="filled", fontsize="10")
 
     # Node types
-    with dot.subgraph(name='cluster_nodes') as c:
-        c.attr(label='Node Types', style='rounded')
-        c.node('T', 'Treatment', fillcolor=colors['treatment'], fontcolor='white')
-        c.node('Y', 'Outcome', fillcolor=colors['outcome'], fontcolor='white')
-        c.node('MB', 'Markov Blanket', fillcolor=colors['markov_blanket'], fontcolor='white')
-        c.node('O', 'Other', fillcolor=colors['other'], fontcolor='black')
+    with dot.subgraph(name="cluster_nodes") as c:
+        c.attr(label="Node Types", style="rounded")
+        c.node("T", "Treatment", fillcolor=colors["treatment"], fontcolor="white")
+        c.node("Y", "Outcome", fillcolor=colors["outcome"], fontcolor="white")
+        c.node("MB", "Markov Blanket", fillcolor=colors["markov_blanket"], fontcolor="white")
+        c.node("O", "Other", fillcolor=colors["other"], fontcolor="black")
 
     # Edge types
-    with dot.subgraph(name='cluster_edges') as c:
-        c.attr(label='Edge Types', style='rounded')
-        c.node('A', '', shape='point', width='0')
-        c.node('B', '', shape='point', width='0')
-        c.node('C', '', shape='point', width='0')
-        c.node('D', '', shape='point', width='0')
-        c.edge('A', 'B', label='Directed\n(causal)', color=colors['directed_edge'])
-        c.edge('C', 'D', label='Bidirected\n(confounded)',
-               color=colors['directed_edge'], style='dashed', dir='both')  # Same color as directed
+    with dot.subgraph(name="cluster_edges") as c:
+        c.attr(label="Edge Types", style="rounded")
+        c.node("A", "", shape="point", width="0")
+        c.node("B", "", shape="point", width="0")
+        c.node("C", "", shape="point", width="0")
+        c.node("D", "", shape="point", width="0")
+        c.edge("A", "B", label="Directed\n(causal)", color=colors["directed_edge"])
+        c.edge(
+            "C",
+            "D",
+            label="Bidirected\n(confounded)",
+            color=colors["directed_edge"],
+            style="dashed",
+            dir="both",
+        )  # Same color as directed
 
     dot.render(output_path, cleanup=True)
     print(f"Legend saved to: {output_path}.{output_format}")
@@ -497,6 +512,7 @@ def create_legend(
 # =============================================================================
 # Test Functions
 # =============================================================================
+
 
 def create_test_data_simple() -> Tuple[np.ndarray, np.ndarray, Dict, List[int], List[str]]:
     """
@@ -513,9 +529,9 @@ def create_test_data_simple() -> Tuple[np.ndarray, np.ndarray, Dict, List[int], 
 
     # Directed edges
     A_direct = np.zeros((n_vars, n_vars))
-    A_direct[0, 3] = 0.5   # X0 -> Y (treatment effect)
-    A_direct[1, 0] = 0.3   # X1 -> X0
-    A_direct[1, 3] = 0.2   # X1 -> Y
+    A_direct[0, 3] = 0.5  # X0 -> Y (treatment effect)
+    A_direct[1, 0] = 0.3  # X1 -> X0
+    A_direct[1, 3] = 0.2  # X1 -> Y
     A_direct[2, 3] = 0.15  # X2 -> Y
 
     # Bidirected edges (confounding)
@@ -525,16 +541,16 @@ def create_test_data_simple() -> Tuple[np.ndarray, np.ndarray, Dict, List[int], 
 
     # Causal effects
     causal_effects = {
-        'X0->Y': 0.52,
-        'X1->Y': 0.18,
-        'X2->Y': 0.14,
+        "X0->Y": 0.52,
+        "X1->Y": 0.18,
+        "X2->Y": 0.14,
     }
 
     # Markov Blanket of Y
     markov_blanket = [0, 1, 2]  # X0, X1, X2 are all in MB
 
     # Feature names
-    feature_names = ['X0', 'X1', 'X2', 'Y']
+    feature_names = ["X0", "X1", "X2", "Y"]
 
     return A_direct, A_confound, causal_effects, markov_blanket, feature_names
 
@@ -554,14 +570,14 @@ def create_test_data_general() -> Tuple[np.ndarray, np.ndarray, Dict, List[str]]
         Age <-> Gender (confounded by genetics/culture)
     """
     n_vars = 4  # Age, Education, Gender, Income
-    feature_names = ['Age', 'Education', 'Gender', 'Income']
+    feature_names = ["Age", "Education", "Gender", "Income"]
 
     # Directed edges (causal relationships)
     A_direct = np.zeros((n_vars, n_vars))
-    A_direct[0, 1] = 0.4   # Age -> Education
-    A_direct[0, 3] = 0.3   # Age -> Income
-    A_direct[1, 3] = 0.5   # Education -> Income (strongest)
-    A_direct[2, 3] = 0.2   # Gender -> Income
+    A_direct[0, 1] = 0.4  # Age -> Education
+    A_direct[0, 3] = 0.3  # Age -> Income
+    A_direct[1, 3] = 0.5  # Education -> Income (strongest)
+    A_direct[2, 3] = 0.2  # Gender -> Income
 
     # Bidirected edges (latent confounders)
     A_confound = np.zeros((n_vars, n_vars))
@@ -570,10 +586,10 @@ def create_test_data_general() -> Tuple[np.ndarray, np.ndarray, Dict, List[str]]
 
     # Causal effects (for ALL edges, not just to outcome)
     causal_effects = {
-        'Age->Education': 0.42,
-        'Age->Income': 0.28,
-        'Education->Income': 0.55,
-        'Gender->Income': 0.18,
+        "Age->Education": 0.42,
+        "Age->Income": 0.28,
+        "Education->Income": 0.55,
+        "Gender->Income": 0.18,
     }
 
     return A_direct, A_confound, causal_effects, feature_names
@@ -593,13 +609,13 @@ def create_test_data_ihdp() -> Tuple[np.ndarray, np.ndarray, Dict, List[int], Li
 
     # Directed edges
     A_direct = np.zeros((n_vars, n_vars))
-    A_direct[0, 7] = 0.30   # X0 -> Y (treatment)
-    A_direct[5, 7] = 0.45   # X5 -> Y (strongest covariate)
-    A_direct[1, 7] = 0.12   # X1 -> Y
-    A_direct[2, 7] = 0.08   # X2 -> Y
-    A_direct[3, 0] = 0.20   # X3 -> X0 (affects treatment assignment)
-    A_direct[4, 5] = 0.15   # X4 -> X5
-    A_direct[6, 7] = 0.10   # X6 -> Y
+    A_direct[0, 7] = 0.30  # X0 -> Y (treatment)
+    A_direct[5, 7] = 0.45  # X5 -> Y (strongest covariate)
+    A_direct[1, 7] = 0.12  # X1 -> Y
+    A_direct[2, 7] = 0.08  # X2 -> Y
+    A_direct[3, 0] = 0.20  # X3 -> X0 (affects treatment assignment)
+    A_direct[4, 5] = 0.15  # X4 -> X5
+    A_direct[6, 7] = 0.10  # X6 -> Y
 
     # Bidirected edges (confounding)
     A_confound = np.zeros((n_vars, n_vars))
@@ -610,23 +626,23 @@ def create_test_data_ihdp() -> Tuple[np.ndarray, np.ndarray, Dict, List[int], Li
 
     # Causal effects
     causal_effects = {
-        'X0->Y': 0.30,
-        'X1->Y': 0.12,
-        'X2->Y': 0.08,
-        'X5->Y': 0.45,
-        'X6->Y': 0.10,
+        "X0->Y": 0.30,
+        "X1->Y": 0.12,
+        "X2->Y": 0.08,
+        "X5->Y": 0.45,
+        "X6->Y": 0.10,
     }
 
     # Markov Blanket
     markov_blanket = [0, 1, 2, 5, 6]
 
     # Feature names
-    feature_names = ['X0', 'X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'Y']
+    feature_names = ["X0", "X1", "X2", "X3", "X4", "X5", "X6", "Y"]
 
     return A_direct, A_confound, causal_effects, markov_blanket, feature_names
 
 
-def run_visualization_tests(output_dir: str = 'dag_test_outputs'):
+def run_visualization_tests(output_dir: str = "dag_test_outputs"):
     """
     Run visualization test using general causal discovery pattern.
 
@@ -654,8 +670,8 @@ def run_visualization_tests(output_dir: str = 'dag_test_outputs'):
         A_confound=A_confound,
         causal_effects=causal_effects,
         feature_names=names,
-        output_path=str(output_path / 'test_dag'),
-        output_format='png',
+        output_path=str(output_path / "test_dag"),
+        output_format="png",
         show_ate=True,
     )
     print(f"  Saved: {output_path}/test_dag.png")
@@ -666,8 +682,8 @@ def run_visualization_tests(output_dir: str = 'dag_test_outputs'):
         A_confound=A_confound,
         causal_effects=causal_effects,
         feature_names=names,
-        output_path=str(output_path / 'test_dag'),
-        output_format='pdf',
+        output_path=str(output_path / "test_dag"),
+        output_format="pdf",
         show_ate=True,
     )
     print(f"  Saved: {output_path}/test_dag.pdf")
@@ -681,13 +697,14 @@ def run_visualization_tests(output_dir: str = 'dag_test_outputs'):
 # Command Line Interface
 # =============================================================================
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='JCCE DAG Visualization')
-    parser.add_argument('--test', action='store_true', help='Run visualization tests')
-    parser.add_argument('--output-dir', type=str, default='dag_test_outputs',
-                       help='Output directory for test files')
+    parser = argparse.ArgumentParser(description="JCCE DAG Visualization")
+    parser.add_argument("--test", action="store_true", help="Run visualization tests")
+    parser.add_argument(
+        "--output-dir", type=str, default="dag_test_outputs", help="Output directory for test files"
+    )
 
     args = parser.parse_args()
 

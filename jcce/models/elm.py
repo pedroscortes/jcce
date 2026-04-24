@@ -14,10 +14,11 @@ This serves as an interesting baseline that tests whether complex
 learned transformations are necessary, or if random projections suffice.
 """
 
+from typing import Optional
+
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from typing import Optional
 
 
 class ELMProcessor(nn.Module):
@@ -46,17 +47,12 @@ class ELMProcessor(nn.Module):
 
     hidden_dim: int = 32
     n_hidden_nodes: int = 128
-    activation: str = 'tanh'
+    activation: str = "tanh"
     use_bias: bool = True
     weight_scale: float = 1.0
 
     @nn.compact
-    def __call__(
-        self,
-        z: jnp.ndarray,
-        A: jnp.ndarray = None,
-        training: bool = True
-    ) -> jnp.ndarray:
+    def __call__(self, z: jnp.ndarray, A: jnp.ndarray = None, training: bool = True) -> jnp.ndarray:
         """
         Process latent factors with ELM.
 
@@ -103,17 +99,17 @@ class ELMProcessor(nn.Module):
         # Create random input-to-hidden weights
         # Shape: (input_dim, n_hidden_nodes)
         W_hidden = self.param(
-            'W_hidden',
+            "W_hidden",
             lambda rng, shape: jax.random.normal(rng, shape) * self.weight_scale,
-            (input_dim, self.n_hidden_nodes)
+            (input_dim, self.n_hidden_nodes),
         )
 
         # Create random bias (if enabled)
         if self.use_bias:
             b_hidden = self.param(
-                'b_hidden',
+                "b_hidden",
                 lambda rng, shape: jax.random.normal(rng, shape) * self.weight_scale,
-                (self.n_hidden_nodes,)
+                (self.n_hidden_nodes,),
             )
         else:
             b_hidden = 0.0
@@ -126,7 +122,7 @@ class ELMProcessor(nn.Module):
 
         # Forward pass through random hidden layer
         # (B, N, input_dim) @ (input_dim, n_hidden_nodes) → (B, N, n_hidden_nodes)
-        h_random = jnp.einsum('bni,ih->bnh', z_input, W_hidden) + b_hidden
+        h_random = jnp.einsum("bni,ih->bnh", z_input, W_hidden) + b_hidden
 
         # Apply activation
         h_activated = self._activation(h_random)
@@ -140,13 +136,13 @@ class ELMProcessor(nn.Module):
 
     def _activation(self, x: jnp.ndarray) -> jnp.ndarray:
         """Apply activation function to random hidden layer."""
-        if self.activation == 'relu':
+        if self.activation == "relu":
             return nn.relu(x)
-        elif self.activation == 'tanh':
+        elif self.activation == "tanh":
             return jnp.tanh(x)
-        elif self.activation == 'sigmoid':
+        elif self.activation == "sigmoid":
             return nn.sigmoid(x)
-        elif self.activation == 'gelu':
+        elif self.activation == "gelu":
             return nn.gelu(x)
         else:
             raise ValueError(f"Unknown activation: {self.activation}")
@@ -164,7 +160,7 @@ class ELMProcessorLegacy(nn.Module):
 
     hidden_dim: int = 32
     n_hidden_nodes: int = 128
-    activation: str = 'tanh'
+    activation: str = "tanh"
 
     def setup(self):
         """Setup ELM layers."""
@@ -187,7 +183,7 @@ class ELMProcessorLegacy(nn.Module):
         W = jax.random.normal(W_key, (input_dim, self.n_hidden_nodes)) * 0.5
         b = jax.random.normal(b_key, (self.n_hidden_nodes,)) * 0.1
 
-        return {'W': W, 'b': b}
+        return {"W": W, "b": b}
 
     @nn.compact
     def __call__(
@@ -195,7 +191,7 @@ class ELMProcessorLegacy(nn.Module):
         z: jnp.ndarray,
         random_weights: Optional[dict] = None,
         A: jnp.ndarray = None,
-        training: bool = True
+        training: bool = True,
     ) -> jnp.ndarray:
         """
         Process with ELM using provided random weights.
@@ -214,14 +210,14 @@ class ELMProcessorLegacy(nn.Module):
             raise ValueError(f"Expected 2D or 3D input, got {z.ndim}D")
 
         # Random projection (fixed weights)
-        W = random_weights['W']
-        b = random_weights['b']
-        h_random = jnp.einsum('bni,ih->bnh', z_input, W) + b
+        W = random_weights["W"]
+        b = random_weights["b"]
+        h_random = jnp.einsum("bni,ih->bnh", z_input, W) + b
 
         # Activation
-        if self.activation == 'tanh':
+        if self.activation == "tanh":
             h_activated = jnp.tanh(h_random)
-        elif self.activation == 'relu':
+        elif self.activation == "relu":
             h_activated = nn.relu(h_random)
         else:
             h_activated = nn.sigmoid(h_random)

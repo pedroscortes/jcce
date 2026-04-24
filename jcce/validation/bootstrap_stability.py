@@ -16,11 +16,12 @@ Usage:
     )
 """
 
-import numpy as np
 import time
 import warnings
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
 
 
 @dataclass
@@ -29,25 +30,26 @@ class BootstrapStabilityResult:
 
     # Core results
     edge_frequency: np.ndarray  # (n_total, n_total) — P(edge present)
-    n_bootstraps: int           # Number of completed bootstrap samples
-    n_requested: int            # Number of requested samples (B)
+    n_bootstraps: int  # Number of completed bootstrap samples
+    n_requested: int  # Number of requested samples (B)
 
     # Edge statistics
-    n_stable_edges: int         # Edges with frequency >= stability_threshold
-    n_total_edges_ever: int     # Edges appearing in at least one bootstrap
+    n_stable_edges: int  # Edges with frequency >= stability_threshold
+    n_total_edges_ever: int  # Edges appearing in at least one bootstrap
     stability_threshold: float  # Threshold used for "stable"
 
     # Per-bootstrap metadata
     n_edges_per_bootstrap: List[int]  # Edge count per resample
-    h_A_per_bootstrap: List[float]    # DAG constraint per resample
-    bacc_per_bootstrap: List[float]   # Balanced accuracy per resample
+    h_A_per_bootstrap: List[float]  # DAG constraint per resample
+    bacc_per_bootstrap: List[float]  # Balanced accuracy per resample
 
     # Timing
     total_time: float
     time_per_bootstrap: float
 
     def get_stable_edges(
-        self, min_frequency: float = 0.5,
+        self,
+        min_frequency: float = 0.5,
     ) -> List[Tuple[int, int, float]]:
         """Return edges with frequency >= min_frequency as (i, j, freq) triples."""
         n = self.edge_frequency.shape[0]
@@ -61,15 +63,15 @@ class BootstrapStabilityResult:
 
     def to_dict(self) -> Dict:
         return {
-            'edge_frequency': self.edge_frequency.tolist(),
-            'n_bootstraps': self.n_bootstraps,
-            'n_requested': self.n_requested,
-            'n_stable_edges': self.n_stable_edges,
-            'n_total_edges_ever': self.n_total_edges_ever,
-            'stability_threshold': self.stability_threshold,
-            'n_edges_per_bootstrap': self.n_edges_per_bootstrap,
-            'total_time': self.total_time,
-            'time_per_bootstrap': self.time_per_bootstrap,
+            "edge_frequency": self.edge_frequency.tolist(),
+            "n_bootstraps": self.n_bootstraps,
+            "n_requested": self.n_requested,
+            "n_stable_edges": self.n_stable_edges,
+            "n_total_edges_ever": self.n_total_edges_ever,
+            "stability_threshold": self.stability_threshold,
+            "n_edges_per_bootstrap": self.n_edges_per_bootstrap,
+            "total_time": self.total_time,
+            "time_per_bootstrap": self.time_per_bootstrap,
         }
 
     def summary(self) -> str:
@@ -110,7 +112,7 @@ def bootstrap_dag_stability(
     edge_threshold: float = 0.3,
     stability_threshold: float = 0.5,
     seed: int = 42,
-    task: str = 'classification',
+    task: str = "classification",
     verbose: bool = False,
 ) -> BootstrapStabilityResult:
     """
@@ -176,9 +178,10 @@ def bootstrap_dag_stability(
         key, proc_key, fold_key = random.split(key, 3)
 
         processor = create_processor(
-            processor_type, key=proc_key,
+            processor_type,
+            key=proc_key,
             n_features=n_features,
-            **hyperparams.get('processor_config', {}),
+            **hyperparams.get("processor_config", {}),
         )
 
         # Cold-start each bootstrap resample per Meinshausen & Bühlmann (2010):
@@ -194,20 +197,20 @@ def bootstrap_dag_stability(
                 processor=processor,
                 key=fold_key,
                 processor_type=processor_type,
-                lambda_1=hyperparams.get('lambda_1', 0.02),
-                lambda_2_init=hyperparams.get('lambda_2', 0.01),
-                lambda_class=hyperparams.get('lambda_class', 1.0),
-                lr=hyperparams.get('lr', 0.001),
+                lambda_1=hyperparams.get("lambda_1", 0.02),
+                lambda_2_init=hyperparams.get("lambda_2", 0.01),
+                lambda_class=hyperparams.get("lambda_class", 1.0),
+                lr=hyperparams.get("lr", 0.001),
                 max_iter=max_iter,
                 patience=25,  # Cold-start needs more patience
                 verbose=0,
                 A_init=A_warm,
-                effect_hidden_dim=hyperparams.get('effect_hidden_dim', 64),
-                effect_embed_dim=hyperparams.get('effect_embed_dim', 16),
-                lambda_effect=hyperparams.get('lambda_effect', 0.5),
-                effect_warmup_iter=hyperparams.get('effect_warmup_iter', 20),
-                lambda_confound_sparse=hyperparams.get('lambda_confound_sparse', 0.02),
-                lambda_bow=hyperparams.get('lambda_bow', 0.3),
+                effect_hidden_dim=hyperparams.get("effect_hidden_dim", 64),
+                effect_embed_dim=hyperparams.get("effect_embed_dim", 16),
+                lambda_effect=hyperparams.get("lambda_effect", 0.5),
+                effect_warmup_iter=hyperparams.get("effect_warmup_iter", 20),
+                lambda_confound_sparse=hyperparams.get("lambda_confound_sparse", 0.02),
+                lambda_bow=hyperparams.get("lambda_bow", 0.3),
                 task=task,
             )
 
@@ -218,20 +221,19 @@ def bootstrap_dag_stability(
 
             n_edges = int(np.sum(edges_present))
             n_edges_per_bootstrap.append(n_edges)
-            h_A_per_bootstrap.append(float(metrics.get('h_A', 0.0)))
-            bacc_per_bootstrap.append(
-                float(metrics.get('classification_balanced_accuracy', 0.0))
-            )
+            h_A_per_bootstrap.append(float(metrics.get("h_A", 0.0)))
+            bacc_per_bootstrap.append(float(metrics.get("classification_balanced_accuracy", 0.0)))
             n_completed += 1
 
             if verbose and (b + 1) % max(1, B // 10) == 0:
                 elapsed = time.time() - total_start
                 rate = elapsed / (b + 1)
-                print(f"  Bootstrap {b+1}/{B}: {n_edges} edges, "
-                      f"{elapsed:.0f}s ({rate:.1f}s/iter)")
+                print(
+                    f"  Bootstrap {b + 1}/{B}: {n_edges} edges, {elapsed:.0f}s ({rate:.1f}s/iter)"
+                )
 
         except Exception as e:
-            warnings.warn(f"Bootstrap {b+1} failed: {e}")
+            warnings.warn(f"Bootstrap {b + 1} failed: {e}")
             continue
 
         # Cleanup periodically
@@ -244,12 +246,8 @@ def bootstrap_dag_stability(
     edge_frequency = edge_counts / max(n_completed, 1)
 
     # Count stable edges
-    n_stable = int(np.sum(
-        (edge_frequency >= stability_threshold) & ~np.eye(n_total, dtype=bool)
-    ))
-    n_total_edges_ever = int(np.sum(
-        (edge_frequency > 0) & ~np.eye(n_total, dtype=bool)
-    ))
+    n_stable = int(np.sum((edge_frequency >= stability_threshold) & ~np.eye(n_total, dtype=bool)))
+    n_total_edges_ever = int(np.sum((edge_frequency > 0) & ~np.eye(n_total, dtype=bool)))
 
     result = BootstrapStabilityResult(
         edge_frequency=edge_frequency,

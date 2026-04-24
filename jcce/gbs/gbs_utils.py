@@ -18,10 +18,10 @@ from thewalrus import threshold_detection_prob
 from thewalrus.quantum import Covmat, gen_Qmat_from_graph
 from thewalrus.samples import hafnian_sample_graph, torontonian_sample_graph
 
-
 # =============================================================================
 # Encoding functions: DAG/data → GBS graph matrix
 # =============================================================================
+
 
 def encode_dag_to_gbs(
     A_direct: np.ndarray,
@@ -60,7 +60,7 @@ def encode_dag_to_gbs(
 
 def encode_dependency_to_gbs(
     X: np.ndarray,
-    method: str = 'partial_corr',
+    method: str = "partial_corr",
     scale: float = 0.9,
 ) -> np.ndarray:
     """
@@ -74,9 +74,9 @@ def encode_dependency_to_gbs(
     Returns:
         W_tilde: (d, d) symmetric, non-negative, spectral radius < 1.
     """
-    if method == 'partial_corr':
+    if method == "partial_corr":
         W = _partial_correlation(X)
-    elif method == 'correlation':
+    elif method == "correlation":
         W = np.abs(np.corrcoef(X, rowvar=False))
     else:
         raise ValueError(f"Unknown method: {method}. Use 'partial_corr' or 'correlation'.")
@@ -117,7 +117,7 @@ def encode_moralized_to_gbs(
         if len(parents) < 2:
             continue
         for i, pi in enumerate(parents):
-            for pk in parents[i + 1:]:
+            for pk in parents[i + 1 :]:
                 # Edge weight = min of the two parent-child weights
                 marry_weight = min(A_abs[pi, j], A_abs[pk, j])
                 M[pi, pk] = max(M[pi, pk], marry_weight)
@@ -132,12 +132,13 @@ def encode_moralized_to_gbs(
 # GBS Sampling
 # =============================================================================
 
+
 def sample_gbs(
     W_tilde: np.ndarray,
     n_samples: int = 5000,
     n_mean: float | None = None,
     max_photons: int = 12,
-    mode: str = 'threshold',
+    mode: str = "threshold",
     parallel: bool = False,
 ) -> np.ndarray:
     """
@@ -162,15 +163,22 @@ def sample_gbs(
 
     A = np.asarray(W_tilde, dtype=np.float64)
 
-    if mode == 'threshold':
+    if mode == "threshold":
         samples = torontonian_sample_graph(
-            A, n_mean=n_mean, samples=n_samples,
-            max_photons=max_photons, parallel=parallel,
+            A,
+            n_mean=n_mean,
+            samples=n_samples,
+            max_photons=max_photons,
+            parallel=parallel,
         )
-    elif mode == 'pnr':
+    elif mode == "pnr":
         samples = hafnian_sample_graph(
-            A, n_mean=n_mean, samples=n_samples,
-            cutoff=max_photons, max_photons=max_photons, parallel=parallel,
+            A,
+            n_mean=n_mean,
+            samples=n_samples,
+            cutoff=max_photons,
+            max_photons=max_photons,
+            parallel=parallel,
         )
     else:
         raise ValueError(f"Unknown mode: {mode}. Use 'threshold' or 'pnr'.")
@@ -181,6 +189,7 @@ def sample_gbs(
 # =============================================================================
 # Feature extraction from samples
 # =============================================================================
+
 
 def compute_orbit_features(samples: np.ndarray) -> np.ndarray:
     """
@@ -245,13 +254,14 @@ def compute_event_probabilities(samples: np.ndarray) -> np.ndarray:
 # GBS Graph Kernel (Schuld et al., 2020)
 # =============================================================================
 
+
 def gbs_kernel(
     W1: np.ndarray,
     W2: np.ndarray,
     n_samples: int = 5000,
     n_mean: float | None = None,
     max_photons: int = 12,
-    mode: str = 'threshold',
+    mode: str = "threshold",
 ) -> float:
     """
     Compute GBS graph kernel K(G1, G2) = sum_S P(S|G1) * P(S|G2).
@@ -269,10 +279,8 @@ def gbs_kernel(
     Returns:
         K: kernel value (non-negative float).
     """
-    P1 = compute_event_probabilities(
-        sample_gbs(W1, n_samples, n_mean, max_photons, mode))
-    P2 = compute_event_probabilities(
-        sample_gbs(W2, n_samples, n_mean, max_photons, mode))
+    P1 = compute_event_probabilities(sample_gbs(W1, n_samples, n_mean, max_photons, mode))
+    P2 = compute_event_probabilities(sample_gbs(W2, n_samples, n_mean, max_photons, mode))
 
     # K = sum_S P(S|G1) * P(S|G2) over shared events
     K = 0.0
@@ -288,7 +296,7 @@ def gbs_kernel_matrix(
     n_samples: int = 5000,
     n_mean: float | None = None,
     max_photons: int = 12,
-    mode: str = 'threshold',
+    mode: str = "threshold",
 ) -> np.ndarray:
     """
     Compute pairwise GBS kernel matrix for a list of graphs.
@@ -332,12 +340,13 @@ def gbs_kernel_matrix(
 # Co-occurrence matrix (for Application B: MB estimation)
 # =============================================================================
 
+
 def gbs_cooccurrence(
     W_tilde: np.ndarray,
     n_samples: int = 5000,
     n_mean: float | None = None,
     max_photons: int = 12,
-    mode: str = 'threshold',
+    mode: str = "threshold",
 ) -> np.ndarray:
     """
     Compute co-occurrence matrix C[i,j] from GBS samples.
@@ -370,6 +379,7 @@ def gbs_cooccurrence(
 # =============================================================================
 # Hellinger distance
 # =============================================================================
+
 
 def hellinger_distance(P: dict, Q: dict) -> float:
     """
@@ -419,6 +429,7 @@ def hellinger_matrix(distributions: list[dict]) -> np.ndarray:
 # =============================================================================
 # Dequantized GBS Kernel (exact, polynomial-time)
 # =============================================================================
+
 
 def graph_to_gbs_state(
     W_tilde: np.ndarray,
@@ -478,24 +489,27 @@ def dequantized_features(
     # Order 1: P(mode i clicks)
     for i in range(d):
         idx = [i, d + i]
-        p = float(np.real(threshold_detection_prob(
-            mu[idx], cov[np.ix_(idx, idx)], np.array([1]))))
+        p = float(np.real(threshold_detection_prob(mu[idx], cov[np.ix_(idx, idx)], np.array([1]))))
         features.append(p)
 
     # Order 2: P(modes i,j both click)
     if max_order >= 2:
         for i, j in itertools.combinations(range(d), 2):
             idx = [i, j, d + i, d + j]
-            p = float(np.real(threshold_detection_prob(
-                mu[idx], cov[np.ix_(idx, idx)], np.array([1, 1]))))
+            p = float(
+                np.real(threshold_detection_prob(mu[idx], cov[np.ix_(idx, idx)], np.array([1, 1])))
+            )
             features.append(p)
 
     # Order 3: P(modes i,j,k all click)
     if max_order >= 3:
         for i, j, k in itertools.combinations(range(d), 3):
             idx = [i, j, k, d + i, d + j, d + k]
-            p = float(np.real(threshold_detection_prob(
-                mu[idx], cov[np.ix_(idx, idx)], np.array([1, 1, 1]))))
+            p = float(
+                np.real(
+                    threshold_detection_prob(mu[idx], cov[np.ix_(idx, idx)], np.array([1, 1, 1]))
+                )
+            )
             features.append(p)
 
     return np.array(features)
@@ -601,14 +615,16 @@ def dequantized_cooccurrence(
     for i in range(d):
         # Diagonal: single-mode click probability
         idx = [i, d + i]
-        C[i, i] = float(np.real(threshold_detection_prob(
-            mu[idx], cov[np.ix_(idx, idx)], np.array([1]))))
+        C[i, i] = float(
+            np.real(threshold_detection_prob(mu[idx], cov[np.ix_(idx, idx)], np.array([1])))
+        )
 
         # Off-diagonal: pairwise co-click probability
         for j in range(i + 1, d):
             idx = [i, j, d + i, d + j]
-            p = float(np.real(threshold_detection_prob(
-                mu[idx], cov[np.ix_(idx, idx)], np.array([1, 1]))))
+            p = float(
+                np.real(threshold_detection_prob(mu[idx], cov[np.ix_(idx, idx)], np.array([1, 1])))
+            )
             C[i, j] = p
             C[j, i] = p
 
@@ -646,6 +662,7 @@ def dequantized_hellinger(
 # Utility: classical graph distance baselines
 # =============================================================================
 
+
 def shd(A1: np.ndarray, A2: np.ndarray, threshold: float = 0.1) -> int:
     """Structural Hamming Distance between two adjacency matrices."""
     E1 = (np.abs(A1) > threshold).astype(int)
@@ -655,7 +672,7 @@ def shd(A1: np.ndarray, A2: np.ndarray, threshold: float = 0.1) -> int:
 
 def frobenius_distance(A1: np.ndarray, A2: np.ndarray) -> float:
     """Frobenius norm of difference between adjacency matrices."""
-    return float(np.linalg.norm(A1 - A2, 'fro'))
+    return float(np.linalg.norm(A1 - A2, "fro"))
 
 
 def spectral_distance(A1: np.ndarray, A2: np.ndarray) -> float:
@@ -679,6 +696,7 @@ def jaccard_edge_distance(A1: np.ndarray, A2: np.ndarray, threshold: float = 0.1
 # =============================================================================
 # Internal helpers
 # =============================================================================
+
 
 def _normalize_spectral_radius(W: np.ndarray, scale: float = 0.9) -> np.ndarray:
     """Normalize a symmetric matrix so its spectral radius equals `scale`."""

@@ -7,7 +7,7 @@ import unittest
 
 import numpy as np
 
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from jcce.gbs.pareto_uncertainty import (
     dequantized_hellinger_matrix,
@@ -127,32 +127,37 @@ class TestParetoUncertainty(unittest.TestCase):
         result = hellinger_vs_shd_correlation(self.pareto_dags, H=H)
 
         # Pearson r should be a valid number in [-1, 1]
-        self.assertTrue(-1 <= result['pearson_r'] <= 1)
-        self.assertTrue(-1 <= result['spearman_rho'] <= 1)
+        self.assertTrue(-1 <= result["pearson_r"] <= 1)
+        self.assertTrue(-1 <= result["spearman_rho"] <= 1)
 
         # SHD matrix should be valid
         n = len(self.pareto_dags)
-        self.assertEqual(result['shd_matrix'].shape, (n, n))
-        np.testing.assert_array_almost_equal(
-            result['shd_matrix'], result['shd_matrix'].T
-        )
+        self.assertEqual(result["shd_matrix"].shape, (n, n))
+        np.testing.assert_array_almost_equal(result["shd_matrix"], result["shd_matrix"].T)
 
     def test_full_uncertainty_report(self):
         """Full report returns all expected keys with valid values."""
         report = pareto_uncertainty_report(self.pareto_dags, max_order=2)
 
         expected_keys = [
-            'hellinger_matrix', 'diameter', 'mean_dispersion', 'coverage',
-            'pearson_r', 'spearman_rho', 'shd_matrix', 'n_dags', 'd',
+            "hellinger_matrix",
+            "diameter",
+            "mean_dispersion",
+            "coverage",
+            "pearson_r",
+            "spearman_rho",
+            "shd_matrix",
+            "n_dags",
+            "d",
         ]
         for key in expected_keys:
             self.assertIn(key, report, f"Missing key: {key}")
 
-        self.assertEqual(report['n_dags'], 5)
-        self.assertEqual(report['d'], self.d)
-        self.assertGreater(report['diameter'], 0)
-        self.assertGreater(report['mean_dispersion'], 0)
-        self.assertGreater(report['coverage'], 0)
+        self.assertEqual(report["n_dags"], 5)
+        self.assertEqual(report["d"], self.d)
+        self.assertGreater(report["diameter"], 0)
+        self.assertGreater(report["mean_dispersion"], 0)
+        self.assertGreater(report["coverage"], 0)
 
     def test_identical_dags_zero_distance(self):
         """Identical DAGs produce zero Hellinger distance."""
@@ -166,6 +171,7 @@ class TestParetoUncertainty(unittest.TestCase):
     def test_scalability_d13(self):
         """Module works at d=13 within reasonable time."""
         import time
+
         dags = [make_simple_dag(13, seed=s) for s in [42, 123, 456]]
 
         t0 = time.time()
@@ -173,8 +179,8 @@ class TestParetoUncertainty(unittest.TestCase):
         elapsed = time.time() - t0
 
         self.assertLess(elapsed, 5.0, "d=13 should complete within 5 seconds")
-        self.assertGreater(report['diameter'], 0)
+        self.assertGreater(report["diameter"], 0)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,9 @@
+Dataset: Tennessee Eastman Process (TEP)
+Mode: binary
+Subsample size: 1000 per class
+Train samples: 2000
+Test samples: 2000
+Features: 52
+Classes: 2 (0=normal, 1=fault)
+Train balance: 50.0% faulty
+Test balance: 50.0% faulty

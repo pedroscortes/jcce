@@ -8,22 +8,24 @@ SHAP measures predictive importance (correlation-based),
 while JCCE MB measures causal importance (structure-based).
 """
 
+import warnings
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 import shap
-from xgboost import XGBClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from typing import Dict, List, Tuple, Optional
-import warnings
-warnings.filterwarnings('ignore')
+from xgboost import XGBClassifier
+
+warnings.filterwarnings("ignore")
 
 
 def compute_shap_importance(
     X: np.ndarray,
     y: np.ndarray,
     feature_names: List[str],
-    model_type: str = 'xgboost',
+    model_type: str = "xgboost",
     n_estimators: int = 100,
     max_samples: int = 1000,
     random_state: int = 42,
@@ -44,12 +46,12 @@ def compute_shap_importance(
         Dict with SHAP values and importance rankings
     """
     # Train model
-    if model_type == 'xgboost':
+    if model_type == "xgboost":
         model = XGBClassifier(
             n_estimators=n_estimators,
             random_state=random_state,
             use_label_encoder=False,
-            eval_metric='logloss',
+            eval_metric="logloss",
             verbosity=0,
         )
     else:
@@ -71,7 +73,7 @@ def compute_shap_importance(
         idx = np.random.choice(len(X_shap), max_samples, replace=False)
         X_shap = X_shap[idx]
 
-    if model_type == 'xgboost':
+    if model_type == "xgboost":
         explainer = shap.TreeExplainer(model)
     else:
         explainer = shap.TreeExplainer(model)
@@ -92,21 +94,23 @@ def compute_shap_importance(
     ranking = np.argsort(mean_shap)[::-1]
 
     return {
-        'shap_values': shap_values,
-        'mean_shap': mean_shap,
-        'ranking': ranking,
-        'feature_names': feature_names,
-        'importance_df': pd.DataFrame({
-            'feature': feature_names,
-            'mean_abs_shap': mean_shap,
-            'rank': [list(ranking).index(i) + 1 for i in range(len(feature_names))]
-        }).sort_values('mean_abs_shap', ascending=False),
+        "shap_values": shap_values,
+        "mean_shap": mean_shap,
+        "ranking": ranking,
+        "feature_names": feature_names,
+        "importance_df": pd.DataFrame(
+            {
+                "feature": feature_names,
+                "mean_abs_shap": mean_shap,
+                "rank": [list(ranking).index(i) + 1 for i in range(len(feature_names))],
+            }
+        ).sort_values("mean_abs_shap", ascending=False),
     }
 
 
 def select_features_shap(
     shap_result: Dict,
-    method: str = 'top_k',
+    method: str = "top_k",
     k: Optional[int] = None,
     threshold: float = 0.01,
 ) -> Tuple[List[int], List[str]]:
@@ -122,16 +126,16 @@ def select_features_shap(
     Returns:
         Tuple of (selected_indices, selected_names)
     """
-    mean_shap = shap_result['mean_shap']
-    feature_names = shap_result['feature_names']
-    ranking = shap_result['ranking']
+    mean_shap = shap_result["mean_shap"]
+    feature_names = shap_result["feature_names"]
+    ranking = shap_result["ranking"]
 
-    if method == 'top_k':
+    if method == "top_k":
         if k is None:
             k = max(3, len(feature_names) // 3)  # Default: top third
         selected_idx = list(ranking[:k])
 
-    elif method == 'threshold':
+    elif method == "threshold":
         # Normalize SHAP values
         max_shap = np.max(mean_shap)
         if max_shap > 0:
@@ -179,13 +183,13 @@ def compare_feature_sets(
     jaccard = intersection / union if union > 0 else 0
 
     result = {
-        'shap_n_features': len(shap_features),
-        'mb_n_features': len(mb_features),
-        'overlap': intersection,
-        'jaccard_similarity': jaccard,
-        'shap_only': list(shap_set - mb_set),
-        'mb_only': list(mb_set - shap_set),
-        'both': list(shap_set & mb_set),
+        "shap_n_features": len(shap_features),
+        "mb_n_features": len(mb_features),
+        "overlap": intersection,
+        "jaccard_similarity": jaccard,
+        "shap_only": list(shap_set - mb_set),
+        "mb_only": list(mb_set - shap_set),
+        "both": list(shap_set & mb_set),
     }
 
     # Compare to ground truth if available
@@ -198,7 +202,11 @@ def compare_feature_sets(
         shap_fn = len(true_set - shap_set)
         shap_precision = shap_tp / (shap_tp + shap_fp) if (shap_tp + shap_fp) > 0 else 0
         shap_recall = shap_tp / (shap_tp + shap_fn) if (shap_tp + shap_fn) > 0 else 0
-        shap_f1 = 2 * shap_precision * shap_recall / (shap_precision + shap_recall) if (shap_precision + shap_recall) > 0 else 0
+        shap_f1 = (
+            2 * shap_precision * shap_recall / (shap_precision + shap_recall)
+            if (shap_precision + shap_recall) > 0
+            else 0
+        )
 
         # MB vs ground truth
         mb_tp = len(mb_set & true_set)
@@ -206,71 +214,77 @@ def compare_feature_sets(
         mb_fn = len(true_set - mb_set)
         mb_precision = mb_tp / (mb_tp + mb_fp) if (mb_tp + mb_fp) > 0 else 0
         mb_recall = mb_tp / (mb_tp + mb_fn) if (mb_tp + mb_fn) > 0 else 0
-        mb_f1 = 2 * mb_precision * mb_recall / (mb_precision + mb_recall) if (mb_precision + mb_recall) > 0 else 0
+        mb_f1 = (
+            2 * mb_precision * mb_recall / (mb_precision + mb_recall)
+            if (mb_precision + mb_recall) > 0
+            else 0
+        )
 
-        result['ground_truth'] = {
-            'shap': {
-                'precision': shap_precision,
-                'recall': shap_recall,
-                'f1': shap_f1,
-                'true_positives': list(shap_set & true_set),
-                'false_positives': list(shap_set - true_set),
-                'false_negatives': list(true_set - shap_set),
+        result["ground_truth"] = {
+            "shap": {
+                "precision": shap_precision,
+                "recall": shap_recall,
+                "f1": shap_f1,
+                "true_positives": list(shap_set & true_set),
+                "false_positives": list(shap_set - true_set),
+                "false_negatives": list(true_set - shap_set),
             },
-            'mb': {
-                'precision': mb_precision,
-                'recall': mb_recall,
-                'f1': mb_f1,
-                'true_positives': list(mb_set & true_set),
-                'false_positives': list(mb_set - true_set),
-                'false_negatives': list(true_set - mb_set),
+            "mb": {
+                "precision": mb_precision,
+                "recall": mb_recall,
+                "f1": mb_f1,
+                "true_positives": list(mb_set & true_set),
+                "false_positives": list(mb_set - true_set),
+                "false_negatives": list(true_set - mb_set),
             },
         }
 
     return result
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Quick test with LUCAS
-    import sys
-    sys.path.insert(0, '/home/user/Documentos/Pedro/dep')
-
     from pathlib import Path
 
-    # Load LUCAS
-    data_path = Path('/home/user/Documentos/Pedro/jcce/data/benchmarks/lucas/raw/lucas0_train.csv')
+    # Load LUCAS — derive path from repo root (pyproject.toml marker)
+    _here = Path(__file__).resolve().parent
+    for _ in range(10):
+        if (_here / "pyproject.toml").exists():
+            break
+        _here = _here.parent
+    data_path = _here / "data" / "benchmarks" / "lucas" / "raw" / "lucas0_train.csv"
     df = pd.read_csv(data_path)
 
-    feature_names = [c for c in df.columns if c != 'Lung_cancer']
+    feature_names = [c for c in df.columns if c != "Lung_cancer"]
     X = df[feature_names].values
-    y = df['Lung_cancer'].values
+    y = df["Lung_cancer"].values
 
-    print("="*60)
+    print("=" * 60)
     print("SHAP Feature Selection Test - LUCAS")
-    print("="*60)
+    print("=" * 60)
 
     # Compute SHAP
     shap_result = compute_shap_importance(X, y, feature_names)
 
     print("\nSHAP Feature Importance:")
-    print(shap_result['importance_df'].to_string(index=False))
+    print(shap_result["importance_df"].to_string(index=False))
 
     # Select top-5 (same as true MB size)
-    selected_idx, selected_names = select_features_shap(shap_result, method='top_k', k=5)
+    selected_idx, selected_names = select_features_shap(shap_result, method="top_k", k=5)
 
     print(f"\nTop-5 SHAP features: {selected_names}")
     print(f"Indices: {selected_idx}")
 
     # Compare to true MB
     true_mb = [0, 4, 8, 9, 10]
-    true_mb_names = ['Smoking', 'Genetics', 'Fatigue', 'Allergy', 'Coughing']
+    true_mb_names = ["Smoking", "Genetics", "Fatigue", "Allergy", "Coughing"]
     print(f"\nTrue MB: {true_mb_names}")
 
     comparison = compare_feature_sets(selected_idx, true_mb, true_mb=true_mb)
 
-    print(f"\nSHAP vs Ground Truth:")
+    print("\nSHAP vs Ground Truth:")
     print(f"  Precision: {comparison['ground_truth']['shap']['precision']:.3f}")
     print(f"  Recall: {comparison['ground_truth']['shap']['recall']:.3f}")
     print(f"  F1: {comparison['ground_truth']['shap']['f1']:.3f}")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)

@@ -293,7 +293,11 @@ def golem_unified_forward(
     proc_name = processor.__class__.__name__
     is_gnn = proc_name == "GNNAdapter"
     is_dag_attn = proc_name == "DAGAttentionAdapter"
-    is_causal_mamba = proc_name == "CausalMambaAdapter"
+    # NOTE: CausalMambaAdapter is intentionally NOT in the structure-aware
+    # branch — its _update_topo_order() does numpy-side ops on A which fails
+    # under jit (TracerArrayConversionError at jcce_learner.py:_step). Falls
+    # to standard else-branch with A=None until the prototype is rewritten
+    # JAX-compatibly (e.g., topo-sort via jax.pure_callback or pure JAX).
 
     for j in range(n_vars):
         # Soft weighting by adjacency matrix (allows gradient flow)
@@ -313,10 +317,10 @@ def golem_unified_forward(
 
             # Pass adjacency to GNN
             X_j_recon = processor.forward(X_weighted, processor_params[j], A=A_normalized)
-        elif is_dag_attn or is_causal_mamba:
-            # Structure-aware non-GNN: pass raw A; the soft mask
-            # (DAG-Attention) or topological reorder (CausalMamba) is
-            # applied inside the adapter's forward.
+        elif is_dag_attn:
+            # DAG-Attention: pass raw A; the soft mask is applied inside
+            # the adapter's forward. (CausalMamba is intentionally excluded
+            # — its topo-sort fails under jit; falls through to else-branch.)
             X_j_recon = processor.forward(X_weighted, processor_params[j], A=A)
         else:
             # Standard processors (MLP, Transformer, Mamba, ELM)
@@ -1290,9 +1294,10 @@ def _learn_structure_legacy(
                 direct_effect = processor.forward(
                     X_weighted, proc_params[j], A=A_curr, training=training, rng_key=rng_key
                 )
-            elif _proc_name == "CausalMambaAdapter":
-                # CausalMamba: raw A drives the topological reorder
-                direct_effect = processor.forward(X_weighted, proc_params[j], A=A_curr)
+            # NOTE: CausalMambaAdapter intentionally NOT dispatched with A
+            # — its _update_topo_order() does numpy-side ops on traced A
+            # which fails under jit. Falls through to the standard path
+            # (no A) until the prototype is rewritten JAX-compatibly.
             elif _proc_name in ("MLPAdapter", "TransformerAdapter"):
                 # Enable dropout during training
                 direct_effect = processor.forward(
@@ -4778,9 +4783,9 @@ def learn_structure(
 
             def _recon_fwd(X_w_j, arrays_j):
                 return processor.forward(X_w_j, {**_meta, **arrays_j}, A=A_norm)
-        elif _proc_name_recon in ("DAGAttentionAdapter", "CausalMambaAdapter"):
-            # Structure-aware non-GNN: pass raw A; soft mask / topo reorder
-            # is applied inside the adapter.
+        elif _proc_name_recon == "DAGAttentionAdapter":
+            # DAG-Attention: pass raw A; soft mask is applied inside the
+            # adapter. (CausalMamba excluded — see jit-bug note above.)
             A_for_struct = A_curr[:n_v, :n_v]
 
             def _recon_fwd(X_w_j, arrays_j):
@@ -4851,7 +4856,8 @@ def learn_structure(
                 jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
             )
             Y_recon_output = processor.forward(_X_wr_fwd, _pp_Y_fwd, A=A_norm_recon)
-        elif _proc_name_yrecon in ("DAGAttentionAdapter", "CausalMambaAdapter"):
+        elif _proc_name_yrecon == "DAGAttentionAdapter":
+            # CausalMamba excluded — see jit-bug note above.
             Y_recon_output = processor.forward(
                 _X_wr_fwd, _pp_Y_fwd, A=A_curr[:n_v, :n_v]
             )
@@ -4908,10 +4914,7 @@ def learn_structure(
             Y_output = processor.forward(
                 _X_wY_fwd, _pp_Yc_fwd, A=A_curr[:n_v, :n_v], skip_centering=True
             )
-        elif _proc_name_yclass == "CausalMambaAdapter":
-            Y_output = processor.forward(
-                _X_wY_fwd, _pp_Yc_fwd, A=A_curr[:n_v, :n_v]
-            )
+        # CausalMambaAdapter intentionally excluded — see jit-bug note above.
         else:
             Y_output = processor.forward(_X_wY_fwd, _pp_Yc_fwd, skip_centering=True)
 
@@ -5770,7 +5773,8 @@ def learn_structure(
             jnp.sum(jnp.abs(A_final[:n_vars, :n_vars]), axis=0, keepdims=True) + 1e-8
         )
         Y_pred_logits = processor.forward(X_weighted, final_proc_params[Y_idx], A=A_norm)
-    elif _proc_name_eval in ("DAGAttentionAdapter", "CausalMambaAdapter"):
+    elif _proc_name_eval == "DAGAttentionAdapter":
+        # CausalMamba excluded — see jit-bug note above.
         Y_pred_logits = processor.forward(
             X_weighted, final_proc_params[Y_idx], A=A_final[:n_vars, :n_vars]
         )

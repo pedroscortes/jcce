@@ -1285,9 +1285,10 @@ class CausalMambaAdapter:
     """
     Adapter for CausalMamba with topological variable ordering.
 
-    Key difference from MambaAdapter: reorders variables by topological sort
-    of A before feeding to Mamba. The ordering is recomputed every
-    reorder_interval calls (not every call) to avoid JIT recompilation.
+    Reorders variables by the topological sort of A before feeding the
+    sequence to Mamba. The sort runs host-side via jax.pure_callback inside
+    causal_mamba.topological_sort_from_adjacency, so this adapter is jit-safe
+    and recomputes the order on every forward call.
     """
 
     def __init__(
@@ -1298,14 +1299,12 @@ class CausalMambaAdapter:
         expand: int = 2,
         key: random.PRNGKey = None,
         n_features: int = None,
-        reorder_interval: int = 50,
     ):
         self.d_model = d_model
         self.d_state = d_state
         self.d_conv = d_conv
         self.expand = expand
         self.n_features = n_features
-        self.reorder_interval = reorder_interval
         self.key = key if key is not None else random.PRNGKey(42)
 
         self.model = CausalMambaBase(
@@ -1315,10 +1314,6 @@ class CausalMambaAdapter:
             expand=expand,
             n_layers=1,
         )
-
-        # Cached topological order (recomputed periodically)
-        self._topo_order = None
-        self._call_count = 0
 
     def init_params(self, n_inputs: int) -> Dict:
         dummy_input = jnp.ones((1, n_inputs))
@@ -1333,14 +1328,14 @@ class CausalMambaAdapter:
 
         return param_dict
 
-    def _update_topo_order(self, A: jnp.ndarray):
-        """Recompute topological order from current A (periodic, not every call)."""
-        self._call_count += 1
-        if self._topo_order is None or self._call_count % self.reorder_interval == 0:
-            self._topo_order = topological_sort_from_adjacency(A, threshold=0.01)
-
     def forward(
-        self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None, skip_centering: bool = False
+        self,
+        X: jnp.ndarray,
+        params: Dict,
+        A: jnp.ndarray = None,
+        skip_centering: bool = False,
+        training: bool = False,
+        rng_key=None,
     ) -> jnp.ndarray:
         """
         Forward pass with topological variable ordering.
@@ -1350,15 +1345,15 @@ class CausalMambaAdapter:
             params: Dict-format parameters
             A: (n_inputs, n_inputs) adjacency matrix — used for topological ordering
             skip_centering: skip mean centering for classification
+            training, rng_key: accepted for dispatch-signature parity with
+                DAGAttentionAdapter; currently unused (CausalMamba has no dropout).
         """
         n_samples, n_inputs = X.shape
         flax_params = dict_to_flax_params(params)
 
-        # Update topological order periodically
-        topo_order = None
-        if A is not None:
-            self._update_topo_order(A)
-            topo_order = self._topo_order
+        topo_order = (
+            topological_sort_from_adjacency(A, threshold=0.01) if A is not None else None
+        )
 
         # Forward through CausalMamba
         h = self.model.apply(flax_params, X, topo_order=topo_order, training=False)

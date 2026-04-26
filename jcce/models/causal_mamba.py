@@ -6,67 +6,64 @@ Variables are reordered according to the topological sort of the learned DAG A
 before being fed to the SSM. This means parents are processed before children,
 so the SSM hidden state carries "causal context" from ancestors to descendants.
 
-The topological order is recomputed periodically (every reorder_interval epochs),
-not every step, to avoid JAX recompilation.
+The topological sort runs host-side via jax.pure_callback so the forward path
+is jit-safe; the order is recomputed every call (cheap for d <= 30).
 
 This is a NEW processor variant — the original MambaProcessor is unchanged.
 """
 
 from typing import Optional
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 from flax import linen as nn
 
 from jcce.models.mamba import MambaProcessor as _MambaProcessorBase
 
 
-def topological_sort_from_adjacency(A: jnp.ndarray, threshold: float = 0.01) -> jnp.ndarray:
-    """
-    Compute topological ordering from adjacency matrix A.
+def _kahn_numpy(A_np: np.ndarray, threshold: float) -> np.ndarray:
+    """Pure-numpy Kahn's algorithm. Runs on host CPU under pure_callback."""
+    d = A_np.shape[0]
+    B = (np.abs(A_np) > threshold).astype(np.float32)
+    in_deg = B.sum(axis=0).astype(np.int32)
 
-    Uses Kahn's algorithm on the thresholded binary graph.
-    A[i,j] != 0 means i -> j (i is parent of j).
-
-    Args:
-        A: (d, d) adjacency matrix (continuous weights)
-        threshold: minimum absolute weight to consider an edge
-
-    Returns:
-        order: (d,) array of variable indices in topological order
-               (parents before children)
-    """
-    d = A.shape[0]
-    # Binary adjacency
-    B = (jnp.abs(A) > threshold).astype(jnp.float32)
-
-    # In-degree for each node
-    in_degree = jnp.sum(B, axis=0).astype(jnp.int32)
-
-    # Kahn's algorithm (must be done in Python, not JAX-traced)
-    # Convert to numpy for the algorithm
-    import numpy as np
-
-    in_deg = np.array(in_degree)
-    B_np = np.array(B)
-
-    order = []
+    order: list[int] = []
     available = list(np.where(in_deg == 0)[0])
-
     while available:
-        node = available.pop(0)
+        node = int(available.pop(0))
         order.append(node)
         for child in range(d):
-            if B_np[node, child] > 0:
+            if B[node, child] > 0:
                 in_deg[child] -= 1
                 if in_deg[child] == 0:
                     available.append(child)
 
-    # If not all nodes visited (cycle), append remaining in original order
     if len(order) < d:
-        remaining = [i for i in range(d) if i not in order]
-        order.extend(remaining)
+        seen = set(order)
+        order.extend(i for i in range(d) if i not in seen)
 
-    return jnp.array(order, dtype=jnp.int32)
+    return np.asarray(order, dtype=np.int32)
+
+
+def topological_sort_from_adjacency(A: jnp.ndarray, threshold: float = 0.01) -> jnp.ndarray:
+    """
+    Compute topological ordering from adjacency matrix A under jit.
+
+    Uses Kahn's algorithm on the thresholded binary graph (host-side via
+    jax.pure_callback). A[i,j] != 0 means i -> j.
+
+    Returns:
+        order: (d,) int32 array; parents before children, cycle leftovers
+               appended in original index order.
+    """
+    d = A.shape[0]
+    return jax.pure_callback(
+        lambda a: _kahn_numpy(a, threshold),
+        jax.ShapeDtypeStruct((d,), jnp.int32),
+        A,
+        vmap_method="sequential",
+    )
 
 
 class CausalMambaProcessor(nn.Module):

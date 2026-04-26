@@ -4478,6 +4478,13 @@ def learn_structure(
     iteration_callback: Optional[Callable[[int, Dict[str, float]], None]] = None,
     # PC structure constraint: only enable when A_init comes from PC algorithm
     use_pc_constraint: bool = False,
+    # Phase 2: DAG-Attention bidirectional signal
+    # When > 0 and processor is DAGAttentionAdapter, adds
+    # KL(empirical_attention || sigmoid(A * temperature)) to the total loss.
+    # This is the bidirectional learning signal: attention pulls A toward
+    # observed attention patterns; A pulls attention toward causal edges.
+    # Default 0.0 keeps prior behavior (forward-only soft mask).
+    lambda_consistency: float = 0.0,
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
     v7.0: Unified Causal Discovery with Bi-directed Edges & Amortized Effects.
@@ -4945,6 +4952,17 @@ def learn_structure(
                 batch_Y * jnp.log(Y_pred + eps) + (1 - batch_Y) * jnp.log(1 - Y_pred + eps)
             )
 
+        # ========== DAG-Attention Consistency Loss (Phase 2 bidirectional signal) ==========
+        # KL(attention || sigmoid(A * temp)) computed on the Y-classification
+        # forward pass — pulls attention patterns toward causal edges and A
+        # toward observed attention patterns. Active only when processor is
+        # DAGAttentionAdapter and lambda_consistency > 0.
+        consistency_loss = jnp.array(0.0)
+        if lambda_consistency > 0 and _proc_name_yclass == "DAGAttentionAdapter":
+            consistency_loss = processor.consistency_loss(
+                _X_wY_fwd, _pp_Yc_fwd, A_curr[:n_v, :n_v]
+            )
+
         # ========== Structure Penalties ==========
 
         # Sparsity on A_direct — adaptive Y-column penalty based on classification progress.
@@ -5149,11 +5167,13 @@ def learn_structure(
         weighted_structural = w_recon * structural_loss
         weighted_class = w_class * lambda_class * classification_loss
         weighted_effect = w_effect * effect_enabled * lambda_effect * effect_loss
+        weighted_consistency = lambda_consistency * consistency_loss
 
         total_loss = (
             weighted_structural
             + weighted_class
             + weighted_effect
+            + weighted_consistency
             + penalty_loss
             + penalty_loss_confound
         )
@@ -5165,6 +5185,7 @@ def learn_structure(
             effect_loss,
             bow_loss,
             Y_output,
+            consistency_loss,
         )
 
     # ==================== Optimizer ====================
@@ -5345,7 +5366,7 @@ def learn_structure(
         all_params, opt_state, loss_val, aux, batch_Y = train_step(
             all_params, opt_state, batch_key, lambda_2_jax, curriculum_w_jax
         )
-        h_A, recon_loss, class_loss, effect_loss, bow_loss, Y_logits = aux
+        h_A, recon_loss, class_loss, effect_loss, bow_loss, Y_logits, consistency_val = aux
 
         # Update adaptive curriculum after each iteration
         if use_adaptive_curriculum and curriculum_state is not None:

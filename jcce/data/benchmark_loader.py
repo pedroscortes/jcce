@@ -923,13 +923,17 @@ def _load_sachs() -> Tuple[np.ndarray, np.ndarray, Dict]:
         # Sachs data has 11 proteins as columns
         target_col = config["target_name"]
         if target_col in df.columns:
-            # Binarize target (above median = 1)
+            # Binarize target (above median = 1).
+            # NOTE: must convert to numpy via .values — comparison + .astype on a
+            # pd.Series returns a Series, which downstream JAX/numpy code can't
+            # .reshape() on, causing the 'Series object has no attribute reshape'
+            # error in test_new_processors_server.py.
             median_val = df[target_col].median()
-            Y = (df[target_col] > median_val).astype(np.float32)
+            Y = (df[target_col] > median_val).values.astype(np.float32)
             X = df.drop(target_col, axis=1).values.astype(np.float32)
         else:
-            # Use last column as target
-            Y = (df.iloc[:, -1] > df.iloc[:, -1].median()).astype(np.float32)
+            # Use last column as target (same .values fix).
+            Y = (df.iloc[:, -1] > df.iloc[:, -1].median()).values.astype(np.float32)
             X = df.iloc[:, :-1].values.astype(np.float32)
         config["feature_names"] = [c for c in df.columns if c != target_col]
     else:

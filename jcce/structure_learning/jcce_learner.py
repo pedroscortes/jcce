@@ -286,8 +286,14 @@ def golem_unified_forward(
     n_samples, n_vars = X.shape
     X_recon = jnp.zeros_like(X)
 
-    # Detect if processor is GNN (needs adjacency for message passing)
-    is_gnn = processor.__class__.__name__ == "GNNAdapter"
+    # Detect structure-aware processors (need A passed to forward).
+    # GNN: receives row-softmax-normalized A with target row/col zeroed.
+    # DAG-Attention / CausalMamba: receive raw A (soft mask / topo reorder
+    # are computed inside the adapter).
+    proc_name = processor.__class__.__name__
+    is_gnn = proc_name == "GNNAdapter"
+    is_dag_attn = proc_name == "DAGAttentionAdapter"
+    is_causal_mamba = proc_name == "CausalMambaAdapter"
 
     for j in range(n_vars):
         # Soft weighting by adjacency matrix (allows gradient flow)
@@ -307,6 +313,11 @@ def golem_unified_forward(
 
             # Pass adjacency to GNN
             X_j_recon = processor.forward(X_weighted, processor_params[j], A=A_normalized)
+        elif is_dag_attn or is_causal_mamba:
+            # Structure-aware non-GNN: pass raw A; the soft mask
+            # (DAG-Attention) or topological reorder (CausalMamba) is
+            # applied inside the adapter's forward.
+            X_j_recon = processor.forward(X_weighted, processor_params[j], A=A)
         else:
             # Standard processors (MLP, Transformer, Mamba, ELM)
             X_j_recon = processor.forward(X_weighted, processor_params[j])
@@ -1269,11 +1280,20 @@ def _learn_structure_legacy(
 
             # Forward through processor
             # Pass training mode and rng_key to enable dropout for MLP/Transformer
-            if processor.__class__.__name__ == "GNNAdapter":
-                # GNN needs adjacency matrix
+            _proc_name = processor.__class__.__name__
+            if _proc_name == "GNNAdapter":
+                # GNN needs adjacency matrix (row-normalized)
                 A_normalized = A_curr / (jnp.sum(jnp.abs(A_curr), axis=0, keepdims=True) + 1e-8)
                 direct_effect = processor.forward(X_weighted, proc_params[j], A=A_normalized)
-            elif processor.__class__.__name__ in ("MLPAdapter", "TransformerAdapter"):
+            elif _proc_name == "DAGAttentionAdapter":
+                # DAG-Attention: raw A drives the soft mask; dropout via training/rng_key
+                direct_effect = processor.forward(
+                    X_weighted, proc_params[j], A=A_curr, training=training, rng_key=rng_key
+                )
+            elif _proc_name == "CausalMambaAdapter":
+                # CausalMamba: raw A drives the topological reorder
+                direct_effect = processor.forward(X_weighted, proc_params[j], A=A_curr)
+            elif _proc_name in ("MLPAdapter", "TransformerAdapter"):
                 # Enable dropout during training
                 direct_effect = processor.forward(
                     X_weighted, proc_params[j], training=training, rng_key=rng_key
@@ -4750,13 +4770,21 @@ def learn_structure(
         _stacked = {k: jnp.stack([proc_params[j][k] for j in range(n_v)]) for k in _arr_keys}
 
         # vmapped forward: process all n_v variables in parallel (1 kernel vs n_v)
-        if processor.__class__.__name__ == "GNNAdapter":
+        _proc_name_recon = processor.__class__.__name__
+        if _proc_name_recon == "GNNAdapter":
             A_norm = A_curr[:n_v, :n_v] / (
                 jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
             )
 
             def _recon_fwd(X_w_j, arrays_j):
                 return processor.forward(X_w_j, {**_meta, **arrays_j}, A=A_norm)
+        elif _proc_name_recon in ("DAGAttentionAdapter", "CausalMambaAdapter"):
+            # Structure-aware non-GNN: pass raw A; soft mask / topo reorder
+            # is applied inside the adapter.
+            A_for_struct = A_curr[:n_v, :n_v]
+
+            def _recon_fwd(X_w_j, arrays_j):
+                return processor.forward(X_w_j, {**_meta, **arrays_j}, A=A_for_struct)
         else:
 
             def _recon_fwd(X_w_j, arrays_j):
@@ -4817,11 +4845,16 @@ def learn_structure(
             _X_wr_fwd = X_weighted_Y_recon
             _pp_Y_fwd = _pp_Y_recon
 
-        if processor.__class__.__name__ == "GNNAdapter":
+        _proc_name_yrecon = processor.__class__.__name__
+        if _proc_name_yrecon == "GNNAdapter":
             A_norm_recon = A_curr[:n_v, :n_v] / (
                 jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
             )
             Y_recon_output = processor.forward(_X_wr_fwd, _pp_Y_fwd, A=A_norm_recon)
+        elif _proc_name_yrecon in ("DAGAttentionAdapter", "CausalMambaAdapter"):
+            Y_recon_output = processor.forward(
+                _X_wr_fwd, _pp_Y_fwd, A=A_curr[:n_v, :n_v]
+            )
         else:
             Y_recon_output = processor.forward(_X_wr_fwd, _pp_Y_fwd)
 
@@ -4865,11 +4898,20 @@ def learn_structure(
         # zero-mean, making sigmoid(~0)=0.5 and BCE=ln(2) (dead signal). By skipping
         # centering ONLY for classification, output_proj_b acts as a learnable class
         # prior. X_recon and Y_recon still use centering (prevents constant-output collapse).
-        if processor.__class__.__name__ == "GNNAdapter":
+        _proc_name_yclass = processor.__class__.__name__
+        if _proc_name_yclass == "GNNAdapter":
             A_norm_class = A_curr[:n_v, :n_v] / (
                 jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
             )
             Y_output = processor.forward(_X_wY_fwd, _pp_Yc_fwd, A=A_norm_class, skip_centering=True)
+        elif _proc_name_yclass == "DAGAttentionAdapter":
+            Y_output = processor.forward(
+                _X_wY_fwd, _pp_Yc_fwd, A=A_curr[:n_v, :n_v], skip_centering=True
+            )
+        elif _proc_name_yclass == "CausalMambaAdapter":
+            Y_output = processor.forward(
+                _X_wY_fwd, _pp_Yc_fwd, A=A_curr[:n_v, :n_v]
+            )
         else:
             Y_output = processor.forward(_X_wY_fwd, _pp_Yc_fwd, skip_centering=True)
 
@@ -5722,11 +5764,16 @@ def learn_structure(
     weights_Y_eval = jnp.maximum(weights[:n_vars], 0.01)
     # Use training data only for in-sample metrics (avoid test leakage)
     X_weighted = data_train * weights_Y_eval[jnp.newaxis, :]
-    if processor.__class__.__name__ == "GNNAdapter":
+    _proc_name_eval = processor.__class__.__name__
+    if _proc_name_eval == "GNNAdapter":
         A_norm = A_final[:n_vars, :n_vars] / (
             jnp.sum(jnp.abs(A_final[:n_vars, :n_vars]), axis=0, keepdims=True) + 1e-8
         )
         Y_pred_logits = processor.forward(X_weighted, final_proc_params[Y_idx], A=A_norm)
+    elif _proc_name_eval in ("DAGAttentionAdapter", "CausalMambaAdapter"):
+        Y_pred_logits = processor.forward(
+            X_weighted, final_proc_params[Y_idx], A=A_final[:n_vars, :n_vars]
+        )
     else:
         Y_pred_logits = processor.forward(X_weighted, final_proc_params[Y_idx])
     Y_flat = Y_train.flatten()

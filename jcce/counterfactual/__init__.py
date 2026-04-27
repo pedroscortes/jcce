@@ -25,17 +25,20 @@ from .causal_constraints import (
     identify_intervention_targets,
     topological_sort,
 )
+from .sparsity import edge_set_agreement, ste_hard_parents
 
 __all__ = [
     "AAPCounterfactual",
     "compute_actionability_proxy",
     "compute_causal_validity_score",
     "compute_plausibility_score",
+    "edge_set_agreement",
     "get_ancestors",
     "get_children",
     "get_descendants",
     "get_markov_blanket_from_dag",
     "get_parents",
     "identify_intervention_targets",
+    "ste_hard_parents",
     "topological_sort",
 ]

@@ -30,6 +30,8 @@ from collections import deque
 import jax.numpy as jnp
 import numpy as np
 
+from .sparsity import ste_hard_parents
+
 
 def _topological_sort(dag: np.ndarray, threshold: float = 0.05) -> list[int]:
     """Kahn's algorithm in pure numpy. Cycle nodes appended in original order."""
@@ -87,12 +89,14 @@ class AAPCounterfactual:
         processor_params: list,
         Y_idx: int,
         edge_threshold: float = 0.05,
+        enforce_hard_parents: bool = False,
     ):
         self.processor = processor
         self.A = jnp.asarray(A)
         self.params = processor_params
         self.Y_idx = int(Y_idx)
         self.edge_threshold = float(edge_threshold)
+        self.enforce_hard_parents = bool(enforce_hard_parents)
         self.d_plus = int(self.A.shape[0])
         self.n_features = self.d_plus - 1
         self._proc_name = processor.__class__.__name__
@@ -109,6 +113,16 @@ class AAPCounterfactual:
         X_features : (n_samples, n_features) — only the X variables (no Y col).
         Returns predicted scalar for variable j of shape (n_samples,).
 
+        Parent weighting:
+        - Default (``enforce_hard_parents=False``): continuous |A| weights —
+          matches the original cascade and the legacy reconstruction path.
+        - ``enforce_hard_parents=True``: the weights are routed through the
+          STE hard mask, so the forward sees a strict 0/1 parent gate while
+          the gradient still flows through |A|. Use this when sparsity-aware
+          AAP training was applied; counterfactuals must be evaluated under
+          the same parent gate the model trained with, otherwise inference
+          re-introduces the dense pathway and CATE collapses.
+
         Centering policy (mirrors learn_structure's per-variable forward):
         - For X variables (j < Y_idx): output is mean-centered (default
           adapter behavior; reconstruction targets vary around mean).
@@ -118,6 +132,8 @@ class AAPCounterfactual:
           would all collapse to the same value.
         """
         weights = jnp.abs(A_use[: self.n_features, j])  # (n_features,)
+        if self.enforce_hard_parents:
+            weights = ste_hard_parents(weights, self.edge_threshold)
         X_weighted = X_features * weights[jnp.newaxis, :]  # (n_samples, n_features)
 
         A_struct = A_use[: self.n_features, : self.n_features]

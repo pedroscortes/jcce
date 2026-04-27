@@ -58,26 +58,44 @@ def _make_synthetic_scm(d: int = 5, n: int = 200, seed: int = 0):
 
 
 class _LinearProcessor:
-    """Minimal processor that emulates a linear structural equation.
+    """Minimal processor emulating a linear structural equation.
 
-    forward(X_weighted, params, A=A) returns X_weighted @ params['w'].
-    Used purely to validate AAP's round-trip: when params and A together
-    encode the true linear SCM, abduct + predict should recover observed X.
+    forward(X_weighted, params, A=...) returns X_weighted @ params['w'].
+    X_weighted shape is (n_samples, n_features) — the X-only submatrix per
+    JCCE convention. params['w'] is a column of A_true normalized to undo
+    the external weighting AAP applies.
     """
 
     def __init__(self):
         self.__class__.__name__ = "LinearProcessor"
 
     def forward(self, X_weighted, params, A=None, **kwargs):
-        # X_weighted: (n_samples, d_+); params['w'] is shape (d_+,) — a column
-        # of A_true post-weighting normalization. We use a simple sum since
-        # X_weighted is already X * |A[:, j]| (gives parent contributions when
-        # weights match true A).
         return jnp.sum(X_weighted * params["w"], axis=1)
 
 
+def _split(X, Y_idx):
+    """Split full X (n, d_+) into X_features (n, d) and Y (n,) per JCCE convention."""
+    return X[:, :Y_idx], X[:, Y_idx]
+
+
+def _params_from_A(A_true: np.ndarray, d_plus: int):
+    """Build per-variable params w_j = A_true[:n_features, j] / |A_true[:, j]|.
+
+    The slicing to first n_features rows respects JCCE's per-variable forward
+    which receives only the X-feature submatrix as input.
+    """
+    n_features = d_plus - 1
+    out = []
+    for j in range(d_plus):
+        col = A_true[:n_features, j]  # X-feature parents only
+        norm = jnp.sum(jnp.abs(col)) + 1e-8
+        w = jnp.array(col, dtype=jnp.float32) / norm
+        out.append({"w": w})
+    return out
+
+
 def test_aap_round_trip_zero_noise():
-    """With zero noise (deterministic SCM) and exact f_j, round-trip MSE ≈ 0."""
+    """With deterministic-ish SCM and exact f_j, round-trip MSE ≈ 0."""
     rng = np.random.RandomState(42)
     d = 5
     n = 50
@@ -85,25 +103,19 @@ def test_aap_round_trip_zero_noise():
     Y_idx = d
     T_idx = d - 1
 
-    # Deterministic chain (no noise)
     A_true = np.zeros((d_plus, d_plus))
     for j in range(d - 1):
         A_true[j, j + 1] = 0.5
     A_true[T_idx, Y_idx] = 0.5
     A_true[d - 2, Y_idx] = 0.3
 
-    # Sample with TINY noise so abduction has something to capture
     noise = rng.randn(n, d_plus) * 0.01
     X = np.zeros((n, d_plus))
     for j in range(d_plus):
         X[:, j] = X @ A_true[:, j] + noise[:, j]
 
-    # Per-variable params: weight matches true A's column j
     proc = _LinearProcessor()
-    proc_params = [{"w": jnp.array(A_true[:, j], dtype=jnp.float32) /
-                          (jnp.sum(jnp.abs(A_true[:, j])) + 1e-8)}
-                   for j in range(d_plus)]
-    # Note: divide-out the |A_true[:, j]| weighting since AAP applies it externally.
+    proc_params = _params_from_A(A_true, d_plus)
 
     aap = AAPCounterfactual(
         proc,
@@ -113,11 +125,12 @@ def test_aap_round_trip_zero_noise():
         edge_threshold=0.05,
     )
 
-    # Round-trip with the structural equation processor
-    rt_mse = aap.round_trip(jnp.array(X, dtype=jnp.float32), t_idx=T_idx)
-    # Mean over samples
-    mean_rt_mse = float(jnp.mean(rt_mse))
-    assert mean_rt_mse < 1e-3, f"round-trip MSE too high: {mean_rt_mse}"
+    X_features, Y = _split(jnp.array(X, dtype=jnp.float32), Y_idx)
+    x_mse, y_mse = aap.round_trip(X_features, Y, t_idx=T_idx)
+    mean_x = float(jnp.mean(x_mse))
+    mean_y = float(jnp.mean(y_mse))
+    assert mean_x < 1e-3, f"X round-trip MSE too high: {mean_x}"
+    assert mean_y < 1e-3, f"Y round-trip MSE too high: {mean_y}"
 
 
 def test_aap_abduct_returns_correct_shape():
@@ -125,13 +138,14 @@ def test_aap_abduct_returns_correct_shape():
     X, A_true, Y_idx, T_idx = _make_synthetic_scm(d=5, n=20, seed=0)
     proc = _LinearProcessor()
     d_plus = A_true.shape[0]
-    proc_params = [{"w": jnp.zeros(d_plus)} for _ in range(d_plus)]
+    proc_params = _params_from_A(A_true, d_plus)
 
     aap = AAPCounterfactual(
         proc, jnp.array(A_true), proc_params, Y_idx=Y_idx, edge_threshold=0.05,
     )
-    U = aap.abduct(jnp.array(X))
-    assert U.shape == X.shape, f"U shape mismatch: {U.shape} vs {X.shape}"
+    X_features, Y = _split(jnp.array(X), Y_idx)
+    U = aap.abduct(X_features, Y)
+    assert U.shape == (X.shape[0], d_plus), f"U shape mismatch: {U.shape} vs {(X.shape[0], d_plus)}"
 
 
 def test_aap_intervention_changes_outcome():
@@ -139,17 +153,13 @@ def test_aap_intervention_changes_outcome():
     X, A_true, Y_idx, T_idx = _make_synthetic_scm(d=5, n=20, seed=0)
     proc = _LinearProcessor()
     d_plus = A_true.shape[0]
-    # Use true A column as weights (normalized).
-    proc_params = [{"w": jnp.array(A_true[:, j], dtype=jnp.float32) /
-                          (jnp.sum(jnp.abs(A_true[:, j])) + 1e-8)}
-                   for j in range(d_plus)]
+    proc_params = _params_from_A(A_true, d_plus)
 
     aap = AAPCounterfactual(
         proc, jnp.array(A_true), proc_params, Y_idx=Y_idx, edge_threshold=0.05,
     )
-
-    cate_per_sample = aap.cate(jnp.array(X), T_idx, t0=0.0, t1=1.0)
-    # Sign of CATE should match sign of A_true[T, Y] (positive)
+    X_features, Y = _split(jnp.array(X), Y_idx)
+    cate_per_sample = aap.cate(X_features, Y, T_idx, t0=0.0, t1=1.0)
     mean_cate = float(jnp.mean(cate_per_sample))
     assert mean_cate > 0, f"expected positive CATE, got {mean_cate}"
 

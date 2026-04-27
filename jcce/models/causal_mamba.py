@@ -53,15 +53,20 @@ def topological_sort_from_adjacency(A: jnp.ndarray, threshold: float = 0.01) -> 
     Uses Kahn's algorithm on the thresholded binary graph (host-side via
     jax.pure_callback). A[i,j] != 0 means i -> j.
 
+    The hard sort is non-differentiable; jax.lax.stop_gradient on the input
+    keeps the (otherwise undefined) JVP at zero so this composes inside any
+    grad-traced loss. Sprint 2's Sinkhorn soft sort is what carries gradient.
+
     Returns:
         order: (d,) int32 array; parents before children, cycle leftovers
                appended in original index order.
     """
     d = A.shape[0]
+    A_detached = jax.lax.stop_gradient(A)
     return jax.pure_callback(
         lambda a: _kahn_numpy(a, threshold),
         jax.ShapeDtypeStruct((d,), jnp.int32),
-        A,
+        A_detached,
         vmap_method="sequential",
     )
 

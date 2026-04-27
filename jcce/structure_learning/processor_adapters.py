@@ -1382,7 +1382,7 @@ class CausalMambaAdapter:
 
         return param_dict
 
-    def _resolve_ordering(self, A, n_inputs):
+    def _resolve_ordering(self, A, n_inputs, temperature=None):
         """Resolve the variable ordering for CausalMambaProcessor.
 
         Returns a (topo_order, perm_matrix) tuple. At most one of the two
@@ -1393,6 +1393,11 @@ class CausalMambaAdapter:
           - sinkhorn:    perm_matrix from Sinkhorn (soft, differentiable).
           - random:      topo_order from a fixed permutation per sort_seed.
           - identity:    (None, None).
+
+        ``temperature`` overrides ``self.sinkhorn_temperature`` for the
+        sinkhorn path; None falls back to the adapter's default. The override
+        path is used by jcce_learner.py to thread the cosine schedule
+        (1.0 -> 0.1 over training steps) without rebuilding the adapter.
         """
         if self.sort_mode == "identity":
             return None, None
@@ -1401,9 +1406,10 @@ class CausalMambaAdapter:
         if self.sort_mode == "topological":
             return topological_sort_from_adjacency(A, threshold=0.01), None
         if self.sort_mode == "sinkhorn":
+            T = self.sinkhorn_temperature if temperature is None else temperature
             P = sinkhorn_topological_sort(
                 A,
-                temperature=self.sinkhorn_temperature,
+                temperature=T,
                 n_iters=self.sinkhorn_n_iters,
             )
             return None, P
@@ -1418,22 +1424,31 @@ class CausalMambaAdapter:
         skip_centering: bool = False,
         training: bool = False,
         rng_key=None,
+        temperature=None,
     ) -> jnp.ndarray:
         """
-        Forward pass with topological variable ordering.
+        Forward pass with causal-aware variable ordering.
 
         Args:
-            X: (n_samples, n_inputs) input data
-            params: Dict-format parameters
-            A: (n_inputs, n_inputs) adjacency matrix — used for topological ordering
-            skip_centering: skip mean centering for classification
+            X: (n_samples, n_inputs) input data.
+            params: Dict-format parameters.
+            A: (n_inputs, n_inputs) adjacency matrix — used for ordering.
+            skip_centering: skip mean centering for classification.
             training, rng_key: accepted for dispatch-signature parity with
-                DAGAttentionAdapter; currently unused (CausalMamba has no dropout).
+                DAGAttentionAdapter; currently unused (CausalMamba has no
+                dropout).
+            temperature: per-call Sinkhorn temperature override. None falls
+                back to ``self.sinkhorn_temperature``. When jcce_learner.py
+                lands the temperature plumbing patch, learn_structure will
+                pass the cosine-scheduled value here at each dispatch site.
+                Ignored for non-sinkhorn sort_modes.
         """
         n_samples, n_inputs = X.shape
         flax_params = dict_to_flax_params(params)
 
-        topo_order, perm_matrix = self._resolve_ordering(A, n_inputs)
+        topo_order, perm_matrix = self._resolve_ordering(
+            A, n_inputs, temperature=temperature
+        )
 
         # Forward through CausalMamba
         h = self.model.apply(
@@ -1466,11 +1481,14 @@ class CausalMambaAdapter:
         return output
 
     def get_hidden_features(
-        self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None
+        self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None,
+        temperature=None,
     ) -> jnp.ndarray:
         flax_params = dict_to_flax_params(params)
         n_inputs = X.shape[1]
-        topo_order, perm_matrix = self._resolve_ordering(A, n_inputs)
+        topo_order, perm_matrix = self._resolve_ordering(
+            A, n_inputs, temperature=temperature
+        )
         h = self.model.apply(
             flax_params,
             X,

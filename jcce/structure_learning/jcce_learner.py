@@ -4485,6 +4485,14 @@ def learn_structure(
     # observed attention patterns; A pulls attention toward causal edges.
     # Default 0.0 keeps prior behavior (forward-only soft mask).
     lambda_consistency: float = 0.0,
+    # Phase 2: DAG-Attention temperature annealing for the consistency loss.
+    # Tuple (init, final) cosine-anneals the temperature used in the consistency
+    # target sigmoid(A * temp) from init at iter=0 to final at iter=max_iter.
+    # Low initial temp → soft target (graded gradient), high final temp →
+    # sharp target (concentrates on real edges). Per skills/dag_attention.md
+    # the recommended schedule is (1.0, 20.0). When None, uses the adapter's
+    # fixed self.temperature for both soft mask and consistency target.
+    temperature_consistency_schedule: Optional[Tuple[float, float]] = None,
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
     v7.0: Unified Causal Discovery with Bi-directed Edges & Amortized Effects.
@@ -4727,7 +4735,10 @@ def learn_structure(
         pc_status = "with PC constraint" if use_pc_constraint else "no PC constraint"
         print(f"  [PC Constraint] A_init provided with {pc_edges} edges ({pc_status})")
 
-    def loss_fn(params, batch_data, batch_Y, batch_Y_effect, lambda_2_current, curriculum_weights):
+    def loss_fn(
+        params, batch_data, batch_Y, batch_Y_effect, lambda_2_current, curriculum_weights,
+        current_temp_consistency,
+    ):
         """Unified loss: Structure + Classification + Effects.
 
         batch_Y: Binary Y for classification loss
@@ -4960,7 +4971,8 @@ def learn_structure(
         consistency_loss = jnp.array(0.0)
         if lambda_consistency > 0 and _proc_name_yclass == "DAGAttentionAdapter":
             consistency_loss = processor.consistency_loss(
-                _X_wY_fwd, _pp_Yc_fwd, A_curr[:n_v, :n_v]
+                _X_wY_fwd, _pp_Yc_fwd, A_curr[:n_v, :n_v],
+                temperature=current_temp_consistency,
             )
 
         # ========== Structure Penalties ==========
@@ -5269,7 +5281,7 @@ def learn_structure(
         """Create JIT-compiled training step. Recreated when closure variables change."""
 
         @jax.jit
-        def _step(params, opt_state, batch_key, lambda_2_jax, curriculum_w):
+        def _step(params, opt_state, batch_key, lambda_2_jax, curriculum_w, current_temp):
             # Batch selection inside JIT (avoids 3 Python↔XLA round trips)
             if use_batching:
                 batch_idx = random.choice(
@@ -5291,20 +5303,26 @@ def learn_structure(
                 # PCGrad projects the 3 task gradients; penalty gradient is added back unchanged
                 # so h(A) enforcement is never lost.
                 def _recon_loss(p):
-                    _, aux = loss_fn(p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw)
+                    _, aux = loss_fn(
+                        p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
+                    )
                     return aux[1]  # total_recon_loss
 
                 def _class_loss(p):
-                    _, aux = loss_fn(p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw)
+                    _, aux = loss_fn(
+                        p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
+                    )
                     return aux[2]  # classification_loss
 
                 def _effect_loss(p):
-                    _, aux = loss_fn(p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw)
+                    _, aux = loss_fn(
+                        p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
+                    )
                     return aux[3]  # effect_loss
 
                 # Get total loss + aux for logging (single forward pass)
                 (loss_val, aux), grads_total = jax.value_and_grad(loss_fn, has_aux=True)(
-                    params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw
+                    params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
                 )
                 # Per-task gradients (only for A_direct projection)
                 g_recon = jax.grad(_recon_loss)(params)
@@ -5328,7 +5346,7 @@ def learn_structure(
                 }
             else:
                 (loss_val, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-                    params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw
+                    params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
                 )
 
             # Freeze log_var_recon (its gradient exploits uncertainty weighting)
@@ -5362,9 +5380,20 @@ def learn_structure(
         # Batch key for on-device batch selection inside JIT
         key, batch_key = random.split(key)
 
+        # Temperature schedule for DAG-Attention consistency loss (cosine anneal).
+        # When schedule is None, current_temp falls back to processor's default (or 5.0)
+        # — equivalent to no scheduling.
+        if temperature_consistency_schedule is not None:
+            t_init, t_final = temperature_consistency_schedule
+            iter_frac = iter / max(max_iter - 1, 1)
+            cur_temp = float(t_init + 0.5 * (t_final - t_init) * (1.0 - jnp.cos(jnp.pi * iter_frac)))
+        else:
+            cur_temp = float(getattr(processor, "temperature", 5.0))
+        current_temp_jax = jnp.float32(cur_temp)
+
         # JIT-compiled: batch selection + forward + backward + optimizer update + constraints
         all_params, opt_state, loss_val, aux, batch_Y = train_step(
-            all_params, opt_state, batch_key, lambda_2_jax, curriculum_w_jax
+            all_params, opt_state, batch_key, lambda_2_jax, curriculum_w_jax, current_temp_jax
         )
         h_A, recon_loss, class_loss, effect_loss, bow_loss, Y_logits, consistency_val = aux
 
@@ -5444,7 +5473,8 @@ def learn_structure(
         # Early stopping on validation (eager mode, only every 10 iters)
         if use_validation_split and iter % 10 == 0 and iter >= effect_warmup_iter:
             val_loss, _ = loss_fn(
-                all_params, data_val, Y_val, Y_effect_val, lambda_2, curriculum_weights
+                all_params, data_val, Y_val, Y_effect_val, lambda_2, curriculum_weights,
+                cur_temp,
             )
             if float(val_loss) < best_loss:
                 best_loss = float(val_loss)
@@ -5515,7 +5545,10 @@ def learn_structure(
                     _, aux = loss_fn(params, *args)
                     return aux[3]  # effect_loss
 
-                _loss_args = (data_train, Y_train, Y_effect_train, lambda_2_jax, curriculum_w_jax)
+                _loss_args = (
+                    data_train, Y_train, Y_effect_train, lambda_2_jax, curriculum_w_jax,
+                    current_temp_jax,
+                )
                 g_r = jax.grad(_recon_only)(all_params, *_loss_args)["A_direct"].flatten()
                 g_c = jax.grad(_class_only)(all_params, *_loss_args)["A_direct"].flatten()
 

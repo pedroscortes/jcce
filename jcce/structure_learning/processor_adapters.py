@@ -1146,6 +1146,7 @@ class DAGAttentionAdapter:
         rng_key: random.PRNGKey = None,
         skip_centering: bool = False,
         return_attn: bool = False,
+        temperature: float = None,
     ) -> jnp.ndarray:
         """
         Forward pass with soft DAG-masked attention.
@@ -1158,6 +1159,9 @@ class DAGAttentionAdapter:
             rng_key: RNG key for dropout
             skip_centering: skip mean centering for classification
             return_attn: if True, returns (output, attn_weights_list)
+            temperature: optional runtime override for the soft-mask temperature.
+                When provided (e.g., from a learner-side annealing schedule),
+                supersedes self.temperature for this call only.
         """
         n_samples, n_inputs = X.shape
         flax_params = dict_to_flax_params(params)
@@ -1169,10 +1173,18 @@ class DAGAttentionAdapter:
                 A=A,
                 training=training,
                 return_attn=return_attn,
+                temperature=temperature,
                 rngs={"dropout": rng_key},
             )
         else:
-            result = self.model.apply(flax_params, X, A=A, training=False, return_attn=return_attn)
+            result = self.model.apply(
+                flax_params,
+                X,
+                A=A,
+                training=False,
+                return_attn=return_attn,
+                temperature=temperature,
+            )
 
         if return_attn:
             h, attn_list = result
@@ -1264,12 +1276,26 @@ class DAGAttentionAdapter:
         params["_weights_solved"] = True
         return params
 
-    def consistency_loss(self, X: jnp.ndarray, params: Dict, A: jnp.ndarray) -> jnp.ndarray:
-        """Compute attention-DAG consistency loss for the multi-loss objective."""
+    def consistency_loss(
+        self,
+        X: jnp.ndarray,
+        params: Dict,
+        A: jnp.ndarray,
+        temperature: float = None,
+    ) -> jnp.ndarray:
+        """Compute attention-DAG consistency loss for the multi-loss objective.
+
+        When `temperature` is provided, both the soft mask used in the attention
+        forward pass and the sigmoid(A * temperature) target distribution use it.
+        This keeps the two derivations consistent under annealing schedules.
+        """
+        eff_temperature = self.temperature if temperature is None else temperature
         flax_params = dict_to_flax_params(params)
-        _, attn_list = self.model.apply(flax_params, X, A=A, training=False, return_attn=True)
+        _, attn_list = self.model.apply(
+            flax_params, X, A=A, training=False, return_attn=True, temperature=temperature
+        )
         return DAGAttentionTransformerBase.consistency_loss(
-            attn_list, A, temperature=self.temperature
+            attn_list, A, temperature=eff_temperature
         )
 
 

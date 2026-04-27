@@ -125,6 +125,7 @@ class DAGAttentionTransformer(nn.Module):
         A: Optional[jnp.ndarray] = None,
         training: bool = False,
         return_attn: bool = False,
+        temperature: Optional[float] = None,
     ) -> jnp.ndarray:
         """
         Args:
@@ -132,6 +133,9 @@ class DAGAttentionTransformer(nn.Module):
             A: (n_vars, n_vars) adjacency matrix (learned, continuous weights)
             training: enables dropout
             return_attn: if True, return (output, attention_weights) for consistency loss
+            temperature: optional runtime override of self.temperature; supports
+                annealing schedules from the training loop. When None, uses the
+                fixed self.temperature set at module init.
 
         Returns:
             h: (batch_size, n_vars, d_model) processed representations
@@ -152,11 +156,14 @@ class DAGAttentionTransformer(nn.Module):
         # Build soft DAG mask from A
         dag_mask = None
         if A is not None:
+            # Use runtime temperature if provided (for annealing schedules), else fall
+            # back to module-level fixed temperature.
+            eff_temperature = self.temperature if temperature is None else temperature
             # Soft mask: log(sigmoid(A * temp) + eps)
             # When A_ij is large positive: log(sigmoid) -> 0 (no penalty, full attention)
             # When A_ij is large negative: log(sigmoid) -> -inf (blocks attention)
             # When A_ij is near zero: log(sigmoid) -> log(0.5) ≈ -0.69 (partial attention)
-            dag_mask = jnp.log(jax.nn.sigmoid(A * self.temperature) + 1e-8)
+            dag_mask = jnp.log(jax.nn.sigmoid(A * eff_temperature) + 1e-8)
 
             # Always allow self-attention
             dag_mask = dag_mask + jnp.eye(n_vars) * 10.0

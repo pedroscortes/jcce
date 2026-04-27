@@ -1304,20 +1304,24 @@ class DAGAttentionAdapter:
 # ============================================================================
 
 from jcce.models.causal_mamba import CausalMambaProcessor as CausalMambaBase
-from jcce.models.causal_mamba import topological_sort_from_adjacency
+from jcce.models.causal_mamba import (
+    sinkhorn_topological_sort,
+    topological_sort_from_adjacency,
+)
 
 
 class CausalMambaAdapter:
     """
     Adapter for CausalMamba with selectable variable ordering.
 
-    Reorders variables before feeding the sequence to Mamba. Three modes:
-      - "topological" (default): order = topological_sort_from_adjacency(A).
-        The sort runs host-side via jax.pure_callback so the adapter is
-        jit-safe; the order recomputes on every forward call.
-      - "random": fixed permutation seeded by ``sort_seed``, sampled once at
-        first forward call. Used as the Gate 1 control to test whether
-        ordering itself adds value, independent of A.
+    Four modes:
+      - "topological" (default): hard order from
+        topological_sort_from_adjacency(A). Non-differentiable (gradient
+        stops at A); runs host-side via jax.pure_callback.
+      - "sinkhorn": differentiable soft sort. The Sprint 2 mechanism. P is
+        a doubly-stochastic matrix from Sinkhorn over ancestral-depth
+        scores; gradient flows from the loss back to A through P.
+      - "random": fixed permutation seeded by ``sort_seed``. Gate 1 control.
       - "identity": no permutation. Equivalent to standard Mamba.
 
     The "random" mode does not re-sample per step; doing so would require an
@@ -1326,7 +1330,7 @@ class CausalMambaAdapter:
     distribution Gate 1 needs.
     """
 
-    _SORT_MODES = ("topological", "random", "identity")
+    _SORT_MODES = ("topological", "sinkhorn", "random", "identity")
 
     def __init__(
         self,
@@ -1338,6 +1342,8 @@ class CausalMambaAdapter:
         n_features: int = None,
         sort_mode: str = "topological",
         sort_seed: int = 0,
+        sinkhorn_temperature: float = 0.1,
+        sinkhorn_n_iters: int = 10,
     ):
         if sort_mode not in self._SORT_MODES:
             raise ValueError(
@@ -1351,6 +1357,8 @@ class CausalMambaAdapter:
         self.key = key if key is not None else random.PRNGKey(42)
         self.sort_mode = sort_mode
         self.sort_seed = sort_seed
+        self.sinkhorn_temperature = sinkhorn_temperature
+        self.sinkhorn_n_iters = sinkhorn_n_iters
 
         self.model = CausalMambaBase(
             d_model=d_model,
@@ -1374,24 +1382,33 @@ class CausalMambaAdapter:
 
         return param_dict
 
-    def _resolve_topo_order(self, A, n_inputs):
-        """Compute the variable ordering passed to CausalMambaProcessor.
+    def _resolve_ordering(self, A, n_inputs):
+        """Resolve the variable ordering for CausalMambaProcessor.
 
-        Returns None for "identity" (Mamba's default scan order) or whenever
-        A is not available (init / no-A dispatch paths). For "random", we
-        recompute the permutation from (sort_seed, n_inputs) every call;
-        XLA's constant folding makes this free at runtime, and avoiding any
-        mutation of self prevents JAX's "unexpected tracer / side effect"
-        check from firing when the first call happens inside a jit trace.
+        Returns a (topo_order, perm_matrix) tuple. At most one of the two
+        is non-None; both are None for "identity" or for any dispatch path
+        that does not pass A (init, no-A reconstruction paths).
+
+          - topological: topo_order from pure_callback (hard sort).
+          - sinkhorn:    perm_matrix from Sinkhorn (soft, differentiable).
+          - random:      topo_order from a fixed permutation per sort_seed.
+          - identity:    (None, None).
         """
         if self.sort_mode == "identity":
-            return None
+            return None, None
         if A is None:
-            return None
+            return None, None
         if self.sort_mode == "topological":
-            return topological_sort_from_adjacency(A, threshold=0.01)
+            return topological_sort_from_adjacency(A, threshold=0.01), None
+        if self.sort_mode == "sinkhorn":
+            P = sinkhorn_topological_sort(
+                A,
+                temperature=self.sinkhorn_temperature,
+                n_iters=self.sinkhorn_n_iters,
+            )
+            return None, P
         # random — deterministic given (sort_seed, n_inputs); no caching.
-        return random.permutation(random.PRNGKey(self.sort_seed), n_inputs)
+        return random.permutation(random.PRNGKey(self.sort_seed), n_inputs), None
 
     def forward(
         self,
@@ -1416,10 +1433,16 @@ class CausalMambaAdapter:
         n_samples, n_inputs = X.shape
         flax_params = dict_to_flax_params(params)
 
-        topo_order = self._resolve_topo_order(A, n_inputs)
+        topo_order, perm_matrix = self._resolve_ordering(A, n_inputs)
 
         # Forward through CausalMamba
-        h = self.model.apply(flax_params, X, topo_order=topo_order, training=False)
+        h = self.model.apply(
+            flax_params,
+            X,
+            topo_order=topo_order,
+            perm_matrix=perm_matrix,
+            training=False,
+        )
 
         # Pool across sequence
         h_pooled = jnp.mean(h, axis=1)
@@ -1447,8 +1470,14 @@ class CausalMambaAdapter:
     ) -> jnp.ndarray:
         flax_params = dict_to_flax_params(params)
         n_inputs = X.shape[1]
-        topo_order = self._resolve_topo_order(A, n_inputs)
-        h = self.model.apply(flax_params, X, topo_order=topo_order, training=False)
+        topo_order, perm_matrix = self._resolve_ordering(A, n_inputs)
+        h = self.model.apply(
+            flax_params,
+            X,
+            topo_order=topo_order,
+            perm_matrix=perm_matrix,
+            training=False,
+        )
         h_pooled = jnp.mean(h, axis=1)
         return h_pooled
 

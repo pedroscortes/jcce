@@ -4493,6 +4493,16 @@ def learn_structure(
     # the recommended schedule is (1.0, 20.0). When None, uses the adapter's
     # fixed self.temperature for both soft mask and consistency target.
     temperature_consistency_schedule: Optional[Tuple[float, float]] = None,
+    # Phase 2: adaptive engagement of consistency_loss. When True,
+    # lambda_consistency is interpreted as the MAX value (engaged once
+    # collapse is detected); the current multiplier is 0 until A starts
+    # collapsing. Engagement triggers when max|A| drops below
+    # consistency_collapse_threshold AND iter < consistency_max_engage_iter_frac
+    # * max_iter. One-shot (no oscillation): once engaged, stays engaged.
+    # Closes the regime-dependence gap: only fires when needed.
+    adaptive_consistency: bool = False,
+    consistency_collapse_threshold: float = 0.1,
+    consistency_max_engage_iter_frac: float = 0.3,
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
     v7.0: Unified Causal Discovery with Bi-directed Edges & Amortized Effects.
@@ -4737,7 +4747,7 @@ def learn_structure(
 
     def loss_fn(
         params, batch_data, batch_Y, batch_Y_effect, lambda_2_current, curriculum_weights,
-        current_temp_consistency,
+        current_temp_consistency, current_lambda_consistency,
     ):
         """Unified loss: Structure + Classification + Effects.
 
@@ -5179,7 +5189,9 @@ def learn_structure(
         weighted_structural = w_recon * structural_loss
         weighted_class = w_class * lambda_class * classification_loss
         weighted_effect = w_effect * effect_enabled * lambda_effect * effect_loss
-        weighted_consistency = lambda_consistency * consistency_loss
+        # Use dynamic lambda_consistency: equals static lambda_consistency unless
+        # adaptive engagement holds it at 0 until collapse is detected.
+        weighted_consistency = current_lambda_consistency * consistency_loss
 
         total_loss = (
             weighted_structural
@@ -5281,7 +5293,10 @@ def learn_structure(
         """Create JIT-compiled training step. Recreated when closure variables change."""
 
         @jax.jit
-        def _step(params, opt_state, batch_key, lambda_2_jax, curriculum_w, current_temp):
+        def _step(
+            params, opt_state, batch_key, lambda_2_jax, curriculum_w,
+            current_temp, current_lambda_consistency_jax,
+        ):
             # Batch selection inside JIT (avoids 3 Python↔XLA round trips)
             if use_batching:
                 batch_idx = random.choice(
@@ -5304,25 +5319,29 @@ def learn_structure(
                 # so h(A) enforcement is never lost.
                 def _recon_loss(p):
                     _, aux = loss_fn(
-                        p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
+                        p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
+                        current_lambda_consistency_jax,
                     )
                     return aux[1]  # total_recon_loss
 
                 def _class_loss(p):
                     _, aux = loss_fn(
-                        p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
+                        p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
+                        current_lambda_consistency_jax,
                     )
                     return aux[2]  # classification_loss
 
                 def _effect_loss(p):
                     _, aux = loss_fn(
-                        p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
+                        p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
+                        current_lambda_consistency_jax,
                     )
                     return aux[3]  # effect_loss
 
                 # Get total loss + aux for logging (single forward pass)
                 (loss_val, aux), grads_total = jax.value_and_grad(loss_fn, has_aux=True)(
-                    params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
+                    params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
+                    current_lambda_consistency_jax,
                 )
                 # Per-task gradients (only for A_direct projection)
                 g_recon = jax.grad(_recon_loss)(params)
@@ -5346,7 +5365,8 @@ def learn_structure(
                 }
             else:
                 (loss_val, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(
-                    params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp
+                    params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
+                    current_lambda_consistency_jax,
                 )
 
             # Freeze log_var_recon (its gradient exploits uncertainty weighting)
@@ -5366,6 +5386,10 @@ def learn_structure(
         return _step
 
     train_step = make_train_step()
+
+    # Adaptive consistency engagement state (Python-side; not jit-traced)
+    consistency_engaged = False
+    consistency_engaged_iter = -1  # -1 = never engaged
 
     # ==================== Training Loop ====================
 
@@ -5391,9 +5415,44 @@ def learn_structure(
             cur_temp = float(getattr(processor, "temperature", 5.0))
         current_temp_jax = jnp.float32(cur_temp)
 
+        # Adaptive consistency engagement (Python-side decision, fed as JAX scalar).
+        # When adaptive_consistency=False: always lambda_consistency.
+        # When adaptive_consistency=True: per-iter dynamic — engage only when A is
+        # CURRENTLY collapsed. This self-regulates: anchors A while it's small,
+        # disengages once A recovers. Avoids the one-shot "stay engaged" failure
+        # mode where a transient dip would lock in over-saturation on healthy datasets.
+        # consistency_engaged_iter records the FIRST iter engagement fired (for diagnostic);
+        # consistency_engaged is now a per-iter boolean recording the LATEST state.
+        if adaptive_consistency and lambda_consistency > 0:
+            n_v_check = data_train.shape[1] - 1  # X-only submatrix; Y is at Y_idx
+            max_abs_A_now = float(
+                jnp.max(jnp.abs(all_params["A_direct"][:n_v_check, :n_v_check]))
+            )
+            is_currently_collapsed = (
+                max_abs_A_now < consistency_collapse_threshold
+                and iter < consistency_max_engage_iter_frac * max_iter
+            )
+            if is_currently_collapsed and consistency_engaged_iter < 0:
+                consistency_engaged_iter = iter
+                if verbose >= 1:
+                    print(
+                        f"  [adaptive consistency] first engaged at iter {iter}, "
+                        f"max|A|={max_abs_A_now:.4f} < threshold={consistency_collapse_threshold}"
+                    )
+            consistency_engaged = is_currently_collapsed
+        else:
+            consistency_engaged = (lambda_consistency > 0)  # static-on path
+
+        if adaptive_consistency:
+            cur_lambda_consistency = lambda_consistency if consistency_engaged else 0.0
+        else:
+            cur_lambda_consistency = lambda_consistency
+        current_lambda_consistency_jax = jnp.float32(cur_lambda_consistency)
+
         # JIT-compiled: batch selection + forward + backward + optimizer update + constraints
         all_params, opt_state, loss_val, aux, batch_Y = train_step(
-            all_params, opt_state, batch_key, lambda_2_jax, curriculum_w_jax, current_temp_jax
+            all_params, opt_state, batch_key, lambda_2_jax, curriculum_w_jax,
+            current_temp_jax, current_lambda_consistency_jax,
         )
         h_A, recon_loss, class_loss, effect_loss, bow_loss, Y_logits, consistency_val = aux
 
@@ -5474,7 +5533,7 @@ def learn_structure(
         if use_validation_split and iter % 10 == 0 and iter >= effect_warmup_iter:
             val_loss, _ = loss_fn(
                 all_params, data_val, Y_val, Y_effect_val, lambda_2, curriculum_weights,
-                cur_temp,
+                cur_temp, cur_lambda_consistency,
             )
             if float(val_loss) < best_loss:
                 best_loss = float(val_loss)
@@ -5547,7 +5606,7 @@ def learn_structure(
 
                 _loss_args = (
                     data_train, Y_train, Y_effect_train, lambda_2_jax, curriculum_w_jax,
-                    current_temp_jax,
+                    current_temp_jax, current_lambda_consistency_jax,
                 )
                 g_r = jax.grad(_recon_only)(all_params, *_loss_args)["A_direct"].flatten()
                 g_c = jax.grad(_class_only)(all_params, *_loss_args)["A_direct"].flatten()
@@ -6013,6 +6072,9 @@ def learn_structure(
         "n_edges": int(jnp.sum(A_binary)),
         "sparsity": sparsity,
         "final_h_A": float(h_A),
+        # Adaptive consistency engagement diagnostic: -1 if never engaged
+        # (or adaptive_consistency=False); else iter at which it engaged.
+        "consistency_engaged_iter": consistency_engaged_iter,
         "markov_blanket": markov_blanket,
         "markov_blanket_size": len(markov_blanket),
         # MB components for detailed analysis

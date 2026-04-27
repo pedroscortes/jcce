@@ -175,6 +175,202 @@ def sinkhorn_topological_sort(
     return _sinkhorn_log_domain(log_P, n_iters=n_iters)
 
 
+# ---------------------------------------------------------------------------
+# Sprint 3 Mechanism 2: DAG-gated state transitions.
+#
+# Path (A) per the multi-chat coordination policy: duplicate the relevant
+# selective-scan + MambaBlock + MambaProcessor structure here so the base
+# Mamba implementation in jcce/models/mamba.py stays untouched. That base
+# is shared with classification_processors.py and processor_wrappers.py
+# (two paths via MambaProcessorWrapper); patching its scan signature would
+# ripple beyond CausalMamba.
+#
+# The gated step is:
+#   h_new = deltaA_t * gate_t * h + deltaB_u_t
+# with gate_t in R^{d_state} computed per skill spec from A's columns
+# selected by the variable at position t.
+# ---------------------------------------------------------------------------
+
+import math  # local import: only the gated path uses it
+
+
+def _gated_selective_scan(u, delta, A, B, C, D, gate):
+    """Selective scan with a per-position multiplicative gate on the hidden state.
+
+    Mirrors jcce.models.mamba.selective_scan but accepts a (seq_len, d_state)
+    gate that multiplies h_{t-1} element-wise inside the recurrence:
+        h_new = deltaA_t * gate_t * h + deltaB_u_t
+
+    The gate is broadcast against (batch, d_inner, d_state) so the same
+    d_state-shaped gate applies across batch and inner-channel axes.
+
+    Parameters mirror selective_scan; ``gate`` is shape (seq_len, d_state).
+    """
+    batch, seq_len, d_in = u.shape
+    d_state = A.shape[1]
+
+    delta = jnp.clip(delta, 0.001, 0.1)
+    deltaA = jnp.exp(jnp.einsum("bld,dn->bldn", delta, A))
+    deltaB_u = jnp.einsum("bld,bln,bld->bldn", delta, B, u)
+
+    def scan_fn(h, inputs):
+        deltaA_t, deltaB_u_t, C_t, gate_t = inputs
+        # gate_t: (d_state,) -> broadcasts over (batch, d_inner, d_state).
+        h_new = deltaA_t * gate_t * h + deltaB_u_t
+        y_t = jnp.einsum("bdn,bn->bd", h_new, C_t)
+        return h_new, y_t
+
+    h_0 = jnp.zeros((batch, d_in, d_state))
+
+    _, y = jax.lax.scan(
+        scan_fn,
+        h_0,
+        (
+            deltaA.transpose(1, 0, 2, 3),
+            deltaB_u.transpose(1, 0, 2, 3),
+            C.transpose(1, 0, 2),
+            gate,  # already (seq_len, d_state)
+        ),
+    )
+
+    y = y.transpose(1, 0, 2)
+    return y + u * D
+
+
+class _GatedMambaBlock(nn.Module):
+    """Mamba block with a per-position gate inserted into the SSM recurrence.
+
+    Direct copy of jcce.models.mamba.MambaBlock parameter setup; only the
+    selective_scan call is replaced by _gated_selective_scan. ``__call__``
+    accepts an extra ``gate`` argument of shape (seq_len, d_state).
+    """
+
+    d_model: int
+    d_state: int = 8
+    d_conv: int = 4
+    expand: int = 1
+
+    def setup(self):
+        self.d_inner = self.expand * self.d_model
+        dt_rank = math.ceil(self.d_model / 16)
+
+        self.in_proj = nn.Dense(self.d_inner * 2, use_bias=False)
+        self.conv1d = nn.Conv(
+            features=self.d_inner,
+            kernel_size=(self.d_conv,),
+            feature_group_count=self.d_inner,
+            padding="VALID",
+            use_bias=True,
+        )
+        self.x_proj = nn.Dense(dt_rank + 2 * self.d_state, use_bias=False)
+        self.dt_proj = nn.Dense(
+            self.d_inner,
+            use_bias=True,
+            kernel_init=nn.initializers.normal(stddev=0.02),
+            bias_init=nn.initializers.constant(0.1),
+        )
+
+        A_init = jnp.repeat(
+            jnp.arange(1, self.d_state + 1)[None, :], self.d_inner, axis=0
+        )
+        self.A_log = self.param("A_log", lambda key: jnp.log(A_init))
+        self.D = self.param("D", lambda key: jnp.ones(self.d_inner))
+        self.out_proj = nn.Dense(self.d_model, use_bias=False)
+
+    def __call__(self, x, gate):
+        batch, seq_len, d_model = x.shape
+
+        x_and_z = self.in_proj(x)
+        x_proj, z = jnp.split(x_and_z, 2, axis=-1)
+
+        x_conv_input = jnp.pad(
+            x_proj,
+            ((0, 0), (self.d_conv - 1, 0), (0, 0)),
+            mode="constant",
+        )
+        x_conv = self.conv1d(x_conv_input)
+        x_conv = nn.silu(x_conv)
+
+        x_ssm = self.x_proj(x_conv)
+        dt_rank = math.ceil(self.d_model / 16)
+        dt, B, C = jnp.split(x_ssm, [dt_rank, dt_rank + self.d_state], axis=-1)
+        dt = self.dt_proj(dt)
+        dt = nn.softplus(dt)
+
+        A = -jnp.exp(self.A_log)
+
+        y = _gated_selective_scan(x_conv, dt, A, B, C, self.D, gate)
+
+        y = y * nn.silu(z)
+        return self.out_proj(y)
+
+
+class _GatedMambaProcessor(nn.Module):
+    """Stack of _GatedMambaBlock layers. Mirrors MambaProcessor; threads gate
+    through every layer (residual connections preserved).
+    """
+
+    d_model: int = 32
+    n_layers: int = 1
+    d_state: int = 8
+    d_conv: int = 4
+    expand: int = 1
+
+    @nn.compact
+    def __call__(self, z_sequence: jnp.ndarray, gate: jnp.ndarray) -> jnp.ndarray:
+        h = z_sequence
+        for i in range(self.n_layers):
+            block = _GatedMambaBlock(
+                d_model=self.d_model,
+                d_state=self.d_state,
+                d_conv=self.d_conv,
+                expand=self.expand,
+                name=f"gated_mamba_block_{i}",
+            )
+            h = block(h, gate) + h
+        return h
+
+
+def _compute_dag_gate(
+    A: jnp.ndarray,
+    topo_order: Optional[jnp.ndarray],
+    perm_matrix: Optional[jnp.ndarray],
+    d_state: int,
+    name: str = "dag_gate",
+    identity_floor: float = 0.1,
+) -> jnp.ndarray:
+    """Return the per-position DAG gate of shape (n_vars, d_state).
+
+    For each sequence position t, the gate is computed from the parent
+    signature of "the variable at position t":
+
+      hard sort:  parent_signature[t, :] = A[:, topo_order[t]]
+      soft sort:  parent_signature[t, :] = sum_j P[t, j] * A[:, j]
+                                        = (P @ A.T)[t, :]
+      identity:   parent_signature[t, :] = A[:, t]   (= A.T[t, :])
+
+    Then ``Dense(d_state)(parent_signature)`` gives the (n_vars, d_state)
+    pre-gate logits, and the identity floor prevents total state collapse:
+        gate = identity_floor + (1 - identity_floor) * sigmoid(logits)
+
+    Must be called from inside a flax @nn.compact context (the Dense layer
+    is registered as a parameter of the calling module).
+    """
+    n_vars = A.shape[0]
+    if perm_matrix is not None:
+        # Row t of parent_signature is sum_j P[t, j] * A[:, j].
+        # Equivalent matrix form: (P @ A^T) since A^T[j, :] = A[:, j].
+        parent_signature = perm_matrix @ A.T
+    elif topo_order is not None:
+        # parent_signature[t, :] = A[:, topo_order[t]] = A.T[topo_order[t], :]
+        parent_signature = A.T[topo_order]
+    else:
+        parent_signature = A.T  # identity
+
+    gate_logits = nn.Dense(d_state, name=name)(parent_signature)
+    return identity_floor + (1.0 - identity_floor) * jax.nn.sigmoid(gate_logits)
+
+
 class CausalMambaProcessor(nn.Module):
     """
     Mamba SSM with causal (topological) variable ordering.
@@ -198,6 +394,7 @@ class CausalMambaProcessor(nn.Module):
     d_conv: int = 4
     expand: int = 2
     n_layers: int = 1
+    enable_gating: bool = False
 
     @nn.compact
     def __call__(
@@ -205,6 +402,7 @@ class CausalMambaProcessor(nn.Module):
         z: jnp.ndarray,
         topo_order: Optional[jnp.ndarray] = None,
         perm_matrix: Optional[jnp.ndarray] = None,
+        A: Optional[jnp.ndarray] = None,
         training: bool = False,
     ) -> jnp.ndarray:
         """
@@ -214,6 +412,12 @@ class CausalMambaProcessor(nn.Module):
         in which case the standard scan order is used). If both are set,
         perm_matrix wins.
 
+        When ``enable_gating=True`` and A is provided, the Sprint 3
+        Mechanism 2 DAG-gated SSM is used: a per-position gate in
+        R^{d_state} multiplies h_{t-1} inside the recurrence, computed from
+        A's columns selected (hard) or soft-mixed (Sinkhorn) by the
+        variable at position t.
+
         Args:
             z: (batch_size, n_vars) input features.
             topo_order: (n_vars,) hard permutation of variable indices.
@@ -221,6 +425,9 @@ class CausalMambaProcessor(nn.Module):
                 P[i, j] approx 1 means variable j is at sequence position i.
                 When provided, sorting and unsorting use matrix multiplies
                 so the gradient can flow back to A through P.
+            A: (n_vars, n_vars) adjacency. Required when enable_gating=True.
+                Ignored otherwise (the ordering is already encoded in
+                topo_order or perm_matrix).
             training: Whether in training mode.
 
         Returns:
@@ -242,15 +449,32 @@ class CausalMambaProcessor(nn.Module):
         z_expanded = z_sorted[..., None]  # (B, N, 1)
         z_projected = nn.Dense(self.d_model, name="input_projection")(z_expanded)
 
-        # Step 3: Apply Mamba (processes in the chosen order).
-        mamba = _MambaProcessorBase(
-            d_model=self.d_model,
-            n_layers=self.n_layers,
-            d_state=self.d_state,
-            d_conv=self.d_conv,
-            expand=self.expand,
-        )
-        h_sorted = mamba(z_projected)  # (B, N, d_model)
+        # Step 3: Apply Mamba — either gated (Mechanism 2) or standard.
+        if self.enable_gating and A is not None:
+            gate = _compute_dag_gate(
+                A,
+                topo_order=topo_order,
+                perm_matrix=perm_matrix,
+                d_state=self.d_state,
+                name="dag_gate",
+            )
+            mamba = _GatedMambaProcessor(
+                d_model=self.d_model,
+                n_layers=self.n_layers,
+                d_state=self.d_state,
+                d_conv=self.d_conv,
+                expand=self.expand,
+            )
+            h_sorted = mamba(z_projected, gate)
+        else:
+            mamba = _MambaProcessorBase(
+                d_model=self.d_model,
+                n_layers=self.n_layers,
+                d_state=self.d_state,
+                d_conv=self.d_conv,
+                expand=self.expand,
+            )
+            h_sorted = mamba(z_projected)  # (B, N, d_model)
 
         # Step 4: Reorder back to original variable order.
         if perm_matrix is not None:

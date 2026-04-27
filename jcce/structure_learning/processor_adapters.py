@@ -1317,9 +1317,10 @@ from jcce.models.causal_mamba import (
 
 class CausalMambaAdapter:
     """
-    Adapter for CausalMamba with selectable variable ordering.
+    Adapter for CausalMamba with selectable variable ordering and optional
+    DAG-gated state transitions.
 
-    Four modes:
+    Four sort modes:
       - "topological" (default): hard order from
         topological_sort_from_adjacency(A). Non-differentiable (gradient
         stops at A); runs host-side via jax.pure_callback.
@@ -1328,6 +1329,17 @@ class CausalMambaAdapter:
         scores; gradient flows from the loss back to A through P.
       - "random": fixed permutation seeded by ``sort_seed``. Gate 1 control.
       - "identity": no permutation. Equivalent to standard Mamba.
+
+    Sprint 3 ``enable_gating`` (Mechanism 2): when True and A is provided,
+    the SSM hidden-state recurrence gets a per-position gate in R^{d_state}
+    derived from A's columns selected by the variable at position t (hard
+    or soft mixture). The four ablation modes from skill spec:
+
+      sort_mode    enable_gating   meaning
+      topological  False           Sprint 1 hard sort
+      sinkhorn     False           Sprint 2 sort-only
+      topological  True            hard_sort + DAG gate
+      sinkhorn     True            soft_sort + DAG gate (full TopoMamba)
 
     The "random" mode does not re-sample per step; doing so would require an
     rng_key plumbed through jcce_learner.py's dispatch sites (main-owned).
@@ -1349,6 +1361,7 @@ class CausalMambaAdapter:
         sort_seed: int = 0,
         sinkhorn_temperature: float = 0.1,
         sinkhorn_n_iters: int = 10,
+        enable_gating: bool = False,
     ):
         if sort_mode not in self._SORT_MODES:
             raise ValueError(
@@ -1364,6 +1377,7 @@ class CausalMambaAdapter:
         self.sort_seed = sort_seed
         self.sinkhorn_temperature = sinkhorn_temperature
         self.sinkhorn_n_iters = sinkhorn_n_iters
+        self.enable_gating = enable_gating
 
         self.model = CausalMambaBase(
             d_model=d_model,
@@ -1371,12 +1385,20 @@ class CausalMambaAdapter:
             d_conv=d_conv,
             expand=expand,
             n_layers=1,
+            enable_gating=enable_gating,
         )
 
 
     def init_params(self, n_inputs: int) -> Dict:
         dummy_input = jnp.ones((1, n_inputs))
-        flax_params = self.model.init(self.key, dummy_input, topo_order=None, training=False)
+        init_kwargs = dict(topo_order=None, training=False)
+        # When gating is enabled, init must trace through the gated path so
+        # the dag_gate Dense and the _GatedMambaProcessor params get
+        # registered. Passing a dummy A is enough; the gate values are
+        # discarded after init.
+        if self.enable_gating:
+            init_kwargs["A"] = jnp.zeros((n_inputs, n_inputs), dtype=jnp.float32)
+        flax_params = self.model.init(self.key, dummy_input, **init_kwargs)
 
         param_dict = flax_to_dict_params(flax_params)
         param_dict["n_inputs"] = n_inputs
@@ -1455,12 +1477,15 @@ class CausalMambaAdapter:
             A, n_inputs, temperature=temperature
         )
 
-        # Forward through CausalMamba
+        # Forward through CausalMamba. A is passed only when gating is on
+        # (the gated path needs A's columns for the gate). Non-gated path
+        # ignores A.
         h = self.model.apply(
             flax_params,
             X,
             topo_order=topo_order,
             perm_matrix=perm_matrix,
+            A=(A if self.enable_gating else None),
             training=False,
         )
 
@@ -1497,6 +1522,7 @@ class CausalMambaAdapter:
         h = self.model.apply(
             flax_params,
             X,
+            A=(A if self.enable_gating else None),
             topo_order=topo_order,
             perm_matrix=perm_matrix,
             training=False,

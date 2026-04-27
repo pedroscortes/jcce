@@ -1,13 +1,18 @@
-"""
-JCCE Counterfactual Module
+"""JCCE counterfactual module.
 
-Provides causally-constrained counterfactual explanations:
-- Causal validity checking (only modify ancestors of Y)
-- SCM-based propagation (Pearl's 3-step process)
-- Multi-objective counterfactual search via NSGA-II
-- Ensemble counterfactuals across Pareto-optimal DAGs
+Currently exports:
+- Causal-graph helpers (parents/children/ancestors/descendants/topological sort,
+  scoring functions for actionability and plausibility) from
+  ``causal_constraints``.
+- ``AAPCounterfactual``: Pearl Abduction-Action-Prediction over a learned
+  JCCE SCM (adjacency A + per-variable processors).
+
+Earlier drafts referenced ``counterfactual_search`` and ``scm_propagation``
+modules that never landed in this branch; those imports are removed so the
+package is importable without the importlib bypass used by the AAP scripts.
 """
 
+from .aap import AAPCounterfactual
 from .causal_constraints import (
     compute_actionability_proxy,
     compute_causal_validity_score,
@@ -15,40 +20,22 @@ from .causal_constraints import (
     get_ancestors,
     get_children,
     get_descendants,
+    get_markov_blanket_from_dag,
     get_parents,
     identify_intervention_targets,
-)
-from .counterfactual_search import (
-    CausalCounterfactualProblem,
-    CounterfactualCandidate,
-    CounterfactualSearcher,
-    CounterfactualSearchResult,
-    generate_counterfactual_explanation,
-)
-from .scm_propagation import (
-    CounterfactualResult,
-    StructuralEquationModel,
-    fit_scm_from_golem_solution,
+    topological_sort,
 )
 
 __all__ = [
-    # Causal constraints
-    "get_ancestors",
-    "get_descendants",
-    "get_parents",
-    "get_children",
-    "compute_causal_validity_score",
+    "AAPCounterfactual",
     "compute_actionability_proxy",
+    "compute_causal_validity_score",
     "compute_plausibility_score",
+    "get_ancestors",
+    "get_children",
+    "get_descendants",
+    "get_markov_blanket_from_dag",
+    "get_parents",
     "identify_intervention_targets",
-    # SCM propagation
-    "StructuralEquationModel",
-    "CounterfactualResult",
-    "fit_scm_from_golem_solution",
-    # Counterfactual search
-    "CounterfactualSearcher",
-    "CounterfactualSearchResult",
-    "CounterfactualCandidate",
-    "CausalCounterfactualProblem",
-    "generate_counterfactual_explanation",
+    "topological_sort",
 ]

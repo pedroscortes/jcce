@@ -10,22 +10,9 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 import numpy as np
-import pytest
 from jax import random
 
-import importlib.util
-import sys
-from pathlib import Path
-
-# Bypass jcce.counterfactual.__init__.py (which has stale imports for
-# counterfactual_search and scm_propagation modules that don't exist yet
-# in this branch). Load aap.py directly.
-_aap_path = Path(__file__).parent.parent / "jcce" / "counterfactual" / "aap.py"
-_spec = importlib.util.spec_from_file_location("aap_module", _aap_path)
-_aap_module = importlib.util.module_from_spec(_spec)
-sys.modules["aap_module"] = _aap_module
-_spec.loader.exec_module(_aap_module)
-AAPCounterfactual = _aap_module.AAPCounterfactual
+from jcce.counterfactual import AAPCounterfactual
 
 
 def _make_synthetic_scm(d: int = 5, n: int = 200, seed: int = 0):

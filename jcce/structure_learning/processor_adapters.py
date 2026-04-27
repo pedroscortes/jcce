@@ -1309,13 +1309,24 @@ from jcce.models.causal_mamba import topological_sort_from_adjacency
 
 class CausalMambaAdapter:
     """
-    Adapter for CausalMamba with topological variable ordering.
+    Adapter for CausalMamba with selectable variable ordering.
 
-    Reorders variables by the topological sort of A before feeding the
-    sequence to Mamba. The sort runs host-side via jax.pure_callback inside
-    causal_mamba.topological_sort_from_adjacency, so this adapter is jit-safe
-    and recomputes the order on every forward call.
+    Reorders variables before feeding the sequence to Mamba. Three modes:
+      - "topological" (default): order = topological_sort_from_adjacency(A).
+        The sort runs host-side via jax.pure_callback so the adapter is
+        jit-safe; the order recomputes on every forward call.
+      - "random": fixed permutation seeded by ``sort_seed``, sampled once at
+        first forward call. Used as the Gate 1 control to test whether
+        ordering itself adds value, independent of A.
+      - "identity": no permutation. Equivalent to standard Mamba.
+
+    The "random" mode does not re-sample per step; doing so would require an
+    rng_key plumbed through jcce_learner.py's dispatch sites (main-owned).
+    Across run-level seeds the fixed permutation varies, which gives the
+    distribution Gate 1 needs.
     """
+
+    _SORT_MODES = ("topological", "random", "identity")
 
     def __init__(
         self,
@@ -1325,13 +1336,21 @@ class CausalMambaAdapter:
         expand: int = 2,
         key: random.PRNGKey = None,
         n_features: int = None,
+        sort_mode: str = "topological",
+        sort_seed: int = 0,
     ):
+        if sort_mode not in self._SORT_MODES:
+            raise ValueError(
+                f"sort_mode must be one of {self._SORT_MODES}, got {sort_mode!r}"
+            )
         self.d_model = d_model
         self.d_state = d_state
         self.d_conv = d_conv
         self.expand = expand
         self.n_features = n_features
         self.key = key if key is not None else random.PRNGKey(42)
+        self.sort_mode = sort_mode
+        self.sort_seed = sort_seed
 
         self.model = CausalMambaBase(
             d_model=d_model,
@@ -1340,6 +1359,7 @@ class CausalMambaAdapter:
             expand=expand,
             n_layers=1,
         )
+
 
     def init_params(self, n_inputs: int) -> Dict:
         dummy_input = jnp.ones((1, n_inputs))
@@ -1353,6 +1373,25 @@ class CausalMambaAdapter:
         param_dict["output_proj_b"] = jnp.zeros(1)
 
         return param_dict
+
+    def _resolve_topo_order(self, A, n_inputs):
+        """Compute the variable ordering passed to CausalMambaProcessor.
+
+        Returns None for "identity" (Mamba's default scan order) or whenever
+        A is not available (init / no-A dispatch paths). For "random", we
+        recompute the permutation from (sort_seed, n_inputs) every call;
+        XLA's constant folding makes this free at runtime, and avoiding any
+        mutation of self prevents JAX's "unexpected tracer / side effect"
+        check from firing when the first call happens inside a jit trace.
+        """
+        if self.sort_mode == "identity":
+            return None
+        if A is None:
+            return None
+        if self.sort_mode == "topological":
+            return topological_sort_from_adjacency(A, threshold=0.01)
+        # random — deterministic given (sort_seed, n_inputs); no caching.
+        return random.permutation(random.PRNGKey(self.sort_seed), n_inputs)
 
     def forward(
         self,
@@ -1377,9 +1416,7 @@ class CausalMambaAdapter:
         n_samples, n_inputs = X.shape
         flax_params = dict_to_flax_params(params)
 
-        topo_order = (
-            topological_sort_from_adjacency(A, threshold=0.01) if A is not None else None
-        )
+        topo_order = self._resolve_topo_order(A, n_inputs)
 
         # Forward through CausalMamba
         h = self.model.apply(flax_params, X, topo_order=topo_order, training=False)
@@ -1409,9 +1446,8 @@ class CausalMambaAdapter:
         self, X: jnp.ndarray, params: Dict, A: jnp.ndarray = None
     ) -> jnp.ndarray:
         flax_params = dict_to_flax_params(params)
-        topo_order = None
-        if A is not None:
-            topo_order = topological_sort_from_adjacency(A, threshold=0.01)
+        n_inputs = X.shape[1]
+        topo_order = self._resolve_topo_order(A, n_inputs)
         h = self.model.apply(flax_params, X, topo_order=topo_order, training=False)
         h_pooled = jnp.mean(h, axis=1)
         return h_pooled

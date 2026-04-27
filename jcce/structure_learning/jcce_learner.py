@@ -4514,6 +4514,16 @@ def learn_structure(
     # is a training-time approximation that flows gradient through the
     # SCM cascade.
     lambda_aap: float = 0.0,
+    # Phase 2: CausalMamba Sinkhorn temperature annealing schedule.
+    # Tuple (init, final) cosine-anneals the temperature passed to the
+    # CausalMambaAdapter's Sinkhorn soft sort from init at iter=0 to final
+    # at iter=max_iter. Per skills/topological_mamba.md the recommended
+    # schedule is (1.0, 0.1) — high temp early (soft permutation, smoother
+    # gradient back to A) → low temp late (sharp permutation, stable order).
+    # When None, the adapter uses its fixed self.sinkhorn_temperature
+    # (default 0.1). Requires CausalMambaAdapter.forward to accept a
+    # `temperature` kwarg — coordinated with causal-mamba branch.
+    causal_mamba_temperature_schedule: Optional[Tuple[float, float]] = None,
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
     v7.0: Unified Causal Discovery with Bi-directed Edges & Amortized Effects.
@@ -4758,7 +4768,7 @@ def learn_structure(
 
     def loss_fn(
         params, batch_data, batch_Y, batch_Y_effect, lambda_2_current, curriculum_weights,
-        current_temp_consistency, current_lambda_consistency,
+        current_temp_consistency, current_lambda_consistency, current_cm_temperature,
     ):
         """Unified loss: Structure + Classification + Effects.
 
@@ -4829,10 +4839,18 @@ def learn_structure(
                 return processor.forward(X_w_j, {**_meta, **arrays_j}, A=A_for_struct)
         elif _proc_name_recon == "CausalMambaAdapter":
             # CausalMamba: pass raw A; jit-safe topological sort runs inside.
+            # Optionally pass current Sinkhorn temperature for the schedule.
             A_for_struct = A_curr[:n_v, :n_v]
 
-            def _recon_fwd(X_w_j, arrays_j):
-                return processor.forward(X_w_j, {**_meta, **arrays_j}, A=A_for_struct)
+            if causal_mamba_temperature_schedule is not None:
+                def _recon_fwd(X_w_j, arrays_j):
+                    return processor.forward(
+                        X_w_j, {**_meta, **arrays_j}, A=A_for_struct,
+                        temperature=current_cm_temperature,
+                    )
+            else:
+                def _recon_fwd(X_w_j, arrays_j):
+                    return processor.forward(X_w_j, {**_meta, **arrays_j}, A=A_for_struct)
         else:
 
             def _recon_fwd(X_w_j, arrays_j):
@@ -4925,9 +4943,15 @@ def learn_structure(
                 _X_wr_fwd, _pp_Y_fwd, A=A_curr[:n_v, :n_v]
             )
         elif _proc_name_yrecon == "CausalMambaAdapter":
-            Y_recon_output = processor.forward(
-                _X_wr_fwd, _pp_Y_fwd, A=A_curr[:n_v, :n_v]
-            )
+            if causal_mamba_temperature_schedule is not None:
+                Y_recon_output = processor.forward(
+                    _X_wr_fwd, _pp_Y_fwd, A=A_curr[:n_v, :n_v],
+                    temperature=current_cm_temperature,
+                )
+            else:
+                Y_recon_output = processor.forward(
+                    _X_wr_fwd, _pp_Y_fwd, A=A_curr[:n_v, :n_v]
+                )
         else:
             Y_recon_output = processor.forward(_X_wr_fwd, _pp_Y_fwd)
 
@@ -4982,9 +5006,15 @@ def learn_structure(
                 _X_wY_fwd, _pp_Yc_fwd, A=A_curr[:n_v, :n_v], skip_centering=True
             )
         elif _proc_name_yclass == "CausalMambaAdapter":
-            Y_output = processor.forward(
-                _X_wY_fwd, _pp_Yc_fwd, A=A_curr[:n_v, :n_v], skip_centering=True
-            )
+            if causal_mamba_temperature_schedule is not None:
+                Y_output = processor.forward(
+                    _X_wY_fwd, _pp_Yc_fwd, A=A_curr[:n_v, :n_v], skip_centering=True,
+                    temperature=current_cm_temperature,
+                )
+            else:
+                Y_output = processor.forward(
+                    _X_wY_fwd, _pp_Yc_fwd, A=A_curr[:n_v, :n_v], skip_centering=True
+                )
         else:
             Y_output = processor.forward(_X_wY_fwd, _pp_Yc_fwd, skip_centering=True)
 
@@ -5330,7 +5360,7 @@ def learn_structure(
         @jax.jit
         def _step(
             params, opt_state, batch_key, lambda_2_jax, curriculum_w,
-            current_temp, current_lambda_consistency_jax,
+            current_temp, current_lambda_consistency_jax, current_cm_temp_jax,
         ):
             # Batch selection inside JIT (avoids 3 Python↔XLA round trips)
             if use_batching:
@@ -5355,28 +5385,28 @@ def learn_structure(
                 def _recon_loss(p):
                     _, aux = loss_fn(
                         p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
-                        current_lambda_consistency_jax,
+                        current_lambda_consistency_jax, current_cm_temp_jax,
                     )
                     return aux[1]  # total_recon_loss
 
                 def _class_loss(p):
                     _, aux = loss_fn(
                         p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
-                        current_lambda_consistency_jax,
+                        current_lambda_consistency_jax, current_cm_temp_jax,
                     )
                     return aux[2]  # classification_loss
 
                 def _effect_loss(p):
                     _, aux = loss_fn(
                         p, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
-                        current_lambda_consistency_jax,
+                        current_lambda_consistency_jax, current_cm_temp_jax,
                     )
                     return aux[3]  # effect_loss
 
                 # Get total loss + aux for logging (single forward pass)
                 (loss_val, aux), grads_total = jax.value_and_grad(loss_fn, has_aux=True)(
                     params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
-                    current_lambda_consistency_jax,
+                    current_lambda_consistency_jax, current_cm_temp_jax,
                 )
                 # Per-task gradients (only for A_direct projection)
                 g_recon = jax.grad(_recon_loss)(params)
@@ -5401,7 +5431,7 @@ def learn_structure(
             else:
                 (loss_val, aux), grads = jax.value_and_grad(loss_fn, has_aux=True)(
                     params, batch_data, batch_Y, batch_Y_effect, lambda_2_jax, cw, current_temp,
-                    current_lambda_consistency_jax,
+                    current_lambda_consistency_jax, current_cm_temp_jax,
                 )
 
             # Freeze log_var_recon (its gradient exploits uncertainty weighting)
@@ -5450,6 +5480,20 @@ def learn_structure(
             cur_temp = float(getattr(processor, "temperature", 5.0))
         current_temp_jax = jnp.float32(cur_temp)
 
+        # CausalMamba Sinkhorn temperature schedule (cosine anneal, separate from
+        # DAG-Attention's consistency temperature). Always pass as JAX scalar to
+        # keep JIT signature stable; the Python check inside loss_fn (trace-time)
+        # decides whether to actually pass it as a kwarg to the adapter.
+        if causal_mamba_temperature_schedule is not None:
+            cm_init, cm_final = causal_mamba_temperature_schedule
+            iter_frac_cm = iter / max(max_iter - 1, 1)
+            cur_cm_temp = float(
+                cm_init + 0.5 * (cm_final - cm_init) * (1.0 - jnp.cos(jnp.pi * iter_frac_cm))
+            )
+        else:
+            cur_cm_temp = 0.0  # sentinel; not used when schedule is None
+        current_cm_temp_jax = jnp.float32(cur_cm_temp)
+
         # Adaptive consistency engagement (Python-side decision, fed as JAX scalar).
         # When adaptive_consistency=False: always lambda_consistency.
         # When adaptive_consistency=True: per-iter dynamic — engage only when A is
@@ -5487,7 +5531,7 @@ def learn_structure(
         # JIT-compiled: batch selection + forward + backward + optimizer update + constraints
         all_params, opt_state, loss_val, aux, batch_Y = train_step(
             all_params, opt_state, batch_key, lambda_2_jax, curriculum_w_jax,
-            current_temp_jax, current_lambda_consistency_jax,
+            current_temp_jax, current_lambda_consistency_jax, current_cm_temp_jax,
         )
         h_A, recon_loss, class_loss, effect_loss, bow_loss, Y_logits, consistency_val, aap_val = aux
 
@@ -5568,7 +5612,7 @@ def learn_structure(
         if use_validation_split and iter % 10 == 0 and iter >= effect_warmup_iter:
             val_loss, _ = loss_fn(
                 all_params, data_val, Y_val, Y_effect_val, lambda_2, curriculum_weights,
-                cur_temp, cur_lambda_consistency,
+                cur_temp, cur_lambda_consistency, current_cm_temp_jax,
             )
             if float(val_loss) < best_loss:
                 best_loss = float(val_loss)
@@ -5641,7 +5685,7 @@ def learn_structure(
 
                 _loss_args = (
                     data_train, Y_train, Y_effect_train, lambda_2_jax, curriculum_w_jax,
-                    current_temp_jax, current_lambda_consistency_jax,
+                    current_temp_jax, current_lambda_consistency_jax, current_cm_temp_jax,
                 )
                 g_r = jax.grad(_recon_only)(all_params, *_loss_args)["A_direct"].flatten()
                 g_c = jax.grad(_class_only)(all_params, *_loss_args)["A_direct"].flatten()

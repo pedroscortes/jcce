@@ -4503,6 +4503,17 @@ def learn_structure(
     adaptive_consistency: bool = False,
     consistency_collapse_threshold: float = 0.1,
     consistency_max_engage_iter_frac: float = 0.3,
+    # Phase 2: AAP (Abduction-Action-Prediction) cascade loss for
+    # DAG-Attention. When > 0 and processor is DAGAttentionAdapter, adds
+    # MSE(observed X, model_predict_using_predicted_parents) to the total loss.
+    # K=1 cascade: model's per-variable predictions feed back as parents in a
+    # second forward pass. This creates a self-consistency gradient distinct
+    # from per-variable reconstruction (which uses observed parents directly).
+    # Default 0.0 keeps prior behavior. Full Pearl AAP with intervention is
+    # in jcce.counterfactual.aap.AAPCounterfactual for inference; this loss
+    # is a training-time approximation that flows gradient through the
+    # SCM cascade.
+    lambda_aap: float = 0.0,
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
     v7.0: Unified Causal Discovery with Bi-directed Edges & Amortized Effects.
@@ -4845,6 +4856,27 @@ def learn_structure(
         # MSE across all variables (used for monitoring + loss in legacy/no-confound paths)
         all_mse = jnp.mean((batch_data.T - all_outputs) ** 2, axis=1)  # (n_v,)
         total_recon_loss = jnp.mean(all_mse)
+
+        # ========== AAP cascade loss (Phase 2 self-consistency signal) ==========
+        # K=1 recursive forward: feed the model's per-variable predictions back
+        # as parents and re-predict. If A and f together encode a self-consistent
+        # SCM, the cascaded predictions match the observed data. The MSE provides
+        # a gradient signal distinct from per-variable recon (which uses observed
+        # parents) — it pushes A and f toward SCM-level self-consistency.
+        # Active only when processor is DAGAttentionAdapter and lambda_aap > 0;
+        # otherwise yields jnp.array(0.0) with no extra forward cost.
+        aap_loss = jnp.array(0.0)
+        if lambda_aap > 0 and _proc_name_recon == "DAGAttentionAdapter":
+            X_cascade_input = all_outputs.T  # (n_batch, n_v) — model's first-stage prediction
+            all_X_weighted_aap = X_cascade_input[jnp.newaxis, :, :] * all_weights[:, jnp.newaxis, :]
+            if use_bf16:
+                all_X_weighted_aap_fwd = all_X_weighted_aap.astype(jnp.bfloat16)
+                all_outputs_aap = jax.vmap(_recon_fwd)(
+                    all_X_weighted_aap_fwd, _stacked_fwd
+                ).astype(jnp.float32)
+            else:
+                all_outputs_aap = jax.vmap(_recon_fwd)(all_X_weighted_aap, _stacked)
+            aap_loss = jnp.mean((batch_data.T - all_outputs_aap) ** 2)
 
         # Low-rank confound: NLL on processor-only residuals under Ω = B@B.T + σ²I
         confound_nll = 0.0
@@ -5192,12 +5224,14 @@ def learn_structure(
         # Use dynamic lambda_consistency: equals static lambda_consistency unless
         # adaptive engagement holds it at 0 until collapse is detected.
         weighted_consistency = current_lambda_consistency * consistency_loss
+        weighted_aap = lambda_aap * aap_loss
 
         total_loss = (
             weighted_structural
             + weighted_class
             + weighted_effect
             + weighted_consistency
+            + weighted_aap
             + penalty_loss
             + penalty_loss_confound
         )
@@ -5210,6 +5244,7 @@ def learn_structure(
             bow_loss,
             Y_output,
             consistency_loss,
+            aap_loss,
         )
 
     # ==================== Optimizer ====================
@@ -5454,7 +5489,7 @@ def learn_structure(
             all_params, opt_state, batch_key, lambda_2_jax, curriculum_w_jax,
             current_temp_jax, current_lambda_consistency_jax,
         )
-        h_A, recon_loss, class_loss, effect_loss, bow_loss, Y_logits, consistency_val = aux
+        h_A, recon_loss, class_loss, effect_loss, bow_loss, Y_logits, consistency_val, aap_val = aux
 
         # Update adaptive curriculum after each iteration
         if use_adaptive_curriculum and curriculum_state is not None:

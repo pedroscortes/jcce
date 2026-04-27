@@ -43,6 +43,8 @@ from .processor_adapters import (
     TransformerAdapter,
 )
 
+from jcce.counterfactual.sparsity import ste_hard_parents
+
 # ============================================================================
 # Helper functions for joint processor param optimization
 # ============================================================================
@@ -4503,6 +4505,16 @@ def learn_structure(
     adaptive_consistency: bool = False,
     consistency_collapse_threshold: float = 0.1,
     consistency_max_engage_iter_frac: float = 0.3,
+    # AAP sparsity-aware training: when True (and lambda_aap > 0 and
+    # processor is DAGAttentionAdapter), the AAP cascade routes parent
+    # weights through a straight-through hard mask. The forward pass sees
+    # strict 0/1 parent gates so dense attention cannot bypass structural
+    # edges; the backward pass keeps identity gradients w.r.t. |A| so
+    # structure learning continues to grow/shrink edges. Default False
+    # preserves exact prior behavior; set True together with lambda_aap > 0
+    # to engage the Sprint-1 sparsity-aware AAP path.
+    aap_enforce_hard_parents: bool = False,
+    aap_edge_threshold: float = 0.05,
     # Phase 2: AAP (Abduction-Action-Prediction) cascade loss for
     # DAG-Attention. When > 0 and processor is DAGAttentionAdapter, adds
     # MSE(observed X, model_predict_using_predicted_parents) to the total loss.
@@ -4896,7 +4908,18 @@ def learn_structure(
         aap_loss = jnp.array(0.0)
         if lambda_aap > 0 and _proc_name_recon == "DAGAttentionAdapter":
             X_cascade_input = all_outputs.T  # (n_batch, n_v) — model's first-stage prediction
-            all_X_weighted_aap = X_cascade_input[jnp.newaxis, :, :] * all_weights[:, jnp.newaxis, :]
+            if aap_enforce_hard_parents:
+                # Sparsity-enforced cascade. The recon path's uniform fallback
+                # (line 4804) is intentionally bypassed: when A collapses, the
+                # AAP loss should grow strongly (no parents -> cascade outputs
+                # near zero, far from observed data), so the gradient signal
+                # pushes A back up. With the soft cascade, the fallback masked
+                # this signal.
+                aap_weights_raw = jnp.abs(A_curr[:n_v, :n_v]).T * self_loop_mask
+                aap_weights = ste_hard_parents(aap_weights_raw, aap_edge_threshold)
+            else:
+                aap_weights = all_weights  # legacy soft cascade (with uniform fallback)
+            all_X_weighted_aap = X_cascade_input[jnp.newaxis, :, :] * aap_weights[:, jnp.newaxis, :]
             if use_bf16:
                 all_X_weighted_aap_fwd = all_X_weighted_aap.astype(jnp.bfloat16)
                 all_outputs_aap = jax.vmap(_recon_fwd)(

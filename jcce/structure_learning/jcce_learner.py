@@ -4524,6 +4524,16 @@ def learn_structure(
     # (default 0.1). Requires CausalMambaAdapter.forward to accept a
     # `temperature` kwarg — coordinated with causal-mamba branch.
     causal_mamba_temperature_schedule: Optional[Tuple[float, float]] = None,
+    # Phase 2: edge-only consistency loss variant (Sprint 6a — NEGATIVE result).
+    # When True (and lambda_consistency > 0), the consistency target is
+    # restricted to A's existing edges (|A| > consistency_edge_threshold) plus
+    # the diagonal. Soft-masked via sigmoid((|A| - threshold) * 50) so
+    # gradient still flows back to A through the mask. Empirically validated
+    # NEGATIVE: reduces over-saturation (37 -> 13 edges on Heart Disease) but
+    # BAcc damage persists (-0.378 vs vanilla -0.379). Preserved as opt-in
+    # flag for future researchers; default off.
+    consistency_edge_only: bool = False,
+    consistency_edge_threshold: float = 0.05,
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
     v7.0: Unified Causal Discovery with Bi-directed Edges & Amortized Effects.
@@ -5045,6 +5055,8 @@ def learn_structure(
             consistency_loss = processor.consistency_loss(
                 _X_wY_fwd, _pp_Yc_fwd, A_curr[:n_v, :n_v],
                 temperature=current_temp_consistency,
+                edge_only=consistency_edge_only,
+                edge_threshold=consistency_edge_threshold,
             )
 
         # ========== Structure Penalties ==========

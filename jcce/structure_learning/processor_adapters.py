@@ -1282,12 +1282,16 @@ class DAGAttentionAdapter:
         params: Dict,
         A: jnp.ndarray,
         temperature: float = None,
+        edge_only: bool = False,
+        edge_threshold: float = 0.05,
     ) -> jnp.ndarray:
         """Compute attention-DAG consistency loss for the multi-loss objective.
 
         When `temperature` is provided, both the soft mask used in the attention
         forward pass and the sigmoid(A * temperature) target distribution use it.
-        This keeps the two derivations consistent under annealing schedules.
+        When `edge_only` is True, the consistency target is restricted to A's
+        existing edges (|A| > edge_threshold) plus the diagonal — stops the
+        "pull A toward density" pathology of vanilla KL on data-poor datasets.
         """
         eff_temperature = self.temperature if temperature is None else temperature
         flax_params = dict_to_flax_params(params)
@@ -1295,7 +1299,8 @@ class DAGAttentionAdapter:
             flax_params, X, A=A, training=False, return_attn=True, temperature=temperature
         )
         return DAGAttentionTransformerBase.consistency_loss(
-            attn_list, A, temperature=eff_temperature
+            attn_list, A, temperature=eff_temperature,
+            edge_only=edge_only, edge_threshold=edge_threshold,
         )
 
 

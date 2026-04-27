@@ -190,26 +190,46 @@ class DAGAttentionTransformer(nn.Module):
         attn_weights_list: list,
         A: jnp.ndarray,
         temperature: float = 5.0,
+        edge_only: bool = False,
+        edge_threshold: float = 0.05,
     ) -> jnp.ndarray:
         """
         KL divergence between learned attention patterns and sigmoid(A).
 
-        This creates a bidirectional learning signal:
-        - A -> attention: "attend along causal edges"
-        - attention -> A: "this attention pattern suggests edge i->j should exist"
-
         Args:
-            attn_weights_list: list of (batch, heads, n_vars, n_vars) from each layer
+            attn_weights_list: list of (batch, heads, n_vars, n_vars) per layer
             A: (n_vars, n_vars) adjacency matrix
-            temperature: same temperature as the mask
+            temperature: temperature for the sigmoid target
+            edge_only: when True, mask out non-edges (|A| <= edge_threshold)
+                from the consistency target. Stops the "pull A toward density"
+                pathology empirically diagnosed in regime-dependence tests:
+                vanilla KL pulls attention toward dense patterns regardless of
+                A's edges, which on data-poor datasets forces all-edge
+                saturation. Edge-only restricts the consistency target to the
+                edges A already discovered, with the diagonal preserved for
+                self-attention. Sigmoid is computed via a smooth (sigmoid)
+                gate so gradient still flows to A.
+            edge_threshold: |A| > threshold counts as an edge. Smaller values
+                = more permissive (include weaker edges); too small = back to
+                vanilla behavior. Default 0.05 matches metrics["n_edges"] thresh.
 
         Returns:
-            loss: scalar consistency loss
+            scalar consistency loss
         """
         n_vars = A.shape[0]
 
         # Target distribution: normalized sigmoid(A) + self-connections
         target = jax.nn.sigmoid(A * temperature) + jnp.eye(n_vars)
+
+        if edge_only:
+            # Smooth edge mask: sigmoid((|A| - threshold) * sharpness) so
+            # gradient flows back to A through the mask. Sharpness 50 makes
+            # the gate effectively binary while preserving differentiability.
+            soft_edge_mask = jax.nn.sigmoid((jnp.abs(A) - edge_threshold) * 50.0)
+            # Preserve diagonal (self-attention always permitted; doesn't
+            # depend on the edge structure of A).
+            target = jax.nn.sigmoid(A * temperature) * soft_edge_mask + jnp.eye(n_vars)
+
         target = target / (target.sum(axis=-1, keepdims=True) + 1e-8)
 
         total_loss = 0.0

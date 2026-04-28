@@ -245,10 +245,15 @@ def create_processor(processor_type: str, key: random.PRNGKey, **kwargs):
             key=key,
         )
 
+    elif processor_type == "linear_head":
+        from jcce.structure_learning.processor_adapters import LinearHeadAdapter
+
+        return LinearHeadAdapter(key=key)
+
     else:
         raise ValueError(
             f"Unknown processor type: {processor_type}. "
-            f"Choose from: mlp, transformer, mamba, elm, gnn"
+            f"Choose from: mlp, transformer, mamba, elm, gnn, linear_head"
         )
 
 

@@ -1080,6 +1080,80 @@ class GNNAdapter:
 
 
 # ============================================================================
+# Linear Head Adapter
+# ============================================================================
+
+
+class LinearHeadAdapter:
+    """Minimal linear-only processor for ablation against richer adapters.
+
+    Per-variable forward is a single affine map f_j(X) = X @ beta_j + b_j —
+    no attention, no LayerNorm, no MLP. Used to test whether the trained
+    DAG-Attention's per-variable head needs nonlinearity at all on JCCE
+    benchmarks. Day-1/2 of the AAP architectural-fix mini-Sprint
+    (commits 0310b39, ddbaf09 on origin/aap) showed that post-hoc OLS and
+    logistic regression on the same input distribution recover signal that
+    the trained Transformer head missed; this adapter trains the linear
+    head jointly with the rest of the JCCE pipeline so the comparison
+    table includes a fully end-to-end linear baseline.
+
+    Notes
+    -----
+    The pipeline only invokes ``init_params`` and ``forward`` on the
+    processor (``solve_output_weights`` and ``get_hidden_features`` are
+    disabled in jcce_learner; see line 1598). This class implements only
+    those two methods plus an init that mirrors the kwargs convention of
+    the other adapters.
+    """
+
+    def __init__(self, key: random.PRNGKey = None):
+        self.key = key if key is not None else random.PRNGKey(42)
+
+    def init_params(self, n_inputs: int) -> Dict:
+        """Initialize per-variable linear params: ``beta`` and bias ``b``."""
+        # Small init scaled by 1/sqrt(n) keeps the initial logit magnitude
+        # bounded regardless of feature count; JCCE's L1 sparsity and recon
+        # losses then shape the weights during training.
+        scale = 0.01 / max(1, n_inputs) ** 0.5
+        beta = random.normal(self.key, (n_inputs,)) * scale
+        return {
+            "beta": beta,
+            "b": jnp.zeros(()),
+            "n_inputs": n_inputs,
+        }
+
+    def forward(
+        self,
+        X: jnp.ndarray,
+        params: Dict,
+        training: bool = True,
+        rng_key: random.PRNGKey = None,
+        skip_centering: bool = False,
+        **kwargs,  # absorb A=..., other adapter-specific kwargs we ignore
+    ) -> jnp.ndarray:
+        """Forward pass: ``X @ beta + b`` with optional mean centering.
+
+        Parameters
+        ----------
+        X : (n_samples, n_inputs) jnp.ndarray
+        params : dict with ``"beta"`` (n_inputs,) and ``"b"`` ()
+        skip_centering : bool
+            For Y classification (``j == Y_idx``), pass ``True`` to keep the
+            classification logit; for X reconstruction, pass ``False`` so
+            the per-variable forward is mean-centered against constant-
+            output shortcuts (mirrors MLPAdapter behavior).
+
+        Returns
+        -------
+        out : (n_samples,) jnp.ndarray
+        """
+        out = X @ params["beta"] + params["b"]
+        if not skip_centering:
+            out = out - jnp.mean(out)
+        return out
+
+
+# ============================================================================
 # DAG-Attention Transformer Adapter
 # ============================================================================
 

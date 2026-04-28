@@ -4,8 +4,10 @@ Currently exports:
 - Causal-graph helpers (parents/children/ancestors/descendants/topological sort,
   scoring functions for actionability and plausibility) from
   ``causal_constraints``.
-- ``AAPCounterfactual``: Pearl Abduction-Action-Prediction over a learned
-  JCCE SCM (adjacency A + per-variable processors).
+- ``AAPCounterfactual`` plus the post-hoc heads ``AAPCounterfactualOLS`` and
+  ``AAPCounterfactualLogistic`` (the architectural-fix mini-Sprint deliverable).
+- The diagnostic probe API in ``probe`` (``make_f_Y``, ``autodiff_sensitivity``,
+  ``grid_sweep``) — the reusable functions used to surface JCCE's f_Y collapse.
 
 Earlier drafts referenced ``counterfactual_search`` and ``scm_propagation``
 modules that never landed in this branch; those imports are removed so the
@@ -26,12 +28,14 @@ from .causal_constraints import (
     identify_intervention_targets,
     topological_sort,
 )
+from .probe import autodiff_sensitivity, grid_sweep, make_f_Y
 from .sparsity import edge_set_agreement, ste_hard_parents
 
 __all__ = [
     "AAPCounterfactual",
     "AAPCounterfactualLogistic",
     "AAPCounterfactualOLS",
+    "autodiff_sensitivity",
     "compute_actionability_proxy",
     "compute_causal_validity_score",
     "compute_plausibility_score",
@@ -41,7 +45,9 @@ __all__ = [
     "get_descendants",
     "get_markov_blanket_from_dag",
     "get_parents",
+    "grid_sweep",
     "identify_intervention_targets",
+    "make_f_Y",
     "ste_hard_parents",
     "topological_sort",
 ]

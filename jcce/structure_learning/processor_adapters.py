@@ -1154,6 +1154,93 @@ class LinearHeadAdapter:
 
 
 # ============================================================================
+# MLP Head Adapter
+# ============================================================================
+
+
+class MLPHeadAdapter:
+    """Per-variable shallow MLP: ``X -> Linear(d_in, h) -> ReLU -> Linear(h, 1)``.
+
+    Tests whether modest nonlinearity in the per-variable readout escapes the
+    procedural f_Y collapse documented by the AAP architectural-fix mini-Sprint
+    (commits 11d75a0, 0310b39, ddbaf09 on origin/aap; main 7b42789 ablation).
+    LinearHead and DAG-Attention both collapse to a constant f_Y under JCCE's
+    joint loss; if MLPHead also collapses, the failure mode is more general
+    than "the architecture lacks expressiveness". If MLPHead escapes, modest
+    nonlinearity is the cure and the post-hoc fix can move into joint
+    training.
+
+    Hidden dimension default is intentionally small (16): the experiment is
+    about whether nonlinearity helps at all, not about model capacity.
+    Single hidden layer; ReLU activation; no normalization, no residual.
+
+    Notes
+    -----
+    Mirrors ``LinearHeadAdapter`` in scope: only ``init_params`` and
+    ``forward`` are implemented, since ``solve_output_weights`` and
+    ``get_hidden_features`` are disabled in jcce_learner (line 1598).
+    """
+
+    def __init__(self, hidden_dim: int = 16, key: random.PRNGKey = None):
+        self.hidden_dim = hidden_dim
+        self.key = key if key is not None else random.PRNGKey(42)
+
+    def init_params(self, n_inputs: int) -> Dict:
+        """Initialize MLP params with Glorot-style scaling.
+
+        ``W1`` scaled by ``1/sqrt(n_inputs)``, ``W2`` scaled by
+        ``1/sqrt(hidden_dim)``. Keeps initial output magnitude bounded
+        independently of ``n_inputs`` and ``hidden_dim``.
+        """
+        key_W1, key_W2 = random.split(self.key)
+        W1_scale = 1.0 / max(1, n_inputs) ** 0.5
+        W2_scale = 1.0 / max(1, self.hidden_dim) ** 0.5
+        W1 = random.normal(key_W1, (n_inputs, self.hidden_dim)) * W1_scale
+        b1 = jnp.zeros((self.hidden_dim,))
+        W2 = random.normal(key_W2, (self.hidden_dim,)) * W2_scale
+        b2 = jnp.zeros(())
+        return {
+            "W1": W1,
+            "b1": b1,
+            "W2": W2,
+            "b2": b2,
+            "n_inputs": n_inputs,
+            "hidden_dim": self.hidden_dim,
+        }
+
+    def forward(
+        self,
+        X: jnp.ndarray,
+        params: Dict,
+        training: bool = True,
+        rng_key: random.PRNGKey = None,
+        skip_centering: bool = False,
+        **kwargs,  # absorb A=..., other adapter-specific kwargs we ignore
+    ) -> jnp.ndarray:
+        """Forward pass: ``ReLU(X @ W1 + b1) @ W2 + b2`` with optional mean centering.
+
+        Parameters
+        ----------
+        X : (n_samples, n_inputs) jnp.ndarray
+        params : dict with ``W1`` (n_inputs, hidden_dim), ``b1`` (hidden_dim,),
+            ``W2`` (hidden_dim,), and ``b2`` ()
+        skip_centering : bool
+            ``True`` for the Y classification path (keep the logit);
+            ``False`` for X reconstruction (mean-center the output to block
+            constant-output shortcuts; matches MLPAdapter / LinearHeadAdapter).
+
+        Returns
+        -------
+        out : (n_samples,) jnp.ndarray
+        """
+        h = jax.nn.relu(X @ params["W1"] + params["b1"])
+        out = h @ params["W2"] + params["b2"]
+        if not skip_centering:
+            out = out - jnp.mean(out)
+        return out
+
+
+# ============================================================================
 # DAG-Attention Transformer Adapter
 # ============================================================================
 

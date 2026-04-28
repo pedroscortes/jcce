@@ -13,7 +13,7 @@ package is importable without the importlib bypass used by the AAP scripts.
 """
 
 from .aap import AAPCounterfactual
-from .aap_ols import AAPCounterfactualOLS
+from .aap_ols import AAPCounterfactualLogistic, AAPCounterfactualOLS
 from .causal_constraints import (
     compute_actionability_proxy,
     compute_causal_validity_score,
@@ -30,6 +30,7 @@ from .sparsity import edge_set_agreement, ste_hard_parents
 
 __all__ = [
     "AAPCounterfactual",
+    "AAPCounterfactualLogistic",
     "AAPCounterfactualOLS",
     "compute_actionability_proxy",
     "compute_causal_validity_score",

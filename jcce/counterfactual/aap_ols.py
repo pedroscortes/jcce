@@ -44,6 +44,54 @@ def _fit_ols(X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float]:
     return coefs[:-1].astype(np.float32), float(coefs[-1])
 
 
+def _fit_logistic(
+    X: np.ndarray, y: np.ndarray, l2: float = 1e-4, maxiter: int = 200,
+) -> tuple[np.ndarray, float]:
+    """Logistic regression via L-BFGS. Returns ``(beta, intercept)``.
+
+    The fit minimises $-\\sum y \\log \\sigma(X\\beta + b) + (1 - y) \\log
+    \\sigma(-(X\\beta + b)) + \\lambda \\|\\beta\\|_2^2$. The L2 ridge with
+    a tiny $\\lambda$ stabilises rank-deficient inputs (e.g., when
+    ``X * |A|`` has near-collinear weighted columns).
+
+    Parameters
+    ----------
+    X : (n, d) ndarray
+    y : (n,) ndarray of 0/1 labels
+    l2 : float
+        L2 ridge strength on ``beta`` (not on intercept).
+    maxiter : int
+    """
+    from scipy.optimize import minimize
+
+    n, d = X.shape
+    y = y.astype(np.float64)
+    X = X.astype(np.float64)
+
+    def neg_log_lik_and_grad(params: np.ndarray) -> tuple[float, np.ndarray]:
+        beta = params[:-1]
+        b = params[-1]
+        logits = X @ beta + b
+        # Stable log(1 + exp(-z)) = -log(sigmoid(z))
+        log1pexp_neg = np.logaddexp(0.0, -logits)
+        log1pexp_pos = np.logaddexp(0.0, logits)
+        nll = float(np.sum(y * log1pexp_neg + (1.0 - y) * log1pexp_pos))
+        nll += float(0.5 * l2 * np.sum(beta ** 2))
+        # Gradient: dL/dz_i = sigmoid(z_i) - y_i; dL/dbeta = X^T grad; dL/db = sum(grad)
+        p = 1.0 / (1.0 + np.exp(-logits))
+        residual = p - y
+        gbeta = X.T @ residual + l2 * beta
+        gb = float(np.sum(residual))
+        return nll, np.concatenate([gbeta, [gb]])
+
+    init = np.zeros(d + 1)
+    result = minimize(
+        neg_log_lik_and_grad, init, jac=True, method="L-BFGS-B",
+        options={"maxiter": maxiter},
+    )
+    return result.x[:-1].astype(np.float32), float(result.x[-1])
+
+
 class AAPCounterfactualOLS(AAPCounterfactual):
     """AAPCounterfactual with the trained ``f_Y`` swapped for closed-form OLS.
 
@@ -100,4 +148,74 @@ class AAPCounterfactualOLS(AAPCounterfactual):
             weights = jnp.asarray(self.ols_weights)
             X_weighted = X_jnp * weights[jnp.newaxis, :]
             return X_weighted @ beta + self.ols_intercept
+        return super()._f_j(X_features, j, A_use)
+
+
+class AAPCounterfactualLogistic(AAPCounterfactual):
+    """AAPCounterfactual with the trained ``f_Y`` swapped for logistic regression.
+
+    Same construction protocol as :class:`AAPCounterfactualOLS`, but fits
+    $P(Y=1) = \\sigma(X_w \\beta + b)$ via L-BFGS instead of OLS. The
+    counterfactual prediction returned is the **logit** $X_w \\beta + b$,
+    matching the conventional logit-scale CATE used by the JCCE pipeline
+    and by binary-Y SCM data-generating processes. This avoids the
+    linear-probability attenuation that bottlenecks
+    :class:`AAPCounterfactualOLS`'s magnitude on synthetic.
+
+    The downstream ``AAPCounterfactual.cate`` returns the logit
+    difference; downstream consumers can apply ``jax.nn.sigmoid`` to
+    convert to probability deltas if a probability-scale ``|dP|`` is
+    needed.
+    """
+
+    def __init__(
+        self,
+        processor,
+        A: jnp.ndarray,
+        processor_params: list,
+        Y_idx: int,
+        X_features: np.ndarray | jnp.ndarray,
+        Y: np.ndarray | jnp.ndarray,
+        edge_threshold: float = 0.05,
+        enforce_hard_parents: bool = False,
+        l2: float = 1e-4,
+    ):
+        super().__init__(
+            processor=processor,
+            A=A,
+            processor_params=processor_params,
+            Y_idx=Y_idx,
+            edge_threshold=edge_threshold,
+            enforce_hard_parents=enforce_hard_parents,
+        )
+        weights = np.abs(np.asarray(A)[: self.n_features, self.Y_idx])
+        X_np = np.asarray(X_features, dtype=np.float32)
+        Y_np = np.asarray(Y, dtype=np.float32).reshape(-1)
+        X_weighted = X_np * weights[None, :]
+        self.logistic_beta, self.logistic_intercept = _fit_logistic(X_weighted, Y_np, l2=l2)
+        self.logistic_weights = weights.astype(np.float32)
+
+        # Cache classification accuracy and AUC-like score on fit set.
+        logits = X_weighted @ self.logistic_beta + self.logistic_intercept
+        p = 1.0 / (1.0 + np.exp(-logits))
+        Y_pred = (p > 0.5).astype(np.float32)
+        self.logistic_accuracy = float(np.mean(Y_pred == Y_np))
+        # Mean log-likelihood as a R^2-like quality scalar.
+        log1pexp_neg = np.logaddexp(0.0, -logits)
+        log1pexp_pos = np.logaddexp(0.0, logits)
+        nll = float(np.mean(Y_np * log1pexp_neg + (1.0 - Y_np) * log1pexp_pos))
+        # Null model NLL: predict marginal probability.
+        p0 = float(np.mean(Y_np))
+        eps = 1e-9
+        nll_null = -p0 * np.log(p0 + eps) - (1.0 - p0) * np.log(1.0 - p0 + eps)
+        self.logistic_pseudo_r2 = 1.0 - nll / max(nll_null, 1e-12)
+
+    def _f_j(self, X_features: jnp.ndarray, j: int, A_use: jnp.ndarray) -> jnp.ndarray:
+        """Override f_Y to return the logistic logit; delegate others to the base."""
+        if j == self.Y_idx:
+            X_jnp = jnp.asarray(X_features)
+            beta = jnp.asarray(self.logistic_beta)
+            weights = jnp.asarray(self.logistic_weights)
+            X_weighted = X_jnp * weights[jnp.newaxis, :]
+            return X_weighted @ beta + self.logistic_intercept
         return super()._f_j(X_features, j, A_use)

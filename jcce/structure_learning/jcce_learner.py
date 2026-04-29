@@ -4481,6 +4481,24 @@ def learn_structure(
     # Validation and constraints
     use_validation_split: bool = True,
     validation_ratio: float = 0.2,
+    # Q2b investigation (2026-04-29): the BCE classification path applies
+    # weights_Y = max(|A[:, Y_idx]|, weights_Y_floor) for stability. The floor
+    # ensures gradient flow when A is degenerate, but partially decouples
+    # reported BAcc from A's structural learning quality (a constant-collapsed
+    # f_Y can still produce non-trivial BAcc because the BCE classifier sees
+    # X * 0.01 even when |A| -> 0). Default 0.01 = legacy behavior. Set to
+    # 0.0 to disable the floor and report "BAcc when classifier strictly uses
+    # A's discovered structure" — the gap = how much the floor contributes.
+    weights_Y_floor: float = 0.01,
+    # Q3.1 investigation (2026-04-29): variance regularizer on f_Y predictions.
+    # Adds -lambda_y_variance * var(f_Y(X)) to total_loss to penalize the
+    # constant-prediction collapse documented in Type IIIa. Maximizing prediction
+    # variance forces f_Y out of the degenerate "predict the marginal" basin.
+    # Default 0.0 = legacy behavior. Try lambda_y_variance ∈ {0.01, 0.1, 1.0}
+    # to test whether the constant collapse is escapable in joint training.
+    # Closest in spirit to TCE-VAE's auxiliary supervision but architecturally
+    # simpler (no nested grad needed; just batch-variance of predictions).
+    lambda_y_variance: float = 0.0,
     weight_decay: float = 1e-4,
     use_spectral_constraint: bool = False,
     enable_pruning: bool = False,
@@ -5015,6 +5033,17 @@ def learn_structure(
         Y_target = batch_Y_effect if batch_Y_effect is not None else batch_Y.astype(jnp.float32)
         Y_recon_loss = jnp.mean((Y_recon_output - Y_target) ** 2)
         Y_recon_weight = 3.0
+
+        # Q3.1 (2026-04-29): variance regularizer on f_Y predictions to fight
+        # Type IIIa constant collapse. If f_Y is collapsed (predicting the
+        # marginal), var(Y_recon_output) ≈ 0; if f_Y is input-sensitive, var > 0.
+        # Negative loss = maximize variance = force f_Y out of the degenerate
+        # "predict the marginal" basin. No-op when lambda_y_variance == 0.
+        # Computed on Y_recon_output (the per-sample f_Y predictions) which is
+        # the actual Y-prediction path during training. Try lambda values in
+        # {0.01, 0.1, 1.0, 10.0} to find the regime that escapes collapse.
+        y_pred_variance = jnp.var(Y_recon_output)
+        y_variance_reg = -lambda_y_variance * y_pred_variance
         total_recon_loss = (total_recon_loss * n_v + Y_recon_weight * Y_recon_loss) / (
             n_v + Y_recon_weight
         )
@@ -5308,6 +5337,9 @@ def learn_structure(
         # adaptive engagement holds it at 0 until collapse is detected.
         weighted_consistency = current_lambda_consistency * consistency_loss
         weighted_aap = lambda_aap * aap_loss
+        # Q3.1 (2026-04-29): variance regularizer on f_Y predictions to fight
+        # Type IIIa constant collapse. y_variance_reg is computed above
+        # (negative if lambda_y_variance > 0, zero otherwise).
 
         total_loss = (
             weighted_structural
@@ -5315,6 +5347,7 @@ def learn_structure(
             + weighted_effect
             + weighted_consistency
             + weighted_aap
+            + y_variance_reg
             + penalty_loss
             + penalty_loss_confound
         )
@@ -6019,7 +6052,7 @@ def learn_structure(
         weights = weights + 0.5 * A_conf_weights
     weights = weights.at[Y_idx].set(0.0)
     # Raw |A| with floor — matches training-time weighting (no softmax)
-    weights_Y_eval = jnp.maximum(weights[:n_vars], 0.01)
+    weights_Y_eval = jnp.maximum(weights[:n_vars], weights_Y_floor)
     # Use training data only for in-sample metrics (avoid test leakage)
     X_weighted = data_train * weights_Y_eval[jnp.newaxis, :]
     _proc_name_eval = processor.__class__.__name__

@@ -5084,45 +5084,67 @@ def learn_structure(
         y_pred_variance = jnp.var(Y_recon_output)
         y_variance_reg = -lambda_y_variance * y_pred_variance
 
-        # Q3.1.x and Q3.1.A (2026-04-29): T-sensitivity losses share an inner
-        # jax.grad over batch_data — compute once, use for both.
+        # Q3.1.x and Q3.1.A (2026-04-29, revised 2026-04-29 evening):
+        # T-sensitivity losses now use central finite differences instead of
+        # nested jax.grad. The earlier nested-grad implementation had a
+        # gradient-propagation issue (outer value_and_grad wasn't traversing
+        # the inner jax.grad to params via second-order autograd, possibly
+        # interacting with merge_trained_params' mixed traced/static dict
+        # structure). Finite differences avoid the nested-grad path entirely:
+        # two forward passes at (T+ε) and (T-ε), single-order autograd through
+        # processor params. Validated as standard practice when nested grads
+        # misbehave inside JIT.
         if (
             (lambda_t_sens > 0.0 or lambda_t_anchor > 0.0)
             and T_idx_for_loss is not None
         ):
-            def _y_recon_for_grad(batch_in):
-                weights_for_grad = jnp.abs(A_curr[:n_v, Y_idx]) + 1.0 / n_v
-                X_in_w = batch_in * weights_for_grad[jnp.newaxis, :]
-                pname_g = processor.__class__.__name__
-                pp_in = proc_params[Y_idx]
-                if pname_g == "GNNAdapter":
-                    A_norm_g = A_curr[:n_v, :n_v] / (
-                        jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
+            _eps_t = 0.1  # in standardized feature space; ~10% of typical SD
+            _batch_pT = batch_data.at[:, T_idx_for_loss].add(_eps_t)
+            _batch_mT = batch_data.at[:, T_idx_for_loss].add(-_eps_t)
+            _wY_grad = jnp.abs(A_curr[:n_v, Y_idx]) + 1.0 / n_v
+            _X_pT_w = _batch_pT * _wY_grad[jnp.newaxis, :]
+            _X_mT_w = _batch_mT * _wY_grad[jnp.newaxis, :]
+            _pname_g = processor.__class__.__name__
+            _pp_g = proc_params[Y_idx]
+
+            if _pname_g == "GNNAdapter":
+                _A_norm_g = A_curr[:n_v, :n_v] / (
+                    jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
+                )
+                _Y_pT = processor.forward(_X_pT_w, _pp_g, A=_A_norm_g)
+                _Y_mT = processor.forward(_X_mT_w, _pp_g, A=_A_norm_g)
+            elif _pname_g == "DAGAttentionAdapter":
+                _Y_pT = processor.forward(_X_pT_w, _pp_g, A=A_curr[:n_v, :n_v])
+                _Y_mT = processor.forward(_X_mT_w, _pp_g, A=A_curr[:n_v, :n_v])
+            elif _pname_g == "CausalMambaAdapter":
+                if causal_mamba_temperature_schedule is not None:
+                    _Y_pT = processor.forward(
+                        _X_pT_w, _pp_g, A=A_curr[:n_v, :n_v],
+                        temperature=current_cm_temperature,
                     )
-                    return processor.forward(X_in_w, pp_in, A=A_norm_g).sum()
-                elif pname_g == "DAGAttentionAdapter":
-                    return processor.forward(X_in_w, pp_in, A=A_curr[:n_v, :n_v]).sum()
-                elif pname_g == "CausalMambaAdapter":
-                    if causal_mamba_temperature_schedule is not None:
-                        return processor.forward(
-                            X_in_w, pp_in, A=A_curr[:n_v, :n_v],
-                            temperature=current_cm_temperature,
-                        ).sum()
-                    return processor.forward(X_in_w, pp_in, A=A_curr[:n_v, :n_v]).sum()
+                    _Y_mT = processor.forward(
+                        _X_mT_w, _pp_g, A=A_curr[:n_v, :n_v],
+                        temperature=current_cm_temperature,
+                    )
                 else:
-                    return processor.forward(X_in_w, pp_in).sum()
+                    _Y_pT = processor.forward(_X_pT_w, _pp_g, A=A_curr[:n_v, :n_v])
+                    _Y_mT = processor.forward(_X_mT_w, _pp_g, A=A_curr[:n_v, :n_v])
+            else:
+                _Y_pT = processor.forward(_X_pT_w, _pp_g)
+                _Y_mT = processor.forward(_X_mT_w, _pp_g)
 
-            dY_dbatch = jax.grad(_y_recon_for_grad)(batch_data)
-            dY_dT_per_sample = dY_dbatch[:, T_idx_for_loss]
+            # Per-sample finite-difference derivative w.r.t. batch_data[:, T_idx]
+            _finite_diff = (_Y_pT.flatten() - _Y_mT.flatten()) / (2.0 * _eps_t)
 
-            # Q3.1.x: |∂f_Y/∂T| penalty. Has subgradient-at-zero issue —
-            # cannot escape collapsed init, but can sharpen non-zero T-sens.
-            t_sens_reg = -lambda_t_sens * jnp.mean(jnp.abs(dY_dT_per_sample))
+            # Q3.1.x: |df_Y/dT| penalty (zero-subgradient corner remains, but
+            # at least the gradient propagates correctly to params now).
+            t_sens_reg = -lambda_t_sens * jnp.mean(jnp.abs(_finite_diff))
 
-            # Q3.1.A: signed anchor toward target direction. No abs → no
-            # zero-subgradient corner. Pulls dY/dT toward sign(target_sign) * ∞;
-            # bounded in practice by other loss terms.
-            t_anchor_reg = -lambda_t_anchor * target_sign * jnp.mean(dY_dT_per_sample)
+            # Q3.1.A: signed anchor toward target_sign. Loss is well-defined
+            # even at finite_diff = 0; gradient w.r.t. β[T] (LinearHead) is
+            # -lambda_t_anchor * target_sign * weights[T], which is nonzero
+            # even at the collapse point.
+            t_anchor_reg = -lambda_t_anchor * target_sign * jnp.mean(_finite_diff)
         else:
             t_sens_reg = 0.0
             t_anchor_reg = 0.0

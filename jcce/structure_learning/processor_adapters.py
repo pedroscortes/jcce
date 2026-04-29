@@ -1466,19 +1466,19 @@ class DAGAttentionAdapter:
 
 
 # ============================================================================
-# CausalMamba Adapter
+# TopoMamba Adapter (renamed 2026-04-28 from CausalMamba; see topo_mamba.py)
 # ============================================================================
 
-from jcce.models.causal_mamba import CausalMambaProcessor as CausalMambaBase
-from jcce.models.causal_mamba import (
+from jcce.models.topo_mamba import TopoMambaProcessor as TopoMambaBase
+from jcce.models.topo_mamba import (
     sinkhorn_topological_sort,
     topological_sort_from_adjacency,
 )
 
 
-class CausalMambaAdapter:
+class TopoMambaAdapter:
     """
-    Adapter for CausalMamba with selectable variable ordering and optional
+    Adapter for TopoMamba with selectable variable ordering and optional
     DAG-gated state transitions.
 
     Four sort modes:
@@ -1540,7 +1540,7 @@ class CausalMambaAdapter:
         self.sinkhorn_n_iters = sinkhorn_n_iters
         self.enable_gating = enable_gating
 
-        self.model = CausalMambaBase(
+        self.model = TopoMambaBase(
             d_model=d_model,
             d_state=d_state,
             d_conv=d_conv,
@@ -1571,7 +1571,7 @@ class CausalMambaAdapter:
         return param_dict
 
     def _resolve_ordering(self, A, n_inputs, temperature=None):
-        """Resolve the variable ordering for CausalMambaProcessor.
+        """Resolve the variable ordering for TopoMambaProcessor.
 
         Returns a (topo_order, perm_matrix) tuple. At most one of the two
         is non-None; both are None for "identity" or for any dispatch path
@@ -1623,7 +1623,7 @@ class CausalMambaAdapter:
             A: (n_inputs, n_inputs) adjacency matrix — used for ordering.
             skip_centering: skip mean centering for classification.
             training, rng_key: accepted for dispatch-signature parity with
-                DAGAttentionAdapter; currently unused (CausalMamba has no
+                DAGAttentionAdapter; currently unused (TopoMamba has no
                 dropout).
             temperature: per-call Sinkhorn temperature override. None falls
                 back to ``self.sinkhorn_temperature``. When jcce_learner.py
@@ -1638,7 +1638,7 @@ class CausalMambaAdapter:
             A, n_inputs, temperature=temperature
         )
 
-        # Forward through CausalMamba. A is passed only when gating is on
+        # Forward through TopoMamba. A is passed only when gating is on
         # (the gated path needs A's columns for the gate). Non-gated path
         # ignores A.
         h = self.model.apply(
@@ -1734,6 +1734,10 @@ class CausalMambaAdapter:
 
         params["_weights_solved"] = True
         return params
+
+
+# Backward-compatibility alias (renamed 2026-04-28; see jcce/models/topo_mamba.py)
+CausalMambaAdapter = TopoMambaAdapter
 
 
 # ============================================================================

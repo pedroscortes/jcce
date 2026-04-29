@@ -224,10 +224,13 @@ def create_processor(processor_type: str, key: random.PRNGKey, **kwargs):
             key=key,
         )
 
-    elif processor_type == "causal_mamba":
-        from jcce.structure_learning.processor_adapters import CausalMambaAdapter
+    elif processor_type in ("topo_mamba", "causal_mamba"):
+        # "causal_mamba" kept as alias for backward compat; canonical name is
+        # "topo_mamba" (renamed 2026-04-28; see jcce/models/topo_mamba.py
+        # docstring for the naming-collision rationale).
+        from jcce.structure_learning.processor_adapters import TopoMambaAdapter
 
-        return CausalMambaAdapter(
+        return TopoMambaAdapter(
             d_model=kwargs.get("d_model", 128),
             d_state=kwargs.get("d_state", 16),
             d_conv=kwargs.get("d_conv", 4),
@@ -302,12 +305,14 @@ def golem_unified_forward(
 
     # Detect structure-aware processors (need A passed to forward).
     # GNN: receives row-softmax-normalized A with target row/col zeroed.
-    # DAG-Attention / CausalMamba: receive raw A (soft mask / topo reorder
+    # DAG-Attention / TopoMamba: receive raw A (soft mask / topo reorder
     # are computed inside the adapter).
     proc_name = processor.__class__.__name__
     is_gnn = proc_name == "GNNAdapter"
     is_dag_attn = proc_name == "DAGAttentionAdapter"
-    is_causal_mamba = proc_name == "CausalMambaAdapter"
+    # TopoMambaAdapter is the canonical name post-2026-04-28 rename;
+    # CausalMambaAdapter is kept as a backward-compat alias.
+    is_topo_mamba = proc_name in ("TopoMambaAdapter", "CausalMambaAdapter")
 
     for j in range(n_vars):
         # Soft weighting by adjacency matrix (allows gradient flow)
@@ -330,8 +335,8 @@ def golem_unified_forward(
         elif is_dag_attn:
             # DAG-Attention: raw A drives the soft attention mask inside the adapter.
             X_j_recon = processor.forward(X_weighted, processor_params[j], A=A)
-        elif is_causal_mamba:
-            # CausalMamba: raw A drives the (jit-safe pure_callback) topological
+        elif is_topo_mamba:
+            # TopoMamba: raw A drives the (jit-safe pure_callback) topological
             # sort inside the adapter; SSM scans variables in causal order.
             X_j_recon = processor.forward(X_weighted, processor_params[j], A=A)
         else:
@@ -1306,9 +1311,9 @@ def _learn_structure_legacy(
                 direct_effect = processor.forward(
                     X_weighted, proc_params[j], A=A_curr, training=training, rng_key=rng_key
                 )
-            elif _proc_name == "CausalMambaAdapter":
-                # CausalMamba: raw A drives the jit-safe topological sort
-                # (pure_callback inside the adapter).
+            elif _proc_name in ("TopoMambaAdapter", "CausalMambaAdapter"):
+                # TopoMamba (or its CausalMamba alias): raw A drives the
+                # jit-safe topological sort (pure_callback inside the adapter).
                 direct_effect = processor.forward(
                     X_weighted, proc_params[j], A=A_curr, training=training, rng_key=rng_key
                 )

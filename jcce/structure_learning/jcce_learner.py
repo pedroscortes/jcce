@@ -4499,6 +4499,17 @@ def learn_structure(
     # Closest in spirit to TCE-VAE's auxiliary supervision but architecturally
     # simpler (no nested grad needed; just batch-variance of predictions).
     lambda_y_variance: float = 0.0,
+    # Q3.1.x investigation (2026-04-29): targeted T-sensitivity regularizer.
+    # Adds -lambda_t_sens * mean(|∂f_Y/∂T|) to total_loss to directly penalize
+    # zero T-derivative. Motivated by the Q3.1 cross-dataset finding that
+    # variance reg is gameable by high-capacity processors (DAG-Attention
+    # 6/6 datasets satisfy variance constraint via non-T features). The
+    # T-sens loss says exactly *where* the f_Y must be input-sensitive.
+    # Requires T_idx_for_loss; no-op when lambda_t_sens == 0.0 OR
+    # T_idx_for_loss is None. Uses nested jax.grad (slower than variance reg
+    # but ~2x not 10x; fine for 150-iter training budgets).
+    lambda_t_sens: float = 0.0,
+    T_idx_for_loss: Optional[int] = None,
     weight_decay: float = 1e-4,
     use_spectral_constraint: bool = False,
     enable_pruning: bool = False,
@@ -5044,6 +5055,39 @@ def learn_structure(
         # {0.01, 0.1, 1.0, 10.0} to find the regime that escapes collapse.
         y_pred_variance = jnp.var(Y_recon_output)
         y_variance_reg = -lambda_y_variance * y_pred_variance
+
+        # Q3.1.x (2026-04-29): targeted T-sensitivity loss. Computes
+        # |∂Y_recon/∂batch_data[:, T_idx_for_loss]| via nested jax.grad and
+        # penalizes near-zero T-derivative. Direct counter to the variance-reg
+        # gaming pattern (DAG-Attention satisfies variance via non-T features).
+        if lambda_t_sens > 0.0 and T_idx_for_loss is not None:
+            def _y_recon_for_grad(batch_in):
+                weights_for_grad = jnp.abs(A_curr[:n_v, Y_idx]) + 1.0 / n_v
+                X_in_w = batch_in * weights_for_grad[jnp.newaxis, :]
+                pname_g = processor.__class__.__name__
+                pp_in = proc_params[Y_idx]
+                if pname_g == "GNNAdapter":
+                    A_norm_g = A_curr[:n_v, :n_v] / (
+                        jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
+                    )
+                    return processor.forward(X_in_w, pp_in, A=A_norm_g).sum()
+                elif pname_g == "DAGAttentionAdapter":
+                    return processor.forward(X_in_w, pp_in, A=A_curr[:n_v, :n_v]).sum()
+                elif pname_g == "CausalMambaAdapter":
+                    if causal_mamba_temperature_schedule is not None:
+                        return processor.forward(
+                            X_in_w, pp_in, A=A_curr[:n_v, :n_v],
+                            temperature=current_cm_temperature,
+                        ).sum()
+                    return processor.forward(X_in_w, pp_in, A=A_curr[:n_v, :n_v]).sum()
+                else:
+                    return processor.forward(X_in_w, pp_in).sum()
+
+            dY_dbatch = jax.grad(_y_recon_for_grad)(batch_data)
+            t_sens_reg = -lambda_t_sens * jnp.mean(jnp.abs(dY_dbatch[:, T_idx_for_loss]))
+        else:
+            t_sens_reg = 0.0
+
         total_recon_loss = (total_recon_loss * n_v + Y_recon_weight * Y_recon_loss) / (
             n_v + Y_recon_weight
         )
@@ -5348,6 +5392,7 @@ def learn_structure(
             + weighted_consistency
             + weighted_aap
             + y_variance_reg
+            + t_sens_reg
             + penalty_loss
             + penalty_loss_confound
         )

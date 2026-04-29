@@ -4508,8 +4508,36 @@ def learn_structure(
     # Requires T_idx_for_loss; no-op when lambda_t_sens == 0.0 OR
     # T_idx_for_loss is None. Uses nested jax.grad (slower than variance reg
     # but ~2x not 10x; fine for 150-iter training budgets).
+    # KNOWN ISSUE (2026-04-29 server sweep): the abs-of-gradient loss has zero
+    # subgradient at the collapse point, so it can't escape Type IIIa from
+    # collapsed init. Use lambda_t_anchor below for a directional variant
+    # that doesn't have the subgradient-at-zero problem.
     lambda_t_sens: float = 0.0,
     T_idx_for_loss: Optional[int] = None,
+    # Q3.1.A (2026-04-29): sign-anchor T-sensitivity loss. Same machinery as
+    # lambda_t_sens but signed:  -lambda_t_anchor * target_sign * mean(∂f_Y/∂T).
+    # Motivated by the Q3.1 signed-sensitivity diagnostic finding that the
+    # Type IIIa "fix" via variance reg has seed-level bimodality — some seeds
+    # find directionally-correct f_Y, others find sign-flipped. The anchor
+    # biases all seeds toward target_sign (e.g., +1 for "T → Y is positive"
+    # priors like Smoking → LungCancer or Glucose → Diabetes). No abs in the
+    # loss → no subgradient-at-zero issue → loss can pull a collapsed model
+    # into the directionally-correct basin.
+    # Requires both lambda_t_anchor > 0 AND T_idx_for_loss set. target_sign
+    # is a known-direction prior (oracular) — paper-defensible only with the
+    # caveat "if you have a direction prior."
+    lambda_t_anchor: float = 0.0,
+    target_sign: float = 1.0,
+    # Q3.1.B (2026-04-29): supervised warm-start of f_Y. Pre-trains the per-Y
+    # processor on (X, Y) BCE for warm_start_fY_iters before the main joint
+    # loop. Direct sidestep of the seed-bimodality problem: instead of relying
+    # on the joint loss to pull the model into the discriminative basin
+    # (which it does inconsistently), supervised pre-training puts the model
+    # there from the start. A is FROZEN at its initial value during the
+    # warm-start phase; only proc_params[Y_idx] is updated. After warm-start,
+    # the main joint loop runs as usual (A unfreezes, full loss is on).
+    # No-op when warm_start_fY_iters == 0.
+    warm_start_fY_iters: int = 0,
     weight_decay: float = 1e-4,
     use_spectral_constraint: bool = False,
     enable_pruning: bool = False,
@@ -5056,11 +5084,12 @@ def learn_structure(
         y_pred_variance = jnp.var(Y_recon_output)
         y_variance_reg = -lambda_y_variance * y_pred_variance
 
-        # Q3.1.x (2026-04-29): targeted T-sensitivity loss. Computes
-        # |∂Y_recon/∂batch_data[:, T_idx_for_loss]| via nested jax.grad and
-        # penalizes near-zero T-derivative. Direct counter to the variance-reg
-        # gaming pattern (DAG-Attention satisfies variance via non-T features).
-        if lambda_t_sens > 0.0 and T_idx_for_loss is not None:
+        # Q3.1.x and Q3.1.A (2026-04-29): T-sensitivity losses share an inner
+        # jax.grad over batch_data — compute once, use for both.
+        if (
+            (lambda_t_sens > 0.0 or lambda_t_anchor > 0.0)
+            and T_idx_for_loss is not None
+        ):
             def _y_recon_for_grad(batch_in):
                 weights_for_grad = jnp.abs(A_curr[:n_v, Y_idx]) + 1.0 / n_v
                 X_in_w = batch_in * weights_for_grad[jnp.newaxis, :]
@@ -5084,9 +5113,19 @@ def learn_structure(
                     return processor.forward(X_in_w, pp_in).sum()
 
             dY_dbatch = jax.grad(_y_recon_for_grad)(batch_data)
-            t_sens_reg = -lambda_t_sens * jnp.mean(jnp.abs(dY_dbatch[:, T_idx_for_loss]))
+            dY_dT_per_sample = dY_dbatch[:, T_idx_for_loss]
+
+            # Q3.1.x: |∂f_Y/∂T| penalty. Has subgradient-at-zero issue —
+            # cannot escape collapsed init, but can sharpen non-zero T-sens.
+            t_sens_reg = -lambda_t_sens * jnp.mean(jnp.abs(dY_dT_per_sample))
+
+            # Q3.1.A: signed anchor toward target direction. No abs → no
+            # zero-subgradient corner. Pulls dY/dT toward sign(target_sign) * ∞;
+            # bounded in practice by other loss terms.
+            t_anchor_reg = -lambda_t_anchor * target_sign * jnp.mean(dY_dT_per_sample)
         else:
             t_sens_reg = 0.0
+            t_anchor_reg = 0.0
 
         total_recon_loss = (total_recon_loss * n_v + Y_recon_weight * Y_recon_loss) / (
             n_v + Y_recon_weight
@@ -5393,6 +5432,7 @@ def learn_structure(
             + weighted_aap
             + y_variance_reg
             + t_sens_reg
+            + t_anchor_reg
             + penalty_loss
             + penalty_loss_confound
         )
@@ -5412,6 +5452,64 @@ def learn_structure(
 
     optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr))
     opt_state = optimizer.init(all_params)
+
+    # Q3.1.B (2026-04-29): supervised warm-start of f_Y predictor. Pre-trains
+    # only the Y-processor params on (X, Y) BCE for warm_start_fY_iters before
+    # the main joint loop. A is used at its initialized value (frozen during
+    # warm-start). Direct sidestep of the seed-bimodality finding from the
+    # Q3.1 signed-sens diag (2026-04-29): rather than relying on the joint
+    # loss to push f_Y into the discriminative basin (which it does
+    # inconsistently across seeds), warm-start places it there from the start.
+    if warm_start_fY_iters > 0:
+        _pname_w = processor.__class__.__name__
+        _A_init_warm = all_params["A_direct"]
+        _Y_target_warm = Y_train.flatten().astype(jnp.float32)
+
+        _n_v_warm = n_vars  # X-dimension only; matches loss_fn's n_v
+
+        def _warm_start_loss(y_trainable):
+            _y_full = merge_trained_params(
+                [processor_params[Y_idx]], [y_trainable],
+            )[0]
+            _wY = jnp.abs(_A_init_warm[:_n_v_warm, Y_idx]) + 0.01
+            _X_w = data_train * _wY[jnp.newaxis, :]
+            if _pname_w == "GNNAdapter":
+                _A_norm = _A_init_warm[:_n_v_warm, :_n_v_warm] / (
+                    jnp.sum(jnp.abs(_A_init_warm[:_n_v_warm, :_n_v_warm]), axis=0, keepdims=True) + 1e-8
+                )
+                _logit = processor.forward(_X_w, _y_full, A=_A_norm, skip_centering=True)
+            elif _pname_w == "DAGAttentionAdapter":
+                _logit = processor.forward(
+                    _X_w, _y_full, A=_A_init_warm[:_n_v_warm, :_n_v_warm], skip_centering=True,
+                )
+            elif _pname_w == "CausalMambaAdapter":
+                _logit = processor.forward(
+                    _X_w, _y_full, A=_A_init_warm[:_n_v_warm, :_n_v_warm], skip_centering=True,
+                )
+            else:
+                _logit = processor.forward(_X_w, _y_full, skip_centering=True)
+            _logit = _logit.flatten()
+            # BCE with logits — numerically stable form
+            return jnp.mean(
+                jnp.maximum(_logit, 0)
+                - _logit * _Y_target_warm
+                + jnp.log1p(jnp.exp(-jnp.abs(_logit)))
+            )
+
+        _warm_optimizer = optax.adam(learning_rate=lr * 3.0)
+        _y_trainable = all_params["processor_params"][Y_idx]
+        _warm_opt_state = _warm_optimizer.init(_y_trainable)
+        for _ in range(warm_start_fY_iters):
+            _, _grads = jax.value_and_grad(_warm_start_loss)(_y_trainable)
+            _updates, _warm_opt_state = _warm_optimizer.update(_grads, _warm_opt_state)
+            _y_trainable = optax.apply_updates(_y_trainable, _updates)
+        # Splice warm-started Y params into all_params and re-init main optimizer state
+        _new_proc_params = list(all_params["processor_params"])
+        _new_proc_params[Y_idx] = _y_trainable
+        all_params = {**all_params, "processor_params": _new_proc_params}
+        opt_state = optimizer.init(all_params)
+        if verbose >= 1:
+            print(f"[warm-start] supervised f_Y pretrain: {warm_start_fY_iters} iters complete")
 
     lambda_2 = lambda_2_init
     best_loss = float("inf")

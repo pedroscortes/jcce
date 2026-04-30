@@ -4555,6 +4555,16 @@ def learn_structure(
     # constant z, but KL forces z to spread). No-op when lambda_kl == 0 or
     # when the processor doesn't expose compute_kl_loss.
     lambda_kl: float = 0.0,
+    # Q3.1.E (2026-04-30): counterfactual T-flip loss. Pairs each forward pass
+    # with a counterfactual forward at T flipped (binary). Loss term is
+    # -lambda_cf * target_sign * mean(f_Y(T=1) - f_Y(T=0)). Direct CATE
+    # supervision via paired forward passes; processor-agnostic (combines with
+    # any processor including KLBottleneck, LinearHead, MLPHead, DAG-Attention,
+    # TopoMamba). Different from sign-anchor (T-sens loss with finite diff),
+    # which uses a small ε perturbation; counterfactual uses the full T=0 vs
+    # T=1 contrast which is natural for binary treatment variables. Requires
+    # T_idx_for_loss; no-op when lambda_cf == 0 or T_idx_for_loss is None.
+    lambda_cf: float = 0.0,
     weight_decay: float = 1e-4,
     use_spectral_constraint: bool = False,
     enable_pruning: bool = False,
@@ -5113,6 +5123,47 @@ def learn_structure(
         else:
             kl_reg = 0.0
 
+        # Q3.1.E (2026-04-30): counterfactual T-flip loss. Pairs forward(T=0)
+        # and forward(T=1); applies signed bias toward target_sign.
+        # Processor-agnostic, combines with any architecture.
+        if lambda_cf > 0.0 and T_idx_for_loss is not None:
+            _batch_T1 = batch_data.at[:, T_idx_for_loss].set(1.0)
+            _batch_T0 = batch_data.at[:, T_idx_for_loss].set(0.0)
+            _wY_cf = jnp.abs(A_curr[:n_v, Y_idx]) + 1.0 / n_v
+            _X_T1_w = _batch_T1 * _wY_cf[jnp.newaxis, :]
+            _X_T0_w = _batch_T0 * _wY_cf[jnp.newaxis, :]
+            _pname_cf = processor.__class__.__name__
+            _pp_cf = proc_params[Y_idx]
+            if _pname_cf == "GNNAdapter":
+                _A_norm_cf = A_curr[:n_v, :n_v] / (
+                    jnp.sum(jnp.abs(A_curr[:n_v, :n_v]), axis=0, keepdims=True) + 1e-8
+                )
+                _Y_T1 = processor.forward(_X_T1_w, _pp_cf, A=_A_norm_cf)
+                _Y_T0 = processor.forward(_X_T0_w, _pp_cf, A=_A_norm_cf)
+            elif _pname_cf == "DAGAttentionAdapter":
+                _Y_T1 = processor.forward(_X_T1_w, _pp_cf, A=A_curr[:n_v, :n_v])
+                _Y_T0 = processor.forward(_X_T0_w, _pp_cf, A=A_curr[:n_v, :n_v])
+            elif _pname_cf == "CausalMambaAdapter":
+                if causal_mamba_temperature_schedule is not None:
+                    _Y_T1 = processor.forward(
+                        _X_T1_w, _pp_cf, A=A_curr[:n_v, :n_v],
+                        temperature=current_cm_temperature,
+                    )
+                    _Y_T0 = processor.forward(
+                        _X_T0_w, _pp_cf, A=A_curr[:n_v, :n_v],
+                        temperature=current_cm_temperature,
+                    )
+                else:
+                    _Y_T1 = processor.forward(_X_T1_w, _pp_cf, A=A_curr[:n_v, :n_v])
+                    _Y_T0 = processor.forward(_X_T0_w, _pp_cf, A=A_curr[:n_v, :n_v])
+            else:
+                _Y_T1 = processor.forward(_X_T1_w, _pp_cf)
+                _Y_T0 = processor.forward(_X_T0_w, _pp_cf)
+            _cate_per_sample = _Y_T1.flatten() - _Y_T0.flatten()
+            cf_reg = -lambda_cf * target_sign * jnp.mean(_cate_per_sample)
+        else:
+            cf_reg = 0.0
+
         # Q3.1.x and Q3.1.A (2026-04-29, revised 2026-04-29 evening):
         # T-sensitivity losses now use central finite differences instead of
         # nested jax.grad. The earlier nested-grad implementation had a
@@ -5485,6 +5536,7 @@ def learn_structure(
             + t_sens_reg
             + t_anchor_reg
             + kl_reg
+            + cf_reg
             + penalty_loss
             + penalty_loss_confound
         )

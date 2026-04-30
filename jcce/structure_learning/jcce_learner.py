@@ -241,6 +241,7 @@ def create_processor(processor_type: str, key: random.PRNGKey, **kwargs):
             sinkhorn_temperature=kwargs.get("sinkhorn_temperature", 0.1),
             enable_gating=kwargs.get("enable_gating", False),
             t_idx=kwargs.get("t_idx", None),
+            dag_mixing_layers=kwargs.get("dag_mixing_layers", 0),
         )
 
     elif processor_type == "gnn":

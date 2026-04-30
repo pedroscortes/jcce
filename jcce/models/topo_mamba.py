@@ -412,6 +412,17 @@ class TopoMambaProcessor(nn.Module):
     # in the input-projection equation, not just one of the input features.
     # No-op when t_idx is None or t_idx < 0.
     t_idx: Optional[int] = None
+    # Q3.1.G (2026-04-30): Direction 2 — DAG-Structured State Transitions.
+    # When dag_mixing_layers > 0, applies a post-Mamba DAG mixing pass that
+    # propagates the hidden state along A's edges (NOT just sequence positions).
+    # K rounds of: h_new[j] = h[j] + sum_i A[i,j] * h[i] (with row-norm).
+    # After K layers, h[Y] receives information only from variables on
+    # paths-of-length-≤K to Y in the learned DAG. Mechanism: T's signal can
+    # only reach Y through DAG paths; non-ancestors-of-Y cannot contribute.
+    # Direct counter to the high-capacity gaming pattern (DAG-Att satisfies
+    # constraints via non-T features) at the structural level.
+    # No-op when dag_mixing_layers == 0.
+    dag_mixing_layers: int = 0
 
     @nn.compact
     def __call__(
@@ -518,6 +529,22 @@ class TopoMambaProcessor(nn.Module):
             h = h_sorted[:, inverse_order]
         else:
             h = h_sorted
+
+        # Q3.1.G (2026-04-30): Direction 2 — DAG-Structured State Transitions.
+        # K rounds of structural mixing along A's edges. After K rounds,
+        # h[j] receives information from variables on paths-of-length-≤K
+        # to j in the learned DAG. Forces flow through DAG paths;
+        # non-ancestors of j cannot contribute to h[j].
+        if self.dag_mixing_layers > 0 and A is not None:
+            # Row-normalized A so each variable's incoming-mix sums to 1
+            # (avoids exponential blowup of h magnitudes across K rounds).
+            A_in = jnp.abs(A[:n_vars, :n_vars])  # (N, N) — incoming weights
+            A_in_sum = jnp.sum(A_in, axis=0, keepdims=True) + 1e-8  # (1, N)
+            A_norm = A_in / A_in_sum  # (N, N) — col-stochastic
+            for _layer in range(self.dag_mixing_layers):
+                # h_mixed[:, j, :] = sum_i A_norm[i, j] * h[:, i, :] + h[:, j, :]
+                h_propagated = jnp.einsum("ij,bid->bjd", A_norm, h)
+                h = h + h_propagated  # residual: own embedding + propagated
 
         return h
 

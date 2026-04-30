@@ -1656,6 +1656,7 @@ class TopoMambaAdapter:
         sinkhorn_n_iters: int = 10,
         enable_gating: bool = False,
         t_idx: Optional[int] = None,
+        dag_mixing_layers: int = 0,
     ):
         if sort_mode not in self._SORT_MODES:
             raise ValueError(
@@ -1677,6 +1678,10 @@ class TopoMambaAdapter:
         # a learned function of z[:, t_idx]. Forces SSM selective params to
         # depend on T per batch sample.
         self.t_idx = t_idx
+        # Q3.1.G (2026-04-30): DAG-Structured State Transitions (Direction 2).
+        # K rounds of post-Mamba mixing along A's edges. Forces information
+        # flow through DAG paths; addresses high-capacity gaming structurally.
+        self.dag_mixing_layers = dag_mixing_layers
 
         self.model = TopoMambaBase(
             d_model=d_model,
@@ -1686,6 +1691,7 @@ class TopoMambaAdapter:
             n_layers=1,
             enable_gating=enable_gating,
             t_idx=t_idx,
+            dag_mixing_layers=dag_mixing_layers,
         )
 
 

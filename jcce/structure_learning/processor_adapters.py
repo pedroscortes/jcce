@@ -1241,6 +1241,138 @@ class MLPHeadAdapter:
 
 
 # ============================================================================
+# KL-Bottleneck Head Adapter (Phase 2 — Q3.1.D)
+# ============================================================================
+
+
+class KLBottleneckHeadAdapter:
+    """Per-variable encoder-decoder with KL-regularized latent bottleneck.
+
+    Architecture::
+
+        encoder: X -> hidden -> (mu, log_sigma)
+        sample:  z = mu + exp(0.5 * log_sigma) * eps    (training)
+                 z = mu                                  (inference)
+        decoder: z -> hidden -> Y_pred
+
+    Mechanism for Type IIIa Constant Collapse fix: a constant Y_pred output
+    requires constant z, but the KL prior ``KL(q(z|X) || N(0, I))`` forces
+    z to spread out. Therefore the architecture mechanically prevents the
+    constant collapse documented in §6 of the failure-mode taxonomy paper.
+
+    Inspired by TCEVAE (Statistics112233 GitHub repo, 2025), specifically
+    the latent-bottleneck-with-KL-prior idea inherited from CEVAE
+    (Louizos et al. 2017). Adapted to JCCE's per-variable forward interface.
+
+    Notes
+    -----
+    The KL loss is exposed via :meth:`compute_kl_loss` rather than added
+    to the forward output, to keep the standard processor interface (one
+    return value) compatible with all loss-function call sites in
+    :func:`learn_structure`. The learner adds ``lambda_kl * compute_kl_loss``
+    to its total loss when ``lambda_kl > 0``.
+
+    During training the forward path samples z stochastically (so the KL
+    prior actually shapes z's variance). At inference the forward uses
+    ``z = mu`` deterministically (no stochastic prediction at test time).
+    """
+
+    def __init__(
+        self,
+        latent_dim: int = 8,
+        hidden_dim: int = 32,
+        key: random.PRNGKey = None,
+    ):
+        self.latent_dim = latent_dim
+        self.hidden_dim = hidden_dim
+        self.key = key if key is not None else random.PRNGKey(42)
+
+    def init_params(self, n_inputs: int) -> Dict:
+        """Init encoder + decoder + (mu, log_sigma) heads with Glorot scaling."""
+        keys = random.split(self.key, 5)
+        in_scale = 1.0 / max(1, n_inputs) ** 0.5
+        h_scale = 1.0 / max(1, self.hidden_dim) ** 0.5
+        z_scale = 1.0 / max(1, self.latent_dim) ** 0.5
+
+        return {
+            # Encoder MLP
+            "W_enc1": random.normal(keys[0], (n_inputs, self.hidden_dim)) * in_scale,
+            "b_enc1": jnp.zeros((self.hidden_dim,)),
+            # Latent heads
+            "W_mu": random.normal(keys[1], (self.hidden_dim, self.latent_dim)) * h_scale,
+            "b_mu": jnp.zeros((self.latent_dim,)),
+            # log_sigma init smaller: starts close to 0 → sigma close to 1
+            "W_log_sigma": random.normal(keys[2], (self.hidden_dim, self.latent_dim)) * h_scale * 0.1,
+            "b_log_sigma": jnp.zeros((self.latent_dim,)),
+            # Decoder MLP
+            "W_dec1": random.normal(keys[3], (self.latent_dim, self.hidden_dim)) * z_scale,
+            "b_dec1": jnp.zeros((self.hidden_dim,)),
+            "W_out": random.normal(keys[4], (self.hidden_dim,)) * h_scale,
+            "b_out": jnp.zeros(()),
+            # metadata (non-array; not differentiable)
+            "n_inputs": n_inputs,
+            "hidden_dim": self.hidden_dim,
+            "latent_dim": self.latent_dim,
+        }
+
+    def _encode(self, X: jnp.ndarray, params: Dict):
+        """Compute (mu, log_sigma) from X."""
+        h = jax.nn.relu(X @ params["W_enc1"] + params["b_enc1"])
+        mu = h @ params["W_mu"] + params["b_mu"]
+        log_sigma = h @ params["W_log_sigma"] + params["b_log_sigma"]
+        # Numerical stability: clip log_sigma so exp(log_sigma) doesn't blow up
+        log_sigma = jnp.clip(log_sigma, -10.0, 10.0)
+        return mu, log_sigma
+
+    def _decode(self, z: jnp.ndarray, params: Dict) -> jnp.ndarray:
+        h = jax.nn.relu(z @ params["W_dec1"] + params["b_dec1"])
+        return h @ params["W_out"] + params["b_out"]
+
+    def forward(
+        self,
+        X: jnp.ndarray,
+        params: Dict,
+        training: bool = True,
+        rng_key: random.PRNGKey = None,
+        skip_centering: bool = False,
+        **kwargs,
+    ) -> jnp.ndarray:
+        """Forward pass: encode → sample z → decode.
+
+        During training (with ``rng_key`` provided): z is sampled via the
+        reparameterization trick. At inference: z = mu deterministically.
+
+        Returns
+        -------
+        out : (n_samples,) jnp.ndarray
+        """
+        mu, log_sigma = self._encode(X, params)
+        if training and rng_key is not None:
+            eps = random.normal(rng_key, mu.shape)
+            z = mu + jnp.exp(0.5 * log_sigma) * eps
+        else:
+            z = mu
+        out = self._decode(z, params)
+        if not skip_centering:
+            out = out - jnp.mean(out)
+        return out
+
+    def compute_kl_loss(self, X: jnp.ndarray, params: Dict) -> jnp.ndarray:
+        """KL divergence ``KL(N(mu, sigma) || N(0, I))`` averaged over batch.
+
+        Closed-form for Gaussian posteriors:
+            KL = 0.5 * sum(exp(log_sigma) + mu^2 - 1 - log_sigma)
+
+        Returns a scalar to be added (scaled by lambda_kl) to the total loss.
+        """
+        mu, log_sigma = self._encode(X, params)
+        kl_per_sample = 0.5 * jnp.sum(
+            jnp.exp(log_sigma) + mu ** 2 - 1.0 - log_sigma, axis=-1,
+        )
+        return jnp.mean(kl_per_sample)
+
+
+# ============================================================================
 # DAG-Attention Transformer Adapter
 # ============================================================================
 

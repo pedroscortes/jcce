@@ -261,10 +261,19 @@ def create_processor(processor_type: str, key: random.PRNGKey, **kwargs):
             key=key,
         )
 
+    elif processor_type == "kl_bottleneck":
+        from jcce.structure_learning.processor_adapters import KLBottleneckHeadAdapter
+
+        return KLBottleneckHeadAdapter(
+            latent_dim=kwargs.get("latent_dim", 8),
+            hidden_dim=kwargs.get("hidden_dim", 32),
+            key=key,
+        )
+
     else:
         raise ValueError(
             f"Unknown processor type: {processor_type}. "
-            f"Choose from: mlp, transformer, mamba, elm, gnn, linear_head, mlp_head"
+            f"Choose from: mlp, transformer, mamba, elm, gnn, linear_head, mlp_head, kl_bottleneck"
         )
 
 
@@ -4538,6 +4547,14 @@ def learn_structure(
     # the main joint loop runs as usual (A unfreezes, full loss is on).
     # No-op when warm_start_fY_iters == 0.
     warm_start_fY_iters: int = 0,
+    # Q3.1.D (2026-04-30): KL-bottleneck regularizer for KLBottleneckHead processor.
+    # Adds lambda_kl * compute_kl_loss(X, params[Y_idx]) to total_loss when the
+    # processor exposes compute_kl_loss (i.e., it's a KLBottleneckHeadAdapter).
+    # Inspired by TCEVAE / CEVAE; mechanically prevents Type IIIa Constant
+    # Collapse via the KL prior on the latent z (constant predictions require
+    # constant z, but KL forces z to spread). No-op when lambda_kl == 0 or
+    # when the processor doesn't expose compute_kl_loss.
+    lambda_kl: float = 0.0,
     weight_decay: float = 1e-4,
     use_spectral_constraint: bool = False,
     enable_pruning: bool = False,
@@ -5084,6 +5101,18 @@ def learn_structure(
         y_pred_variance = jnp.var(Y_recon_output)
         y_variance_reg = -lambda_y_variance * y_pred_variance
 
+        # Q3.1.D (2026-04-30): KL-bottleneck regularizer for KLBottleneckHead.
+        # Computed via processor.compute_kl_loss() when the adapter exposes it
+        # AND lambda_kl > 0. The KL prior on z mechanically prevents the
+        # constant-collapse basin (constant Y_pred would require constant z,
+        # but KL forces z to spread).
+        if lambda_kl > 0.0 and hasattr(processor, "compute_kl_loss"):
+            _wY_kl = jnp.abs(A_curr[:n_v, Y_idx]) + 0.01
+            _X_w_kl = batch_data * _wY_kl[jnp.newaxis, :]
+            kl_reg = lambda_kl * processor.compute_kl_loss(_X_w_kl, proc_params[Y_idx])
+        else:
+            kl_reg = 0.0
+
         # Q3.1.x and Q3.1.A (2026-04-29, revised 2026-04-29 evening):
         # T-sensitivity losses now use central finite differences instead of
         # nested jax.grad. The earlier nested-grad implementation had a
@@ -5455,6 +5484,7 @@ def learn_structure(
             + y_variance_reg
             + t_sens_reg
             + t_anchor_reg
+            + kl_reg
             + penalty_loss
             + penalty_loss_confound
         )

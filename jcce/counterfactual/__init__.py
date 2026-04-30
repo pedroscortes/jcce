@@ -16,6 +16,11 @@ package is importable without the importlib bypass used by the AAP scripts.
 
 from .aap import AAPCounterfactual
 from .aap_ols import AAPCounterfactualLogistic, AAPCounterfactualOLS
+from .attention_probe import (
+    compare_attention_to_A,
+    extract_dagattn_causal_graph,
+    extract_topomamba_hidden_attention,
+)
 from .causal_constraints import (
     compute_actionability_proxy,
     compute_causal_validity_score,
@@ -36,10 +41,13 @@ __all__ = [
     "AAPCounterfactualLogistic",
     "AAPCounterfactualOLS",
     "autodiff_sensitivity",
+    "compare_attention_to_A",
     "compute_actionability_proxy",
     "compute_causal_validity_score",
     "compute_plausibility_score",
     "edge_set_agreement",
+    "extract_dagattn_causal_graph",
+    "extract_topomamba_hidden_attention",
     "get_ancestors",
     "get_children",
     "get_descendants",

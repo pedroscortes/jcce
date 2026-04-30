@@ -4570,6 +4570,20 @@ def learn_structure(
     # T=1 contrast which is natural for binary treatment variables. Requires
     # T_idx_for_loss; no-op when lambda_cf == 0 or T_idx_for_loss is None.
     lambda_cf: float = 0.0,
+    # Q4.1 (2026-04-30): Wasserstein-1 representation balancing for
+    # confounder bias mitigation in CATE estimation. Inspired by Mao et al.
+    # MCINet (ICASSP 2026) — minimize sliced Wasserstein-1 distance between
+    # h(X)|T=0 and h(X)|T=1 representations to make treatment groups look
+    # statistically similar in the model's internal feature space.
+    # Mechanism: imbalanced confounders (older people more likely to have
+    # exang) produce skewed feature distributions across T=0 vs T=1; W1
+    # balancing forces h(X) representations to be exchangeable, improving
+    # counterfactual prediction. Sliced W1 = average over random projections
+    # of 1D W1 (sorted L1 distance between empirical CDFs).
+    # Requires T_idx_for_loss; binarized at median(T) per batch when T is
+    # not natively binary. No-op when lambda_wasserstein == 0.
+    lambda_wasserstein: float = 0.0,
+    n_wasserstein_projections: int = 32,
     weight_decay: float = 1e-4,
     use_spectral_constraint: bool = False,
     enable_pruning: bool = False,
@@ -5169,6 +5183,50 @@ def learn_structure(
         else:
             cf_reg = 0.0
 
+        # Q4.1 (2026-04-30): Wasserstein-1 representation balancing.
+        # Forces the input-weighted features h(X) = X * (|A[:,Y]|+0.01) to
+        # have similar distributions across T=0 and T=1 groups, mitigating
+        # confounder-induced selection bias.
+        # Sliced Wasserstein-1 (1D random projections, average) — differentiable
+        # and JIT-friendly. Handles unequal group sizes via masking up to
+        # min(n_T1, n_T0) (the rest are +∞-padded sentinels with zero diff).
+        if lambda_wasserstein > 0.0 and T_idx_for_loss is not None:
+            _t_vals = batch_data[:, T_idx_for_loss]
+            # Binarize at median(t_vals) — handles continuous T natively
+            _t_median = jnp.median(_t_vals)
+            _t_binary = _t_vals > _t_median  # (B,)
+            # Compute h(X) — the same input that goes to f_Y
+            _wY_w1 = jnp.abs(A_curr[:n_v, Y_idx]) + 0.01
+            _h_X = batch_data * _wY_w1[jnp.newaxis, :]  # (B, n_v)
+            # Sliced W1: project onto random unit vectors, average 1D W1
+            _w1_key = random.PRNGKey(0)  # fixed key — same projections each step
+            _proj_dirs = random.normal(_w1_key, (n_wasserstein_projections, n_v))
+            _proj_dirs = _proj_dirs / (
+                jnp.linalg.norm(_proj_dirs, axis=1, keepdims=True) + 1e-8
+            )
+            _h_proj = _h_X @ _proj_dirs.T  # (B, n_proj)
+            # Mask + sort: T=1 samples get pushed to the front of T1_sorted,
+            # T=0 samples to the front of T0_sorted; +∞ sentinels pad the rest.
+            _LARGE = 1e8
+            _h_T1_masked = jnp.where(_t_binary[:, None], _h_proj, _LARGE)
+            _h_T0_masked = jnp.where(_t_binary[:, None], _LARGE, _h_proj)
+            _h_T1_sorted = jnp.sort(_h_T1_masked, axis=0)
+            _h_T0_sorted = jnp.sort(_h_T0_masked, axis=0)
+            # Group sizes (traced)
+            _n_T1 = jnp.sum(_t_binary)
+            _n_T0 = jnp.sum(~_t_binary)
+            _n_min = jnp.minimum(_n_T1, _n_T0)
+            # Build a position-mask: 1 for indices < n_min, 0 otherwise (B-shaped).
+            # Indices >= n_min compare +∞ to either real or +∞ values; mask them out.
+            _idx = jnp.arange(_h_T1_sorted.shape[0])
+            _pos_mask = (_idx < _n_min).astype(jnp.float32)  # (B,)
+            _diffs = jnp.abs(_h_T1_sorted - _h_T0_sorted)  # (B, n_proj)
+            _masked_diffs = _diffs * _pos_mask[:, None]
+            _w1_per_proj = jnp.sum(_masked_diffs, axis=0) / jnp.maximum(_n_min, 1).astype(jnp.float32)
+            wasserstein_reg = lambda_wasserstein * jnp.mean(_w1_per_proj)
+        else:
+            wasserstein_reg = 0.0
+
         # Q3.1.x and Q3.1.A (2026-04-29, revised 2026-04-29 evening):
         # T-sensitivity losses now use central finite differences instead of
         # nested jax.grad. The earlier nested-grad implementation had a
@@ -5542,6 +5600,7 @@ def learn_structure(
             + t_anchor_reg
             + kl_reg
             + cf_reg
+            + wasserstein_reg
             + penalty_loss
             + penalty_loss_confound
         )

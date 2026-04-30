@@ -404,6 +404,14 @@ class TopoMambaProcessor(nn.Module):
     expand: int = 2
     n_layers: int = 1
     enable_gating: bool = False
+    # Q3.1.F (2026-04-30): Direction 1 — Treatment-Conditioned SSM.
+    # When t_idx is set (>= 0), the input projection is modulated by a learned
+    # function of z[:, t_idx]. Mechanism: each batch sample's projected input
+    # is scaled by its T value, so the SSM's selective parameters (Δ, B, C)
+    # depend on T per sample. The model cannot route around T because T is
+    # in the input-projection equation, not just one of the input features.
+    # No-op when t_idx is None or t_idx < 0.
+    t_idx: Optional[int] = None
 
     @nn.compact
     def __call__(
@@ -457,6 +465,20 @@ class TopoMambaProcessor(nn.Module):
         # Step 2: Project to d_model.
         z_expanded = z_sorted[..., None]  # (B, N, 1)
         z_projected = nn.Dense(self.d_model, name="input_projection")(z_expanded)
+
+        # Q3.1.F (2026-04-30): Direction 1 — Treatment-Conditioned input
+        # projection. When t_idx is configured, modulate the projected input
+        # by a learned function of z[:, t_idx]. Each batch sample gets a
+        # T-dependent scaling factor, forcing the SSM's selective parameters
+        # to depend on T per sample.
+        if self.t_idx is not None and self.t_idx >= 0:
+            t_values = z[:, self.t_idx:self.t_idx + 1]  # (B, 1) — pre-sort z
+            t_modulation = nn.Dense(self.d_model, name="t_modulation")(t_values)
+            # Multiplicative gate: 1.0 + tanh(t_mod) → keeps modulation
+            # bounded ([0, 2] effective range) and reduces to no-op when
+            # t_modulation = 0 at init.
+            t_gate = 1.0 + jnp.tanh(t_modulation)  # (B, d_model)
+            z_projected = z_projected * t_gate[:, None, :]  # (B, N, d_model)
 
         # Step 3: Apply Mamba — either gated (Mechanism 2) or standard.
         if self.enable_gating and A is not None:

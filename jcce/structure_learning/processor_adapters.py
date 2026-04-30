@@ -9,7 +9,7 @@ This allows us to reuse existing tested implementations (Mamba, ELM, GNN)
 without reimplementing them from scratch.
 """
 
-from typing import Dict
+from typing import Dict, Optional
 
 import jax
 import jax.numpy as jnp
@@ -1655,6 +1655,7 @@ class TopoMambaAdapter:
         sinkhorn_temperature: float = 0.1,
         sinkhorn_n_iters: int = 10,
         enable_gating: bool = False,
+        t_idx: Optional[int] = None,
     ):
         if sort_mode not in self._SORT_MODES:
             raise ValueError(
@@ -1671,6 +1672,11 @@ class TopoMambaAdapter:
         self.sinkhorn_temperature = sinkhorn_temperature
         self.sinkhorn_n_iters = sinkhorn_n_iters
         self.enable_gating = enable_gating
+        # Q3.1.F (2026-04-30): T-conditioned input projection (Direction 1).
+        # When t_idx is set (>= 0), TopoMamba modulates the projected input by
+        # a learned function of z[:, t_idx]. Forces SSM selective params to
+        # depend on T per batch sample.
+        self.t_idx = t_idx
 
         self.model = TopoMambaBase(
             d_model=d_model,
@@ -1679,6 +1685,7 @@ class TopoMambaAdapter:
             expand=expand,
             n_layers=1,
             enable_gating=enable_gating,
+            t_idx=t_idx,
         )
 
 

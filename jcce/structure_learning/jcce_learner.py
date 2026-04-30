@@ -237,6 +237,10 @@ def create_processor(processor_type: str, key: random.PRNGKey, **kwargs):
             expand=kwargs.get("expand", 2),
             key=key,
             n_features=kwargs.get("n_features", None),
+            sort_mode=kwargs.get("sort_mode", "topological"),
+            sinkhorn_temperature=kwargs.get("sinkhorn_temperature", 0.1),
+            enable_gating=kwargs.get("enable_gating", False),
+            t_idx=kwargs.get("t_idx", None),
         )
 
     elif processor_type == "gnn":

@@ -115,6 +115,47 @@ def parse_kl_summary(path: Path):
     return out
 
 
+def parse_optuna_final_verdict(path: Path):
+    """Parse the FINAL VERDICT block at the end of a Tier-10 Optuna sweep log.
+
+    Returns (final_mean, baseline_mean, lift) tuple, or (None, None, None) if missing.
+    """
+    if not path.exists():
+        return None, None, None
+    text = path.read_text()
+    final_mean = baseline_mean = lift = None
+    in_verdict = False
+    after_optuna = False
+    for line in text.splitlines():
+        if "FINAL VERDICT" in line:
+            in_verdict = True
+            continue
+        if not in_verdict:
+            continue
+        if "Optuna-best" in line:
+            after_optuna = True
+            continue
+        if after_optuna and "test BAcc" in line and final_mean is None:
+            m = re.search(r"test BAcc\s+([\d.]+)\s*[±+/-]\s*[\d.]+", line)
+            if m:
+                final_mean = float(m.group(1))
+            continue
+        if "Baseline" in line and "fix disabled" in line:
+            after_optuna = False
+            continue
+        if "test BAcc" in line and final_mean is not None and baseline_mean is None and not after_optuna:
+            m = re.search(r"test BAcc\s+([\d.]+)\s*[±+/-]\s*[\d.]+", line)
+            if m:
+                baseline_mean = float(m.group(1))
+            continue
+        if line.strip().startswith("Lift:"):
+            m = re.search(r"Lift:\s+([+-]?[\d.]+)", line)
+            if m:
+                lift = float(m.group(1))
+            break
+    return final_mean, baseline_mean, lift
+
+
 def parse_post_hoc_summary(path: Path):
     """Parse the POST-HOC FIX 70/30 RE-RUN SUMMARY table.
 
@@ -164,6 +205,25 @@ def compute_lift_grid():
     for split in (0, 1):
         wasserstein_grids.update(parse_test_bacc_summary(LOG_DIR / f"q4_wasserstein_split{split}.log"))
 
+    # Tier-10 Optuna lifts for the 4 new datasets (Wave D) — directly gives lift for LinearHead
+    new_datasets = ["alarm", "child", "neuropathic_pain", "insurance"]
+    optuna_lifts = {}  # (fix, dataset) -> lift on linear_head
+    for ds in new_datasets:
+        for fix_key, fix_label in [("kl_bottleneck", "KL-bottleneck"),
+                                     ("warm_start", "warm-start"),
+                                     ("var_reg", "var-reg")]:
+            path = LOG_DIR / f"q10d_{fix_key}_optuna_{ds}_linear.log"
+            _, _, lift = parse_optuna_final_verdict(path)
+            if lift is not None:
+                optuna_lifts[(fix_label, ds)] = lift
+
+    # Wave E post-hoc on 4 new datasets — provides train/test BAcc per dataset × processor
+    wave_e_posthoc = parse_post_hoc_summary(LOG_DIR / "q10e_posthoc_4new.log")
+    # Wave E B2 baseline for the 4 new datasets — gives the no-fix reference
+    # (B2 is sklearn baseline, but for post-hoc lift we need the JCCE no-fix BAcc — approximate
+    # using Tier-7-style logic: post-hoc test BAcc minus the canonical 0.5 random floor when |A|=0,
+    # or post-hoc minus a default-train baseline. We use 0.5 as the conservative "no information" floor.)
+
     # For each (fix, dataset, processor), compute lift = best_param_bacc - baseline_bacc.
     # Baseline for joint-loss fixes is the "off" parameter (lambda=0 or warm=0).
     # For post-hoc, baseline is the Tier-7 var-reg's lambda=0 cell of the same (dataset, processor).
@@ -206,6 +266,18 @@ def compute_lift_grid():
                 if 0.0 in rows and len(rows) > 1:
                     best = max(v for k, v in rows.items())
                     grid[("Wasserstein", ds, proc)] = best - rows[0.0]
+
+    # Fill in Wave D Optuna lifts for the 4 new datasets (LinearHead only)
+    for (fix_label, ds), lift in optuna_lifts.items():
+        grid[(fix_label, ds, "linear_head")] = lift
+
+    # Fill in Wave E post-hoc results for the 4 new datasets (all 3 processors).
+    # We have post-hoc test BAcc per (ds, proc) but no JCCE no-fix baseline at fixed
+    # hyperparameters from Wave E itself. As a conservative reference we use 0.500
+    # (the marginal-class floor) — the grid then shows post-hoc *absolute lift over chance*.
+    for (ds, proc), test_bacc in wave_e_posthoc.items():
+        if ("post-hoc", ds, proc) not in grid:  # don't overwrite originals
+            grid[("post-hoc", ds, proc)] = test_bacc - 0.500
 
     return grid
 

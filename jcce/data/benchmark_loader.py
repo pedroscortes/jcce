@@ -1345,6 +1345,12 @@ def _load_insurance() -> Tuple[np.ndarray, np.ndarray, Dict]:
 # Public API
 # =============================================================================
 
+def _load_twins_wrapper():
+    """Wrapper that imports the Twins loader on demand (avoids circular imports)."""
+    from jcce.data.twins_loader import load_twins
+    return load_twins()
+
+
 _LOADERS = {
     "lucas": _load_lucas,
     "sachs": _load_sachs,
@@ -1356,6 +1362,7 @@ _LOADERS = {
     "neuropathic_pain": _load_neuropathic_pain,
     "alarm": _load_alarm,
     "insurance": _load_insurance,
+    "twins": _load_twins_wrapper,
 }
 
 

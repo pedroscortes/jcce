@@ -96,8 +96,12 @@ def main():
         "lifts to $0.77$. CASTLE \\cite{kyono2020} ($d{+}1$ subnet decoupling) escapes "
         "JPC on 6 of 7 datasets but collapses on Sachs ($60\\%$ of seeds, BAcc $0.63$). "
         "DECI \\cite{geffner2024} (variational graph + spline noise) escapes on all 7, "
-        "reaching BAcc $0.79$ on the same cell — beating JCCE+post-hoc.",
-        y=1.05, fontsize=10,
+        "reaching BAcc $0.79$ on the same cell.\n"
+        "Pairwise Fisher exact tests on 35-cell-per-framework totals with Holm-Bonferroni at "
+        "$\\alpha{=}0.05$: JCCE vs DECI $p{=}1.8 \\times 10^{-20}$ (reject $H_0$), "
+        "JCCE vs CASTLE $p{=}1.5 \\times 10^{-16}$ (reject), CASTLE vs DECI $p{=}0.24$ (fail to "
+        "reject — direction-consistent but underpowered at $n{=}5$ seeds).",
+        y=1.05, fontsize=9,
     )
     fig.tight_layout()
 

@@ -6101,12 +6101,27 @@ def learn_structure(
                 else:
                     cos_re, cos_ce = 0.0, 0.0
 
+                # Run 11 (Tier-27, sealed prereg 2026-05-04 commit a6e5311):
+                # D2 magnitude ratio + D3 Y-column overlap on A.
+                g_r_norm = float(jnp.linalg.norm(g_r))
+                g_c_norm = float(jnp.linalg.norm(g_c))
+                _A_shape = A_cur.shape
+                _g_r_A = g_r.reshape(_A_shape)
+                _g_c_A = g_c.reshape(_A_shape)
+                g_r_Y_norm = float(jnp.linalg.norm(_g_r_A[:, Y_idx]))
+                g_c_Y_norm = float(jnp.linalg.norm(_g_c_A[:, Y_idx]))
+
                 gradient_diagnostics.append(
                     {
                         "iter": iter,
                         "cos_recon_class": cos_rc,
                         "cos_recon_effect": cos_re,
                         "cos_class_effect": cos_ce,
+                        "g_recon_norm": g_r_norm,
+                        "g_class_norm": g_c_norm,
+                        "magratio": g_r_norm / (g_c_norm + 1e-12),
+                        "g_recon_Y_norm": g_r_Y_norm,
+                        "g_class_Y_norm": g_c_Y_norm,
                     }
                 )
                 if verbose >= 2:

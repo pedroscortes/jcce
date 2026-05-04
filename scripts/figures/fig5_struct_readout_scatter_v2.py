@@ -67,12 +67,15 @@ def main():
     ax.set_ylabel("Per-seed test BAcc", fontsize=10)
     ax.set_xlim(-0.6, 1.0)
     ax.set_ylim(0.30, 1.00)
-    ax.legend(fontsize=8, ncol=3, loc="lower right", frameon=True,
-               handletextpad=0.3, columnspacing=0.6)
+    # Legend below the axes so it doesn't overlap data
+    ax.legend(fontsize=8, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.13),
+               frameon=False, handletextpad=0.3, columnspacing=1.0)
 
+    # Green region annotation moved above the plot area
     ax.axvspan(0.0, 1.0, alpha=0.06, color="green")
-    ax.text(0.5, 0.96, "post-hoc effective region", fontsize=9, ha="center",
-             color="green", style="italic", alpha=0.85)
+    ax.text(0.5, 1.01, "post-hoc effective region (struct_corr > 0)",
+             fontsize=8, ha="center", transform=ax.get_xaxis_transform(),
+             color="green", style="italic", alpha=0.9)
 
     fig.suptitle(
         "Figure 5. Structure-vs-readout decoupling on the Tier-21 redesigned synthetic\n"

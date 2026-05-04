@@ -229,13 +229,9 @@ def main():
     ax_right.set_ylabel(r"Pearson $\rho$(attention, |A[:, Y]|)", fontsize=10)
     ax_right.set_ylim(-0.4, 1.1)
     ax_right.set_title("(b) Attention vs |A| correlation, all 6 datasets", fontsize=10)
-    ax_right.legend(fontsize=8, frameon=True, loc="lower center", ncol=1)
-
-    fig.suptitle(
-        "Figure 2. Attention probes — TopoMamba's hidden attention aligns with |A| (Pearson +0.99); "
-        "DAG-Attention's dense layer is uniform (~0).",
-        y=1.04, fontsize=10,
-    )
+    # Legend below the right panel — out of the data area
+    ax_right.legend(fontsize=8, frameon=False, loc="upper center",
+                     bbox_to_anchor=(0.5, -0.18), ncol=3)
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig2_attention_probes.pdf"

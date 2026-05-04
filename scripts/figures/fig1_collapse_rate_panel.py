@@ -1,16 +1,20 @@
-"""Figure 1 — Joint-loss posterior collapse (JPC) rate panel: real vs synthetic.
+"""Figure 1 — JPC collapse rate panel: real benchmarks (per-processor) +
+cross-framework triangulation (JCCE / CASTLE / DECI).
 
-Visualizes the universality finding: collapse rate (fraction of seeds with
-|df_Y/dT| < 1e-3) on (i) real benchmarks at the no-fix baseline configuration
-vs (ii) synthetic ER-SCM data across configurations. Tells the "mechanism-driven,
-not data-driven" story in one frame.
+Two panels:
+- Left: collapse rate on 6 real benchmarks × 3 JCCE processors at fixed-default
+  hyperparameters (Tier-7, |df_Y/dT| < 1e-3 threshold).
+- Right: cross-framework collapse-rate summary on the 7-dataset cross-framework
+  suite (Heart, LUCAS, Sachs, Alarm, Child, Insurance, Neuropathic Pain) —
+  JCCE, CASTLE [Kyono et al. 2020], DECI [Geffner et al. 2024]. This replaces
+  the deprecated Tier-9 synthetic panel which was at noise floor (Tier-20 LogReg
+  ceiling 0.52); cross-framework collapse rates are the new headline §6.III
+  finding.
 
 Data sources:
 - Real: Tier-7 variance-reg log at lam=0 cells (q31_varreg_70_30_split[01].log)
-        — per-seed |df_Y/dT| at lam_var=0 (no fix) for 6 datasets × 3 procs
-- Synthetic: Tier-9 SCM logs (scm_linear_default.log + scm_linear_lownoise.log
-        + scm_nonlinear.log + scm_linear_n10k.log) — explicit "collapsed" flag
-        per (config, d, processor, seed)
+        — per-seed |df_Y/dT| at lam_var=0 (no fix) for 6 datasets × 3 procs.
+- Cross-framework: hardcoded from §6.III tables (Tier-15 CASTLE, Tier-19 DECI).
 
 Output: docs/article/figures/fig1_jpc_collapse_rate.{pdf,png}
 """
@@ -138,29 +142,27 @@ def main():
         for (ds, proc), values in per_seed.items():
             real_data[(ds, proc)] = collapse_rate(values)
 
-    # --- Synthetic: from Tier-9 SCM logs ---
-    scm_files = {
-        "default (n=2000, noise=0.5)": "scm_linear_default.log",
-        "low-noise (noise=0.1)":         "scm_linear_lownoise.log",
-        "nonlinear MLP-SCM":             "scm_nonlinear.log",
-        "data-rich (n=10000)":           "scm_linear_n10k.log",
+    # --- Cross-framework collapse rates (from §6.III tables) ---
+    # JCCE: 7/7 datasets collapse on all seeds = 100%
+    # CASTLE: 6/7 escape; only Sachs collapses at 60% seed-level → mean 8.6%
+    # DECI: 0/7 collapse on all 35 cells = 0%
+    crossfw_datasets = ["Heart", "LUCAS", "Sachs", "Alarm", "Child", "Insurance", "NeurPain"]
+    crossfw = {
+        "JCCE":   [1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00],
+        "CASTLE": [0.00, 0.00, 0.60, 0.00, 0.00, 0.00, 0.00],
+        "DECI":   [0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00],
     }
-    synthetic_data = {}  # (config, d, proc) -> collapse_rate
-    for cfg_label, fname in scm_files.items():
-        per_seed = parse_scm_per_seed(LOG_DIR / fname)
-        for (d, proc), flags in per_seed.items():
-            # flags are already booleans; rate = fraction of True
-            synthetic_data[(cfg_label, d, proc)] = float(np.mean(flags)) if flags else float("nan")
 
     # --- Plot ---
-    fig, (ax_real, ax_syn) = plt.subplots(
-        1, 2, figsize=(11, 4), gridspec_kw={"width_ratios": [1.0, 1.4]}
+    fig, (ax_real, ax_xfw) = plt.subplots(
+        1, 2, figsize=(12, 4.6), gridspec_kw={"width_ratios": [1.0, 1.2]}
     )
     proc_colors = {
         "dag_transformer": "#1f77b4",
         "linear_head":     "#ff7f0e",
         "mlp_head":        "#2ca02c",
     }
+    fw_colors = {"JCCE": "#bf3636", "CASTLE": "#d09642", "DECI": "#1f6fb3"}
 
     # Real panel — grouped bars per dataset
     bar_w = 0.25
@@ -168,51 +170,46 @@ def main():
     for i, proc in enumerate(PROCESSORS):
         rates = [real_data.get((ds, proc), float("nan")) for ds in DATASETS_REAL]
         offset = (i - 1) * bar_w
-        bars = ax_real.bar(x_real + offset, rates, bar_w,
-                            label=PROC_SHORT[proc], color=proc_colors[proc])
+        ax_real.bar(x_real + offset, rates, bar_w,
+                     label=PROC_SHORT[proc], color=proc_colors[proc], alpha=0.9)
         for x, r in zip(x_real + offset, rates):
-            if not np.isnan(r):
-                ax_real.text(x, r + 0.02, f"{r:.0%}", ha="center", fontsize=7)
+            if not np.isnan(r) and r > 0.05:
+                ax_real.text(x, r + 0.025, f"{r:.0%}", ha="center", fontsize=6.5,
+                              rotation=0)
     ax_real.set_xticks(x_real)
-    ax_real.set_xticklabels(DATASETS_REAL_SHORT, rotation=20, ha="right", fontsize=9)
+    ax_real.set_xticklabels(DATASETS_REAL_SHORT, rotation=15, ha="right", fontsize=9)
     ax_real.set_ylabel("JPC collapse rate", fontsize=10)
-    ax_real.set_ylim(0, 1.10)
-    ax_real.set_title("(a) Real benchmarks", fontsize=10)
+    ax_real.set_ylim(0, 1.18)
+    ax_real.set_title("(a) JCCE — 6 real benchmarks × 3 processors", fontsize=10)
     ax_real.axhline(0.5, color="gray", linestyle=":", linewidth=0.5)
-    ax_real.legend(fontsize=8, loc="upper right", frameon=True)
+    ax_real.spines["top"].set_visible(False)
+    ax_real.spines["right"].set_visible(False)
+    # Processor legend on left axes only — outside top
+    ax_real.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.20),
+                    ncol=3, frameon=False)
 
-    # Synthetic panel — grouped by config × processor
-    cfg_labels = list(scm_files.keys())
-    n_cfg = len(cfg_labels)
-    x_syn = np.arange(n_cfg)
-    for i, proc in enumerate(PROCESSORS):
-        rates = []
-        for cfg in cfg_labels:
-            # If config has multiple d values, take mean rate
-            cfg_rates = [v for (c, d, p), v in synthetic_data.items()
-                         if c == cfg and p == proc]
-            rates.append(float(np.mean(cfg_rates)) if cfg_rates else float("nan"))
+    # Cross-framework panel — grouped bars per dataset × framework
+    x_xfw = np.arange(len(crossfw_datasets))
+    for i, fw in enumerate(["JCCE", "CASTLE", "DECI"]):
         offset = (i - 1) * bar_w
-        ax_syn.bar(x_syn + offset, rates, bar_w,
-                    label=PROC_SHORT[proc], color=proc_colors[proc])
-        for x, r in zip(x_syn + offset, rates):
-            if not np.isnan(r):
-                ax_syn.text(x, r + 0.02, f"{r:.0%}", ha="center", fontsize=7)
-    ax_syn.set_xticks(x_syn)
-    ax_syn.set_xticklabels(cfg_labels, rotation=15, ha="right", fontsize=8)
-    ax_syn.set_ylim(0, 1.10)
-    ax_syn.set_title("(b) Synthetic ER-SCM (4 configurations, mean across d)", fontsize=10)
-    ax_syn.axhline(0.5, color="gray", linestyle=":", linewidth=0.5)
+        ax_xfw.bar(x_xfw + offset, crossfw[fw], bar_w,
+                    label=fw, color=fw_colors[fw], alpha=0.9)
+    # Annotate aggregate rate per framework above panel
+    for i, fw in enumerate(["JCCE", "CASTLE", "DECI"]):
+        mean_rate = float(np.mean(crossfw[fw]))
+        ax_xfw.text(0.02 + i * 0.33, 1.10, f"{fw}: {mean_rate*100:.0f}% overall",
+                     transform=ax_xfw.transAxes, fontsize=9, fontweight="bold",
+                     color=fw_colors[fw], ha="left", va="center")
+    ax_xfw.set_xticks(x_xfw)
+    ax_xfw.set_xticklabels(crossfw_datasets, rotation=15, ha="right", fontsize=9)
+    ax_xfw.set_ylim(0, 1.18)
+    ax_xfw.set_title("(b) Cross-framework — JCCE → CASTLE → DECI on 7 datasets", fontsize=10)
+    ax_xfw.axhline(0.5, color="gray", linestyle=":", linewidth=0.5)
+    ax_xfw.spines["top"].set_visible(False)
+    ax_xfw.spines["right"].set_visible(False)
+    ax_xfw.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.20),
+                    ncol=3, frameon=False)
 
-    fig.suptitle(
-        "Figure 1. JPC collapse rate: real benchmarks (40–60%) vs synthetic ER-SCM (100%).",
-        y=1.02, fontsize=11,
-    )
-    fig.text(0.5, -0.05,
-             "Collapse defined as $|\\partial f_Y/\\partial T| < 10^{-3}$ on the trained model. "
-             "Real benchmark rates from Tier-7 variance-reg sweep at $\\lambda$=0 (no-fix baseline). "
-             "Synthetic from Tier-9 extended ER-SCM sweep.",
-             ha="center", fontsize=8, style="italic")
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig1_jpc_collapse_rate.pdf"
@@ -230,15 +227,13 @@ def main():
             r = real_data.get((ds, proc), float("nan"))
             row += f"  {PROC_SHORT[proc]}: {r*100:5.1f}%" if not np.isnan(r) else f"  {PROC_SHORT[proc]}: ----- "
         print(row)
-    print("\nSynthetic — JPC collapse rate per config × processor:")
-    for cfg in cfg_labels:
-        for proc in PROCESSORS:
-            cfg_rates = [v for (c, d, p), v in synthetic_data.items()
-                         if c == cfg and p == proc]
-            if cfg_rates:
-                print(f"  {cfg:>30s}  {PROC_SHORT[proc]:>6s}: "
-                      f"mean={np.mean(cfg_rates)*100:5.1f}% "
-                      f"(d-cells={len(cfg_rates)})")
+    print("\nCross-framework collapse rates (right panel):")
+    for fw in ["JCCE", "CASTLE", "DECI"]:
+        rates = crossfw[fw]
+        n_collapsed = sum(1 for r in rates if r > 0)
+        mean_rate = float(np.mean(rates))
+        print(f"  {fw:>8s}: {n_collapsed}/{len(rates)} datasets affected, "
+              f"mean rate {mean_rate*100:5.1f}%")
 
 
 if __name__ == "__main__":

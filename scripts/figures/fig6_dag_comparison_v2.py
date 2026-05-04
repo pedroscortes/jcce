@@ -92,7 +92,7 @@ def main():
             learned_A[(proc, fix)] = A
 
     fig, axes = plt.subplots(3, 4, figsize=(14, 9.5),
-                              gridspec_kw={"width_ratios": [1, 1, 1, 0.06]})
+                              gridspec_kw={"width_ratios": [1, 1, 1, 0.10]})
     all_vals = np.concatenate([A.flatten() for A in learned_A.values()])
     vmax = max(0.05, float(np.percentile(all_vals, 95)))
     Y_col_idx = n_features
@@ -125,8 +125,10 @@ def main():
         ax.bar(x, A_Y_true_vec, color="#444", alpha=0.85)
         ax.set_xticks(x)
         ax.set_xticklabels([f"x{i}" for i in range(len(A_Y_true_vec))], fontsize=7)
+        # Explicit y-label on every column (not just first) so panel reads cleanly.
         ax.set_ylabel("|A_true[:, Y]|", fontsize=8)
-        ax.set_title(f"Tier-21 ground-truth Y-parents (seed={SEED})", fontsize=9)
+        ax.tick_params(axis="y", labelsize=7)
+        ax.set_title(f"Tier-21 ground-truth Y-parents (seed={SEED})", fontsize=8)
         for spine in ["top", "right"]:
             ax.spines[spine].set_visible(False)
 

@@ -49,19 +49,22 @@ def main():
         if cr > 0:
             # Hatch the bar based on collapse fraction
             hatch_density = "////" if cr >= 0.5 else "//"
-            label_y = bar.get_height() + 0.018
             ax.bar(bar.get_x(), bar.get_height(), bar.get_width(),
                     color="none", edgecolor="black", linewidth=0,
                     hatch=hatch_density, alpha=0.6, align="edge")
-            ax.text(bar.get_x() + bar.get_width() / 2, label_y,
-                     f"{int(cr * 100)}% seeds\ncollapse",
-                     ha="center", fontsize=8, color="#990000", style="italic")
+            # Place collapse-rate annotation INSIDE the bar (so it doesn't
+            # overlap legend/error bars stacked on top)
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() / 2,
+                     f"{int(cr * 100)}%\nseeds\ncollapse",
+                     ha="center", va="center", fontsize=8.5, color="white",
+                     fontweight="bold", style="italic")
         else:
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.018,
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() / 2,
                      "0% collapse",
-                     ha="center", fontsize=8, color="#1a4d2e", style="italic")
+                     ha="center", va="center", fontsize=8.5, color="white",
+                     fontweight="bold", style="italic")
 
-    # Reference lines
+    # Reference lines (legend will be placed below the axes — no overlap)
     ax.axhline(B2_ref, color="black", linestyle="--", linewidth=1.0, alpha=0.6,
                 label=f"B2 sklearn ceiling ({B2_ref})")
     ax.axhline(prior, color="gray", linestyle=":", linewidth=0.8, alpha=0.7,
@@ -76,18 +79,20 @@ def main():
     ax.set_xticklabels(methods, fontsize=10)
     ax.set_ylabel("Test BAcc on Sachs (5 seeds)", fontsize=11)
     ax.set_ylim(0, 1.0)
-    ax.legend(loc="upper left", fontsize=9, frameon=True)
+    # Reference-line legend below the axes — no overlap with bars/labels
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=2,
+               fontsize=9, frameon=False)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", linestyle=":", alpha=0.4)
 
-    # Trajectory arrow
+    # Trajectory arrow at the very top of the panel
     ax.annotate(
         "",
-        xy=(3.0, 0.93), xytext=(0.0, 0.93),
+        xy=(3.0, 0.96), xytext=(0.0, 0.96),
         arrowprops=dict(arrowstyle="->", color="#444", lw=1.5),
     )
-    ax.text(1.5, 0.96, "architectural sophistication →",
+    ax.text(1.5, 0.985, "architectural sophistication →",
              ha="center", fontsize=10, style="italic", color="#444")
 
     fig.suptitle(

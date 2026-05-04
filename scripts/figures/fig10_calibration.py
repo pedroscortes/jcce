@@ -42,6 +42,7 @@ def load_cell(dataset: str, processor: str, seed: int) -> dict:
 def main() -> None:
     fig, axes = plt.subplots(2, 3, figsize=(13, 7))
 
+    handles = None
     for col, (ds, proc, label) in enumerate(CELLS):
         d = load_cell(ds, proc, SEED)
         y = d["Y_te"]
@@ -51,38 +52,45 @@ def main() -> None:
         # Top: predicted-probability histogram, JCCE vs post-hoc, split by true class.
         ax = axes[0, col]
         bins = np.linspace(0, 1, 26)
-        ax.hist(
+        h0 = ax.hist(
             p_jcce[y == 0], bins=bins, alpha=0.5, color="#4477AA",
-            label="JCCE: y=0", density=True,
+            label="true y = 0", density=True,
         )
-        ax.hist(
+        h1 = ax.hist(
             p_jcce[y == 1], bins=bins, alpha=0.5, color="#BB5566",
-            label="JCCE: y=1", density=True,
+            label="true y = 1", density=True,
         )
         ax.set_xlabel("Predicted P(y=1) — JCCE no-fix", fontsize=9)
-        ax.set_ylabel("Density", fontsize=9)
+        if col == 0:
+            ax.set_ylabel("Density", fontsize=9)
         ax.set_title(label, fontsize=10)
         ax.axvline(0.5, color="gray", linestyle=":", linewidth=0.7)
-        ax.legend(loc="upper right", fontsize=8, frameon=False)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
+        if handles is None:
+            handles = [h0[2][0], h1[2][0]]
 
-        # Bottom: same histogram for post-hoc, plus ROC curve overlay
+        # Bottom: same histogram for post-hoc fix
         ax = axes[1, col]
         ax.hist(
             p_phoc[y == 0], bins=bins, alpha=0.5, color="#4477AA",
-            label="post-hoc: y=0", density=True,
+            density=True,
         )
         ax.hist(
             p_phoc[y == 1], bins=bins, alpha=0.5, color="#BB5566",
-            label="post-hoc: y=1", density=True,
+            density=True,
         )
         ax.set_xlabel("Predicted P(y=1) — post-hoc fix", fontsize=9)
-        ax.set_ylabel("Density", fontsize=9)
+        if col == 0:
+            ax.set_ylabel("Density", fontsize=9)
         ax.axvline(0.5, color="gray", linestyle=":", linewidth=0.7)
-        ax.legend(loc="upper right", fontsize=8, frameon=False)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
+
+    # Single shared legend at top of figure
+    fig.legend(handles=handles, labels=["true y = 0", "true y = 1"],
+                 loc="upper center", bbox_to_anchor=(0.5, 1.02),
+                 ncol=2, fontsize=10, frameon=False)
 
     fig.suptitle(
         "Figure 10. Predicted-probability distributions on the test split, JCCE no-fix (top) vs "

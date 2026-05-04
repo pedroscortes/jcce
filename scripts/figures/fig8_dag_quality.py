@@ -96,10 +96,19 @@ def main() -> None:
     for i, proc in enumerate(PROCESSORS):
         vals = [rows[(ds, proc)]["f1"][0] for ds in BN_DATASETS]
         errs = [rows[(ds, proc)]["f1"][1] for ds in BN_DATASETS]
-        ax2.bar(
+        bars = ax2.bar(
             x + (i - 1) * w, vals, w, yerr=errs, capsize=3,
             color=PROC_COLOR[proc], label=PROC_LABEL[proc], alpha=0.85,
         )
+        # Annotate F1=0 bars explicitly so they read as "zero recovery"
+        # rather than as missing data. NOTEARS-family acyclicity at small d
+        # (Asia=8, LUCAS=11) is documented to give near-zero F1 (Reisach
+        # et al. 2021); we surface that here.
+        for j, (v, ds) in enumerate(zip(vals, BN_DATASETS)):
+            if v < 0.005:
+                ax2.text(x[j] + (i - 1) * w, 0.012, "0",
+                          ha="center", fontsize=7, color=PROC_COLOR[proc],
+                          fontweight="bold")
     ax2.set_xticks(x)
     ax2.set_xticklabels([DS_LABEL[d] for d in BN_DATASETS])
     ax2.set_ylabel("F1 vs ground-truth DAG (higher is better)", fontsize=10)
@@ -107,6 +116,10 @@ def main() -> None:
     ax2.set_ylim(0, max(0.3, ax2.get_ylim()[1]))
     ax2.spines["top"].set_visible(False)
     ax2.spines["right"].set_visible(False)
+    # Footnote on the small-d F1=0 phenomenon
+    ax2.text(0.02, 0.95, "F1=0 on Asia/LUCAS: NOTEARS-family\nat small d known to recover ~0 edges\n(Reisach et al. 2021)",
+              transform=ax2.transAxes, fontsize=7, va="top",
+              color="gray", style="italic")
     ax2.grid(True, axis="y", alpha=0.3, linestyle=":")
 
     fig.suptitle(

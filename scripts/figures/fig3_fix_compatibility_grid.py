@@ -40,7 +40,10 @@ DATASETS_SHORT = {"heart_disease": "Heart", "lucas": "LUCAS", "sachs": "Sachs",
 PROCESSORS = ["dag_transformer", "linear_head", "mlp_head"]
 PROC_SHORT = {"dag_transformer": "DAG-Tr", "linear_head": "Linear", "mlp_head": "MLP"}
 
-FIX_LABELS = ["post-hoc", "warm-start", "var-reg", "KL-bottleneck", "Wasserstein"]
+FIX_LABELS = ["post-hoc", "warm-start", "var-reg"]
+# KL-bottleneck and Wasserstein dropped from the main figure — both are
+# conditional fixes only tested on dataset subsets; the §7 ladder text
+# documents their applicability without committing to a full grid here.
 
 
 def parse_test_bacc_summary(path: Path):
@@ -333,10 +336,10 @@ def main():
     ax.set_yticks(np.arange(len(FIX_LABELS)))
     ax.set_yticklabels(FIX_LABELS, fontsize=10)
     ax.set_xlabel("Dataset / Processor", fontsize=10)
-    ax.set_ylabel("Fix variant (§7)", fontsize=10)
-    ax.set_title("Figure 3. Fix compatibility grid: held-out test BAcc lift over no-fix baseline\n"
-                  "(green = fix works, red = fix hurts/no help, '—' = not yet measured)",
-                  fontsize=11)
+    ax.set_ylabel("Fix variant", fontsize=10)
+    ax.set_title("Figure 3. Fix compatibility — held-out test BAcc lift over no-fix baseline\n"
+                  "(green = fix lifts BAcc, red = no help, '—' = not measured at present)",
+                  fontsize=10)
 
     cbar = plt.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
     cbar.set_label("Test BAcc lift", fontsize=9)

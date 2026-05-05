@@ -344,9 +344,7 @@ def main():
     ax.set_yticklabels(FIX_LABELS, fontsize=10)
     ax.set_xlabel("Dataset / Processor", fontsize=10)
     ax.set_ylabel("Fix variant", fontsize=10)
-    ax.set_title("Figure 3. Fix compatibility — held-out test BAcc lift over no-fix baseline\n"
-                  "(green = fix lifts BAcc, red = no help, '—' = not measured at present)",
-                  fontsize=10)
+    # In-figure title removed — caption goes in the LaTeX caption.
 
     cbar = plt.colorbar(im, ax=ax, fraction=0.025, pad=0.02)
     cbar.set_label("Test BAcc lift", fontsize=9)

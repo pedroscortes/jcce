@@ -191,14 +191,21 @@ def compute_lift_grid():
     posthoc = {}
     for split in (0, 1):
         posthoc.update(parse_post_hoc_summary(LOG_DIR / f"q05b_posthoc_70_30_split{split}.log"))
+    # Tier-37 fill: post-hoc on dag_transformer for the 3 new datasets that
+    # were missing from q05b (alarm, child, neuropathic_pain).
+    posthoc.update(parse_post_hoc_summary(LOG_DIR / "q37_posthoc_4new_dagtr.log"))
 
     warmstart_grids = {}
     for split in (0, 1):
         warmstart_grids.update(parse_test_bacc_summary(LOG_DIR / f"q31b_warmstart_70_30_split{split}.log"))
+    # Tier-37 fill: warm-start on (dag_tr + mlp) for the 4 new datasets.
+    warmstart_grids.update(parse_test_bacc_summary(LOG_DIR / "q37_warmstart_4new.log"))
 
     varreg_grids = {}
     for split in (0, 1):
         varreg_grids.update(parse_test_bacc_summary(LOG_DIR / f"q31_varreg_70_30_split{split}.log"))
+    # Tier-37 fill: var-reg on (dag_tr + mlp) for the 4 new datasets.
+    varreg_grids.update(parse_test_bacc_summary(LOG_DIR / "q37_varreg_4new.log"))
 
     kl_grids = {}  # dict[dataset] -> dict[(lam_kl, warm)] -> bacc (linear_head only)
     for split in (0, 1):

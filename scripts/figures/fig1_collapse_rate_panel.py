@@ -172,10 +172,6 @@ def main():
         offset = (i - 1) * bar_w
         ax_real.bar(x_real + offset, rates, bar_w,
                      label=PROC_SHORT[proc], color=proc_colors[proc], alpha=0.9)
-        for x, r in zip(x_real + offset, rates):
-            if not np.isnan(r) and r > 0.05:
-                ax_real.text(x, r + 0.025, f"{r:.0%}", ha="center", fontsize=6.5,
-                              rotation=0)
     ax_real.set_xticks(x_real)
     ax_real.set_xticklabels(DATASETS_REAL_SHORT, rotation=15, ha="right", fontsize=9)
     ax_real.set_ylabel("JPC collapse rate", fontsize=10)

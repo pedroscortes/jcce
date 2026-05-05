@@ -108,9 +108,10 @@ def main():
     PROCS = ["dag_transformer", "linear_head", "mlp_head"]
     PROC_SHORT = {"dag_transformer": "DAG-Transformer", "linear_head": "LinearHead", "mlp_head": "MLPHead"}
 
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.6), sharey=True)
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.0), sharey=True)
     bins = np.linspace(0.10, 1.00, 19)
 
+    legend_handles = None
     for ax, proc in zip(axes, PROCS):
         baseline_vals = []
         fix_vals = []
@@ -120,27 +121,26 @@ def main():
         for (ds, p), v in with_fix.items():
             if p == proc:
                 fix_vals.extend(v)
-        ax.hist(baseline_vals, bins=bins, alpha=0.65, color="#d62728",
-                 label=f"no-fix baseline (n={len(baseline_vals)})", edgecolor="white", linewidth=0.5)
+        h_base = ax.hist(baseline_vals, bins=bins, alpha=0.65, color="#d62728",
+                          label="no-fix baseline", edgecolor="white", linewidth=0.5)
+        h_fix = None
         if fix_vals:
-            ax.hist(fix_vals, bins=bins, alpha=0.55, color="#2ca02c",
-                     label=f"with warm-start (n={len(fix_vals)})", edgecolor="white", linewidth=0.5)
-        ax.axvline(0.5, color="gray", linestyle=":", linewidth=0.8, label="random (BAcc=0.5)")
+            h_fix = ax.hist(fix_vals, bins=bins, alpha=0.55, color="#2ca02c",
+                             label="with warm-start", edgecolor="white", linewidth=0.5)
+        line_random = ax.axvline(0.5, color="gray", linestyle=":", linewidth=0.8,
+                                  label="random (BAcc=0.5)")
         ax.set_title(PROC_SHORT[proc], fontsize=11)
         ax.set_xlabel("Per-seed test BAcc", fontsize=10)
         if ax is axes[0]:
             ax.set_ylabel("Seed count", fontsize=10)
-        ax.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.18),
-                   ncol=1, frameon=False)
         ax.set_xlim(0.10, 1.00)
+        if legend_handles is None:
+            legend_handles = ax.get_legend_handles_labels()
 
-    fig.suptitle(
-        "Figure 4. Seed-level bimodality of JCCE joint-loss training (per-seed test BAcc, "
-        "all 6 real benchmarks pooled).\n"
-        "No-fix baseline shows two clusters near 0.5 (collapsed) and ≈0.7+ (discriminative); "
-        "warm-start collapses the bimodal distribution onto the discriminative branch.",
-        y=1.00, fontsize=10,
-    )
+    # Single unified legend at top-right (per-panel n's documented in caption).
+    handles, labels = legend_handles
+    fig.legend(handles, labels, fontsize=9, loc="upper right",
+                bbox_to_anchor=(0.995, 0.995), frameon=True, framealpha=0.9)
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig4_bimodality.pdf"

@@ -107,13 +107,7 @@ def main():
                 ncol=2, frameon=False)
     ax3.grid(True, alpha=0.3)
 
-    fig.suptitle(
-        f"Figure 7. Gradient starvation during JCCE joint training on {dataset} ({processor}, seed=0). "
-        f"\nReconstruction gradient dominates BCE gradient by 1-2 orders of magnitude throughout; "
-        rf"$\lambda_{{\mathrm{{class}}}}{{=}}10$ partially closes the contribution gap (panel c) but does "
-        f"not eliminate it.",
-        y=1.02, fontsize=10,
-    )
+    # In-figure title removed — caption goes in the LaTeX caption.
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig7_training_trajectory.pdf"

@@ -89,20 +89,11 @@ def main():
               bbox_to_anchor=(0.78, -0.13), ncol=3, frameon=False,
               handletextpad=0.3, columnspacing=1.0)
 
-    # Effective-region shading in neutral gray (green clashed with mlp_head color)
+    # Effective-region shading in neutral gray (struct_corr > 0).
+    # Region is described in the LaTeX caption rather than labelled inside.
     ax.axvspan(0.0, 1.0, alpha=0.08, color="#888888")
-    ax.text(0.5, 1.01, "post-hoc effective region (struct_corr > 0)",
-             fontsize=8, ha="center", transform=ax.get_xaxis_transform(),
-             color="#444444", style="italic", alpha=0.9)
 
-    fig.suptitle(
-        "Figure 5. Structure-vs-readout decoupling on the Tier-21 redesigned synthetic\n"
-        "(linear ER-SCM, $d{=}20$, $n{=}2000$, 5 seeds × 3 processors × 3 fixes).\n"
-        "Post-hoc (squares) lifts BAcc to $\\geq 0.92$ on cells with struct_corr $> 0$ "
-        "across ALL three processors — the structure-readout decoupling that licenses "
-        "post-hoc as the universal fix.",
-        y=1.04, fontsize=10,
-    )
+    # In-figure title removed — caption goes in the LaTeX caption.
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig5_struct_readout_scatter.pdf"

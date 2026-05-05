@@ -122,14 +122,7 @@ def main() -> None:
               color="gray", style="italic")
     ax2.grid(True, axis="y", alpha=0.3, linestyle=":")
 
-    fig.suptitle(
-        "Figure 8. JCCE structural learning vs ground-truth DAG on Bayesian-network benchmarks "
-        "(Tier-17, 5 seeds).\n"
-        "All processors recover similar-quality DAGs (SHD constant within ±2; F1 mostly 0–0.12), "
-        "even when their joint-trained $f_Y$ collapses (Linear and DAG-Tr on Sachs, all on Asia).\n"
-        "Pairs with §7.5 finding 4: structure-readout decoupling.",
-        fontsize=10, y=1.02,
-    )
+    # In-figure title removed — caption goes in the LaTeX caption.
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig8_dag_quality.pdf"

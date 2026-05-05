@@ -47,22 +47,12 @@ def main():
     # Hatched overlay for collapse rate (visual encoding of 'how broken')
     for i, (bar, cr) in enumerate(zip(bars, collapse_rate)):
         if cr > 0:
-            # Hatch the bar based on collapse fraction
+            # Hatch the bar based on collapse fraction (visual-only cue;
+            # collapse rate is reported in the LaTeX caption).
             hatch_density = "////" if cr >= 0.5 else "//"
             ax.bar(bar.get_x(), bar.get_height(), bar.get_width(),
                     color="none", edgecolor="black", linewidth=0,
                     hatch=hatch_density, alpha=0.6, align="edge")
-            # Place collapse-rate annotation INSIDE the bar (so it doesn't
-            # overlap legend/error bars stacked on top)
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() / 2,
-                     f"{int(cr * 100)}%\nseeds\ncollapse",
-                     ha="center", va="center", fontsize=8.5, color="white",
-                     fontweight="bold", style="italic")
-        else:
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() / 2,
-                     "0% collapse",
-                     ha="center", va="center", fontsize=8.5, color="white",
-                     fontweight="bold", style="italic")
 
     # Reference lines (legend will be placed below the axes — no overlap)
     ax.axhline(B2_ref, color="black", linestyle="--", linewidth=1.0, alpha=0.6,
@@ -86,28 +76,7 @@ def main():
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", linestyle=":", alpha=0.4)
 
-    # Trajectory arrow at the very top of the panel
-    ax.annotate(
-        "",
-        xy=(3.0, 0.96), xytext=(0.0, 0.96),
-        arrowprops=dict(arrowstyle="->", color="#444", lw=1.5),
-    )
-    ax.text(1.5, 0.985, "architectural sophistication →",
-             ha="center", fontsize=10, style="italic", color="#444")
-
-    fig.suptitle(
-        "Figure 11. Three-framework JPC trajectory on Sachs ($n{=}7466$, $d{=}10$).\n"
-        "JCCE no-fix collapses 7/7 datasets including Sachs (BAcc $0.50$); JCCE+post-hoc fix "
-        "lifts to $0.77$. CASTLE \\cite{kyono2020} ($d{+}1$ subnet decoupling) escapes "
-        "JPC on 6 of 7 datasets but collapses on Sachs ($60\\%$ of seeds, BAcc $0.63$). "
-        "DECI \\cite{geffner2024} (variational graph + spline noise) escapes on all 7, "
-        "reaching BAcc $0.79$ on the same cell.\n"
-        "Pairwise Fisher exact tests on 35-cell-per-framework totals with Holm-Bonferroni at "
-        "$\\alpha{=}0.05$: JCCE vs DECI $p{=}1.8 \\times 10^{-20}$ (reject $H_0$), "
-        "JCCE vs CASTLE $p{=}1.5 \\times 10^{-16}$ (reject), CASTLE vs DECI $p{=}0.24$ (fail to "
-        "reject — direction-consistent but underpowered at $n{=}5$ seeds).",
-        y=1.05, fontsize=9,
-    )
+    # In-figure title and arrow annotation removed — captions go in the LaTeX caption.
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig11_three_framework_sachs.pdf"

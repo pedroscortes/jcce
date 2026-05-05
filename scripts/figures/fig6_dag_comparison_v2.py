@@ -139,18 +139,7 @@ def main():
     axes[1, 3].axis("off")
     axes[2, 3].axis("off")
 
-    fig.suptitle(
-        f"Figure 6. JCCE-learned $|A|$ matrices (top: no-fix baseline, middle: warm-start) vs "
-        f"Tier-21 ground-truth Y-parents (bottom).\n"
-        f"Tier-21 redesigned synthetic ER-SCM at $d{{=}}{D}$ ($n{{=}}{N_SAMPLES}$, deterministic "
-        f"$Y = \\mathbb{{1}}[X \\cdot A_{{\\text{{true}}}}[:, Y] > \\text{{median}}]$), seed {SEED}, "
-        f"single training run per cell. Red box highlights the Y column.\n"
-        f"All three processors recover Y-column structure on Tier-21's signal-rich data — the "
-        f"DAG-Tr-only pattern from the deprecated Tier-9 generator does not reproduce here, "
-        f"consistent with §6.III's Tier-21 finding that post-hoc recovers $\\geq 92\\%$ of "
-        f"ceiling across all three processors.",
-        y=1.00, fontsize=10,
-    )
+    # In-figure title removed — caption goes in the LaTeX caption.
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig6_dag_comparison.pdf"

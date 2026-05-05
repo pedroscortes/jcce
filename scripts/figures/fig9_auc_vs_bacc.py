@@ -106,18 +106,11 @@ def main() -> None:
 
     ax1.set_xlabel("Test BAcc", fontsize=10)
     ax1.set_ylabel("Test AUC", fontsize=10)
-    ax1.set_title(
-        f"(a) JCCE no-fix\nIIIb (AUC<0.5 ∧ BAcc<0.5): {n_iiib}/{n} cells; "
-        f"IIIa (BAcc≈prior): {n_iiia}; escape: {n_esc}",
-        fontsize=10,
-    )
+    ax1.set_title("(a) JCCE no-fix", fontsize=11)
     ax2.set_xlabel("Test BAcc (post-hoc fix)", fontsize=10)
     ax2.set_ylabel("Test AUC (post-hoc fix)", fontsize=10)
     n_iiib_p = int(((auc_p < 0.5) & (bacc_p < 0.5)).sum())
-    ax2.set_title(
-        f"(b) Post-hoc fix applied\nIIIb cells remaining: {n_iiib_p}/{n}",
-        fontsize=10,
-    )
+    ax2.set_title("(b) Post-hoc fix applied", fontsize=11)
 
     for ax in (ax1, ax2):
         ax.set_xlim(0, 1)
@@ -125,15 +118,8 @@ def main() -> None:
         ax.legend(loc="lower right", fontsize=9, frameon=False)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-        ax.text(0.05, 0.45, "IIIb\n(sign-flipped)", color="#BB5566", fontsize=8, alpha=0.8)
-        ax.text(0.55, 0.05, "(a-only)", color="gray", fontsize=7, alpha=0.5)
 
-    fig.suptitle(
-        "Figure 9. AUC vs BAcc per cell (6 datasets × 3 processors × 5 seeds = 90 cells; Tier-17). "
-        "Cells in the lower-left red band have both metrics below 0.5 — sign-flipped JPC (Type IIIb). "
-        "Post-hoc fix moves cells diagonally toward the upper-right.",
-        fontsize=10, y=1.00,
-    )
+    # In-figure title removed — caption goes in the LaTeX caption.
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig9_auc_vs_bacc.pdf"

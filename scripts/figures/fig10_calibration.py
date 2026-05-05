@@ -92,14 +92,7 @@ def main() -> None:
                  loc="upper center", bbox_to_anchor=(0.5, 1.02),
                  ncol=2, fontsize=10, frameon=False)
 
-    fig.suptitle(
-        "Figure 10. Predicted-probability distributions on the test split, JCCE no-fix (top) vs "
-        "post-hoc fix (bottom).\n"
-        "Asia/Linear: JCCE collapses both classes onto P≈0.4 (sign-flipped), post-hoc separates them. "
-        "Heart/MLP: JCCE shows a single bimodal mode mixing classes; post-hoc separates by class. "
-        "LUCAS/Linear: JCCE already separates (no JPC), post-hoc preserves separation.",
-        fontsize=10, y=1.02,
-    )
+    # In-figure title removed — caption goes in the LaTeX caption.
     fig.tight_layout()
 
     out_pdf = OUT_DIR / "fig10_calibration.pdf"

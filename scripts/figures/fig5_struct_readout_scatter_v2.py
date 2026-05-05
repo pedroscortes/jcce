@@ -53,7 +53,6 @@ def main():
             ax.scatter(
                 xs, ys, c=proc_colors[proc], marker=fix_markers[fix],
                 s=90, alpha=0.75, edgecolors="black", linewidths=0.5,
-                label=f"{PROC_SHORT[proc]}, {FIX_SHORT[fix]}",
             )
 
     ax.axhline(0.5, color="gray", linestyle=":", linewidth=0.6, alpha=0.7)
@@ -67,15 +66,34 @@ def main():
     ax.set_ylabel("Per-seed test BAcc", fontsize=10)
     ax.set_xlim(-0.6, 1.0)
     ax.set_ylim(0.30, 1.00)
-    # Legend below the axes so it doesn't overlap data
-    ax.legend(fontsize=8, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.13),
-               frameon=False, handletextpad=0.3, columnspacing=1.0)
 
-    # Green region annotation moved above the plot area
-    ax.axvspan(0.0, 1.0, alpha=0.06, color="green")
+    # Compact two-axis legend: color = processor, marker = fix.
+    from matplotlib.lines import Line2D
+    proc_handles = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=proc_colors[p],
+                markeredgecolor="black", markersize=9, label=PROC_SHORT[p])
+        for p in PROCS
+    ]
+    fix_handles = [
+        Line2D([0], [0], marker=fix_markers[f], color="w", markerfacecolor="#888888",
+                markeredgecolor="black", markersize=9, label=FIX_SHORT[f])
+        for f in FIXES
+    ]
+    leg1 = ax.legend(handles=proc_handles, title="Processor (color)",
+                      fontsize=8, title_fontsize=8.5, loc="upper center",
+                      bbox_to_anchor=(0.30, -0.13), ncol=3, frameon=False,
+                      handletextpad=0.3, columnspacing=1.0)
+    ax.add_artist(leg1)
+    ax.legend(handles=fix_handles, title="Fix (marker)",
+              fontsize=8, title_fontsize=8.5, loc="upper center",
+              bbox_to_anchor=(0.78, -0.13), ncol=3, frameon=False,
+              handletextpad=0.3, columnspacing=1.0)
+
+    # Effective-region shading in neutral gray (green clashed with mlp_head color)
+    ax.axvspan(0.0, 1.0, alpha=0.08, color="#888888")
     ax.text(0.5, 1.01, "post-hoc effective region (struct_corr > 0)",
              fontsize=8, ha="center", transform=ax.get_xaxis_transform(),
-             color="green", style="italic", alpha=0.9)
+             color="#444444", style="italic", alpha=0.9)
 
     fig.suptitle(
         "Figure 5. Structure-vs-readout decoupling on the Tier-21 redesigned synthetic\n"

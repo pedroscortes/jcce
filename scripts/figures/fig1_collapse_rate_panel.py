@@ -194,12 +194,6 @@ def main():
         offset = (i - 1) * bar_w
         ax_xfw.bar(x_xfw + offset, crossfw[fw], bar_w,
                     label=fw, color=fw_colors[fw], alpha=0.9)
-    # Annotate aggregate rate per framework above panel
-    for i, fw in enumerate(["JCCE", "CASTLE", "DECI"]):
-        mean_rate = float(np.mean(crossfw[fw]))
-        ax_xfw.text(0.02 + i * 0.33, 1.10, f"{fw}: {mean_rate*100:.0f}% overall",
-                     transform=ax_xfw.transAxes, fontsize=9, fontweight="bold",
-                     color=fw_colors[fw], ha="left", va="center")
     ax_xfw.set_xticks(x_xfw)
     ax_xfw.set_xticklabels(crossfw_datasets, rotation=15, ha="right", fontsize=9)
     ax_xfw.set_ylim(0, 1.18)

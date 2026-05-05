@@ -108,7 +108,7 @@ def main():
     PROCS = ["dag_transformer", "linear_head", "mlp_head"]
     PROC_SHORT = {"dag_transformer": "DAG-Transformer", "linear_head": "LinearHead", "mlp_head": "MLPHead"}
 
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4), sharey=True)
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.6), sharey=True)
     bins = np.linspace(0.10, 1.00, 19)
 
     for ax, proc in zip(axes, PROCS):
@@ -130,7 +130,8 @@ def main():
         ax.set_xlabel("Per-seed test BAcc", fontsize=10)
         if ax is axes[0]:
             ax.set_ylabel("Seed count", fontsize=10)
-        ax.legend(fontsize=8, loc="upper left", frameon=True)
+        ax.legend(fontsize=7, loc="upper center", bbox_to_anchor=(0.5, -0.18),
+                   ncol=1, frameon=False)
         ax.set_xlim(0.10, 1.00)
 
     fig.suptitle(

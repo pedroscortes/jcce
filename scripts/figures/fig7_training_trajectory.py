@@ -54,7 +54,7 @@ def main():
         print(f"Run: bash scripts/theory/launch_tier14_trajectory.sh (or the underlying script)")
         return
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(14, 4.2))
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(14, 5.0))
 
     colors = {1.0: "#1f77b4", 10.0: "#d62728"}
     labels = {1.0: r"$\lambda_{\mathrm{class}}{=}1$ (default)", 10.0: r"$\lambda_{\mathrm{class}}{=}10$"}
@@ -70,7 +70,8 @@ def main():
     ax1.set_xlabel("Training iteration", fontsize=10)
     ax1.set_ylabel("Loss component (log scale)", fontsize=10)
     ax1.set_title(rf"(a) Loss components, $\lambda_{{\mathrm{{class}}}}{{=}}1$", fontsize=10)
-    ax1.legend(fontsize=8, loc="upper right", frameon=True)
+    ax1.legend(fontsize=7.5, loc="upper center", bbox_to_anchor=(0.5, -0.18),
+                ncol=2, frameon=False)
     ax1.grid(True, alpha=0.3)
 
     # Panel (b): Raw gradient norms — show the starvation gap directly
@@ -85,7 +86,8 @@ def main():
     ax2.set_xlabel("Training iteration", fontsize=10)
     ax2.set_ylabel("Raw gradient norm (log scale)", fontsize=10)
     ax2.set_title("(b) Reconstruction gradient dominates BCE gradient", fontsize=10)
-    ax2.legend(fontsize=7, loc="upper right", frameon=True, ncol=1)
+    ax2.legend(fontsize=6.5, loc="upper center", bbox_to_anchor=(0.5, -0.18),
+                ncol=2, frameon=False)
     ax2.grid(True, alpha=0.3)
 
     # Panel (c): Weighted contributions ||∇recon|| vs ||lambda * ∇BCE||
@@ -101,7 +103,8 @@ def main():
     ax3.set_xlabel("Training iteration", fontsize=10)
     ax3.set_ylabel("Effective gradient contribution (log scale)", fontsize=10)
     ax3.set_title(r"(c) Effective gradient: $\lambda_{\mathrm{class}}$ closes some of the gap", fontsize=10)
-    ax3.legend(fontsize=7, loc="upper right", frameon=True, ncol=1)
+    ax3.legend(fontsize=6.5, loc="upper center", bbox_to_anchor=(0.5, -0.18),
+                ncol=2, frameon=False)
     ax3.grid(True, alpha=0.3)
 
     fig.suptitle(

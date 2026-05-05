@@ -137,11 +137,14 @@ def main():
         if legend_handles is None:
             legend_handles = ax.get_legend_handles_labels()
 
-    # Single unified legend at top-right (per-panel n's documented in caption).
+    # Reserve top strip for a unified figure-level legend that does NOT
+    # overlap the rightmost (MLPHead) panel.
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.84)
     handles, labels = legend_handles
     fig.legend(handles, labels, fontsize=9, loc="upper right",
-                bbox_to_anchor=(0.995, 0.995), frameon=True, framealpha=0.9)
-    fig.tight_layout()
+                bbox_to_anchor=(0.995, 0.995), frameon=True, framealpha=0.9,
+                ncol=3, handletextpad=0.4, columnspacing=1.2)
 
     out_pdf = OUT_DIR / "fig4_bimodality.pdf"
     out_png = OUT_DIR / "fig4_bimodality.png"

@@ -78,27 +78,29 @@ deactivate
 echo
 echo "----- (B) DECI variational/spline ablation -----"
 source .deci_venv/bin/activate
-# First: discovery (so the log records what kwargs are available).
+# Discovery already informed the kwarg choices on the first server run
+# (logged at results/server/q36_deci_discover.log). Re-run for archive.
 run_step "DECI API discovery (Tier-36)" \
   "${RESULTS_DIR}/q36_deci_discover.log" \
-  python scripts/theory/test_deci_ablation.py --discover
-# Smoke (only 'full' + 'no_variational' — verifies the wiring before the
-# long run. NoImpl on the latter is expected on first server pass; the
-# log captures it so Pedro can fill the kwargs.)
+  python scripts/theory/test_deci_ablation.py --discover || \
+  echo ">>> [B] discovery non-fatal warnings — continuing."
+# Smoke: 'full' + 'no_spline' (both implemented).
 run_step "DECI ablation smoke (Tier-36)" \
   "${RESULTS_DIR}/q36_deci_smoke.log" \
-  python scripts/theory/test_deci_ablation.py --smoke || \
-  echo ">>> Smoke had NotImplementedErrors as expected on first pass; check the log."
-# Full ablation: only run if the script's TODOs are filled in. The
-# `set -e` at the top would otherwise abort on NotImplementedError;
-# we run conditionally and capture the failure as data.
+  python scripts/theory/test_deci_ablation.py \
+    --datasets sachs --ablations full,no_spline \
+    --n-seeds 1 --max-epochs 50 \
+    --out "${RESULTS_DIR}/q36_deci_ablation_sachs_smoke.json" || \
+  echo ">>> [B] smoke had errors — see log."
+# Full ablation: full + no_spline + no_variational (linear_sem is NotImpl
+# and skipped at script level).
 run_step "DECI ablation full (Tier-36)" \
   "${RESULTS_DIR}/q36_deci_full.log" \
   python scripts/theory/test_deci_ablation.py \
-    --datasets sachs --ablations full,no_variational,no_spline,linear_sem \
+    --datasets sachs --ablations full,no_spline,no_variational \
     --n-seeds 5 --max-epochs 500 \
     --out "${RESULTS_DIR}/q36_deci_ablation_sachs.json" || \
-  echo ">>> [B] DECI ablation full pass had NotImplementedErrors; fill TODOs in test_deci_ablation.py and re-run."
+  echo ">>> [B] full pass had errors — see log."
 deactivate
 
 echo

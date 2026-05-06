@@ -43,15 +43,10 @@ jcce/                       # Core library (the implementation)
 ├── validation/             # DML, Cinelli sensitivity, bootstrap, LOVO, refutations
 └── visualization/          # DAG plotting, Pareto front plots
 
-data/                       # Reference datasets used by the paper benchmarks
+data/                       # Reference datasets used by the benchmarks
 tests/                      # Library unit tests
-bib/                        # Paper bibliography (BibTeX)
-
-scripts/
-├── baselines/              # SHAP-baseline comparison pipeline
-├── figures/                # Figure-generation scripts
-├── theory/                 # Diagnostic experiments
-└── launch_*.sh             # Server orchestration for diagnostic sweeps
+bib/                        # Bibliography (BibTeX)
+scripts/baselines/          # SHAP-baseline comparison pipeline
 ```
 
 ## References

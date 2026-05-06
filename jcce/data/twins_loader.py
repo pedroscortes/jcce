@@ -48,7 +48,7 @@ def _print_download_instructions():
     print("Twins dataset not found at:", TWINS_DIR)
     print("\nTo download (one of):")
     print("\n[Option 1 — GANITE preprocessed CSVs, recommended]:")
-    print("  cd /data/jcce")
+    print("  cd <jcce-repo-root>")
     print("  mkdir -p data/twins")
     print("  # GANITE's Twins data is at https://github.com/jsyoon0823/GANITE/tree/master/data")
     print("  # Download Twin_data.csv and split into 4 files:")

@@ -36,7 +36,7 @@ def detect_gpus() -> Dict[str, Any]:
         "backend": jax.default_backend(),
     }
 
-    # Try to estimate memory (RTX 4090 = 24GB each)
+    # Try to estimate memory (defaults assume 24 GB per device)
     # This is approximate - actual detection requires nvidia-smi parsing
     if len(devices) > 0:
         # Rough estimate based on typical configurations
@@ -193,7 +193,7 @@ def get_optimal_batch_size(
         num_features: Number of features (adjacency matrix will be num_features×num_features)
         num_samples: Number of training samples
         num_gpus: Number of available GPUs
-        memory_per_gpu_gb: VRAM per GPU in GB (24 for RTX 4090)
+        memory_per_gpu_gb: VRAM per GPU in GB (default 24)
 
     Returns:
         Recommended batch size for GOLEM optimization

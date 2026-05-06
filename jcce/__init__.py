@@ -23,7 +23,6 @@ Lower-level functionality lives in submodules:
     jcce.counterfactual       Counterfactual generation on the learned SCM
     jcce.evaluation           Metrics (SHD, F1, BAcc, ATE bias, PEHE)
     jcce.data                 Dataset loaders and synthetic SCM generators
-    jcce.baselines            Baseline methods (DAGMA, NOTEARS, SDCD, DiffAN, classical MB)
     jcce.gbs                  Dequantized Gaussian Boson Sampling kernels
     jcce.analysis             Post-hoc analysis tooling
     jcce.visualization        DAG plotting, Pareto front plots

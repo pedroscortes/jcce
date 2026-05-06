@@ -28,11 +28,6 @@ was built to disambiguate:
                training (``|A| + 1/(n_features + 1)``); diagnoses train/eval
                distribution mismatch.
 
-References
-----------
-``scripts/theory/aap_fY_sensitivity.py`` is the canonical CLI driver: it
-trains a JCCE pipeline and runs both probes across all four weighting modes
-and both ``skip_centering`` settings.
 """
 
 from __future__ import annotations

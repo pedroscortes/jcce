@@ -935,10 +935,9 @@ def run_full_optuna_pipeline(
     parallel_folds: bool = False,
 ) -> Dict[str, Any]:
     """
-    Run complete Optuna pipeline: PC warm-start → search → post-hoc DML + CV.
+    Run the complete Optuna pipeline: PC warm-start → search → post-hoc DML + CV.
 
-    This is the top-level entry point that replaces the NSGA-II flow in
-    test_lucas_v15_quick.py and run_v16_ablation.py.
+    Top-level entry point for the Optuna-driven flow.
 
     When run_dml=True, applies a 70/30 sample split: search uses X_struct (70%),
     DML uses X_effect (30%) to avoid double-dipping (Gradu et al. JASA 2024).

@@ -19,7 +19,8 @@ class SCMConfig:
     scm_type: Literal["linear", "nonlinear_mlp"] = "linear"
     noise_type: Literal["gaussian", "uniform", "laplace"] = "gaussian"
     noise_scale: float = 0.5
-    # For nonlinear SCMs (Phase 2)
+    # Hidden-layer widths for the nonlinear MLP-SCM variant. Ignored when
+    # scm_type == "linear".
     nonlinear_hidden_dims: Optional[List[int]] = None
 
 

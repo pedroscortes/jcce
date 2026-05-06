@@ -1,8 +1,7 @@
 """
-Shared counterfactual evaluation utilities.
-
-Extracted from scripts/run_v16_ablation.py so both NSGA-II and Optuna
-pipelines can run CF evaluation without code duplication.
+Shared counterfactual evaluation utilities used by both the NSGA-II and
+Optuna pipelines so CF evaluation does not have to be duplicated per
+optimiser.
 """
 
 import pickle

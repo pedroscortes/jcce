@@ -30,7 +30,6 @@ uv sync --extra dev
 ```
 jcce/                       # Core library (the implementation)
 ├── analysis/               # Post-hoc analysis tooling
-├── baselines/              # Baseline methods (SDCD, DAGMA, NOTEARS, DiffAN, classical MB)
 ├── counterfactual/         # Counterfactual generation (AAP on the learned SCM)
 ├── data/                   # Dataset loaders and synthetic generators
 ├── evaluation/             # Metrics (SHD, F1, BAcc, ATE bias, etc.)

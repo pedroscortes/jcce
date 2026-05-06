@@ -22,6 +22,7 @@ wheels/
 
 # Virtual environments
 .venv/
+.deci_venv/
 venv/
 ENV/
 env/
@@ -33,11 +34,14 @@ env/
 *.h5
 *.hdf5
 
-# Results and backups
+# Results, backups, profiling
 results/
 results_run1_backup/
 server_version/
 server_version_v2/
+*.btr
+nohup.out
+core.*
 
 # JAX compilation cache
 jax_cache/
@@ -46,12 +50,13 @@ jax_cache/
 .ipynb_checkpoints/
 *.ipynb
 
-# IDEs
+# IDEs and tooling
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.claude/
 
 # OS
 .DS_Store
@@ -65,7 +70,17 @@ htmlcov/
 # Ruff
 .ruff_cache/
 
-# Local-only directories (kept on disk for reference, not tracked in git)
+# LaTeX intermediates (when building any in-repo article)
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.out
+*.synctex.gz
+*.toc
+
+# Local-only directories (working notes / drafts not meant for the public repo)
 docs/
-next_steps/
-presentation/

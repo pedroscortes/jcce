@@ -1,5 +1,5 @@
 """
-Hierarchical Island Model for Processor Evolution (v5.0)
+Hierarchical Island Model for Processor Evolution.
 
 Structure:
 - Level 1: 5 processor-type islands (MLP, Transformer, GNN, ELM, Mamba)
@@ -166,10 +166,10 @@ class Island:
             Y_train: Training labels (binary for classification)
             max_iter: Max GOLEM iterations (default: config.golem_iterations)
             verbose: Print progress
-            use_spectral_constraint: Use O(d²) spectral DAG constraint (v4.1)
-            enable_pruning: Enable dynamic edge pruning (v4.1)
-            use_v7: Enable v7.0 effect estimation with bi-directed edges
-            Y_continuous: Continuous Y for effect estimation (v7.1, optional)
+            use_spectral_constraint: Use O(d²) spectral DAG constraint
+            enable_pruning: Enable dynamic edge pruning
+            use_v7: Enable effect estimation with bi-directed edges
+            Y_continuous: Continuous Y for effect estimation (optional)
 
         Returns:
             Dictionary with evaluation statistics
@@ -534,10 +534,10 @@ class HierarchicalIslandModel:
             inter_migration_interval: Generations between inter-processor migration
             seed: Random seed
             verbose: Print progress
-            use_spectral_constraint: Use O(d²) spectral DAG constraint (v4.1)
-            enable_pruning: Enable dynamic edge pruning (v4.1)
-            use_v7: Enable v7.0 effect estimation with 4-objective optimization
-            Y_continuous: Continuous Y for effect estimation (v7.1, optional)
+            use_spectral_constraint: Use O(d²) spectral DAG constraint
+            enable_pruning: Enable dynamic edge pruning
+            use_v7: Enable effect estimation with 4-objective optimization
+            Y_continuous: Continuous Y for effect estimation (optional)
         """
         self.processor_types = processor_types
         self.gpu_ids = gpu_ids
@@ -859,7 +859,7 @@ class HierarchicalIslandModel:
 
 
 # ============================================================================
-# Convenience function for running v5.0 experiments
+# Convenience function for running island-model experiments
 # ============================================================================
 
 
@@ -880,7 +880,7 @@ def run_island_model_experiment(
     Y_continuous: np.ndarray = None,
 ) -> Dict[str, Any]:
     """
-    Run complete v5.0/v7.0 island model experiment.
+    Run complete island-model experiment.
 
     Args:
         X_train, Y_train: Training data (Y_train is binary for classification)
@@ -891,10 +891,10 @@ def run_island_model_experiment(
         population_per_island: Population per island
         seed: Random seed
         verbose: Print progress
-        use_spectral_constraint: Use O(d²) spectral DAG constraint (v4.1)
-        enable_pruning: Enable dynamic edge pruning (v4.1)
-        use_v7: Enable v7.0 effect estimation with 4-objective optimization
-        Y_continuous: Continuous Y for effect estimation (v7.1, optional)
+        use_spectral_constraint: Use O(d²) spectral DAG constraint
+        enable_pruning: Enable dynamic edge pruning
+        use_v7: Enable effect estimation with 4-objective optimization
+        Y_continuous: Continuous Y for effect estimation (optional)
 
     Returns:
         Results dictionary with Pareto front, best solution, and stats
@@ -902,7 +902,6 @@ def run_island_model_experiment(
     n_features = X_train.shape[1]
     n_vars = n_features  # Number of X features (GOLEM adds +1 for Y internally)
 
-    # Initialize model with v4.1/v7.0/v7.1 optimizations
     model = HierarchicalIslandModel(
         processor_types=processor_types,
         gpu_ids=gpu_ids,
@@ -954,41 +953,3 @@ def run_island_model_experiment(
         "stats": stats,
         "n_pareto_solutions": len(pareto_front),
     }
-
-
-# ============================================================================
-# Quick Test
-# ============================================================================
-
-if __name__ == "__main__":
-    print("Testing Hierarchical Island Model...")
-    print("=" * 60)
-
-    # Generate synthetic data
-    np.random.seed(42)
-    n_samples = 200
-    n_features = 10
-
-    X = np.random.randn(n_samples, n_features)
-    Y = (X[:, 0] + X[:, 1] > 0).astype(float)
-
-    # Split
-    X_train, X_test = X[:150], X[150:]
-    Y_train, Y_test = Y[:150], Y[150:]
-
-    print(f"Data: {X_train.shape[0]} train, {X_test.shape[0]} test, {n_features} features")
-
-    # Test with single GPU (CPU mode for testing)
-    model = HierarchicalIslandModel(
-        processor_types=["elm", "mlp"],
-        gpu_ids=[0],
-        n_vars=n_features,  # Just features, not +1 (GOLEM handles Y internally)
-        population_per_island=4,
-        seed=42,
-        verbose=True,
-    )
-
-    print(f"\nTotal population: {model.get_total_population()}")
-    print("\n" + "=" * 60)
-    print("Island Model initialized successfully!")
-    print("(Full evaluation requires GPU)")

@@ -1,5 +1,5 @@
 """
-Integration tests for v5.0 components
+Integration tests for the structure-learning components.
 
 Tests:
 1. Spectral DAG constraint

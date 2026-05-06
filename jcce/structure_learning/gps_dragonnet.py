@@ -20,8 +20,6 @@ Reference:
 - Hirano & Imbens (2004): "The Propensity Score with Continuous Treatments"
 - Shi et al. (2019): "Adapting Neural Networks for the Estimation of Treatment Effects"
 - Rosenbaum & Rubin (1983): "The Central Role of the Propensity Score"
-
-Author: JCCE v13.5 (with variable type detection)
 """
 
 from typing import Dict, Literal, Optional, Tuple

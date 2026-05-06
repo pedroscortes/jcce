@@ -1,7 +1,8 @@
 """
 Synthetic Non-Linear Structural Causal Model (SCM) Generator.
 
-Generates data with non-linear causal relationships for testing v3.0 processors.
+Generates data with non-linear causal relationships for testing nonlinear
+processors.
 
 Supported non-linearity types:
 - Polynomial: X_j = Σ W_ij × X_i² + ε
@@ -10,9 +11,9 @@ Supported non-linearity types:
 - Mixed: Combination of above
 
 Used for:
-1. Validating that v3.0 processors can learn non-linear relationships
-2. Comparing linear (v2.0) vs non-linear (v3.0) methods
-3. Understanding when processors help vs hurt
+1. Validating that nonlinear processors can learn non-linear relationships
+2. Comparing linear vs non-linear methods on identical structural data
+3. Understanding when nonlinear processors help vs hurt
 """
 
 from typing import Literal, Tuple

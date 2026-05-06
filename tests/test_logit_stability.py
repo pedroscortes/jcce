@@ -1,8 +1,8 @@
 """
-Tests for Session 36 fixes:
-- Fix 19: GNN logit stability (clamp + H normalization)
-- Fix 20: Lambda-2 stall detection (stagnation check)
-- Fix 21: h_pooled normalization for Y classification (all processors)
+Tests for three classification-stability fixes:
+- GNN logit stability (clamp + H normalization).
+- Lambda-2 stall detection (stagnation check).
+- h_pooled normalization for Y classification across processors.
 """
 
 import jax

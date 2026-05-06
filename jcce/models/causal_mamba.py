@@ -1,11 +1,10 @@
-"""Backward-compatibility shim: ``jcce.models.causal_mamba`` was renamed to
-``jcce.models.topo_mamba`` on 2026-04-28 due to naming collisions with two
+"""Backward-compatibility shim: ``jcce.models.causal_mamba`` is the former
+name of :mod:`jcce.models.topo_mamba`, renamed to avoid collision with
 unrelated 2025 papers (Zhan & Cheng, arXiv:2510.17318; Bae & Cha,
-arXiv:2511.16191). New code should import from ``jcce.models.topo_mamba``.
+arXiv:2511.16191). New code should import from :mod:`jcce.models.topo_mamba`.
 
 This module re-exports the public API under the old names so existing
-scripts, paper-1 reproductions, and the parallel TopoMamba worktree continue
-to work without modification.
+callers continue to work without modification.
 """
 
 from jcce.models.topo_mamba import (  # noqa: F401

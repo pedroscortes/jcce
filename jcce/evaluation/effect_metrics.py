@@ -16,9 +16,6 @@ Secondary Metrics:
 References:
 - Hill (2011): Bayesian Nonparametric Modeling for Causal Inference
 - Shalit et al. (2017): IHDP benchmark
-- 6-LLM Consensus (2024): JCCE Evaluation Framework
-
-v6.0: Initial implementation following CAUSAL_EFFECT_ESTIMATION_IMPLEMENTATION_PLAN.md
 """
 
 from dataclasses import dataclass

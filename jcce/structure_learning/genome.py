@@ -4,11 +4,9 @@ Memetic Algorithm - C-Lite Version Utilities.
 Simplified genome for Option C-Lite (classification-guided causal discovery):
 1. Structure learning hyperparameters
 2. Processor architecture (optional - can use fixed MLP for C-Lite-Simple)
-3. v6.0: Latent confounder hyperparameters (L genes)
+3. Latent confounder hyperparameters (L genes)
 
 NO VAE components - direct classification on Markov Blanket features.
-
-Total genome components: ~33 (original 30 + 3 L genes)
 """
 
 from dataclasses import dataclass
@@ -54,7 +52,6 @@ from .memetic_utils_full import (
 # ============================================================================
 # Latent Confounder (L) Hyperparameter Options
 # ============================================================================
-# Based on 6-LLM consensus (LLM_CONSENSUS_SYNTHESIS.md)
 
 LATENT_RANK_K = [2, 3, 5, 8, 10]  # Number of latent factors
 LAMBDA_L = [0.01, 0.02, 0.05, 0.1, 0.2]  # Nuclear norm penalty on L
@@ -135,7 +132,7 @@ class MACliteGenome:
     processor_epochs_idx: int
     processor_batch_size_idx: int
 
-    # ========== Components 31-34: v6.0 Latent Confounder (L) Hyperparameters ==========
+    # ========== Components 31-34: Latent Confounder (L) Hyperparameters ==========
     latent_rank_k_idx: int = 2  # Index into LATENT_RANK_K (default: k=5)
     lambda_L_idx: int = 2  # Index into LAMBDA_L (default: 0.05)
     lambda_bow_idx: int = 2  # Index into LAMBDA_BOW (default: 0.1)
@@ -432,7 +429,7 @@ def genome_to_latent_config_clite(genome: MACliteGenome) -> Dict[str, Any]:
     """
     Convert genome to latent confounder (L) configuration.
 
-    v6.0: Extracts L hyperparameters from genome for use in GOLEM.
+    Extracts L hyperparameters from genome for use in GOLEM.
 
     Returns:
         Dict with:

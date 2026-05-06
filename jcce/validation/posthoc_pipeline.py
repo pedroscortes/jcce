@@ -1,5 +1,5 @@
 """
-Post-Hoc Validation Pipeline for JCCE v13.0
+Post-hoc validation pipeline.
 
 Implements targeted post-hoc validation based on LLM consensus:
 1. Random Common Cause refutation (essential - tests confounding sensitivity)

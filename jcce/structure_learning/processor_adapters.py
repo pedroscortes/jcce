@@ -127,10 +127,10 @@ class MLPAdapter:
         param_dict = flax_to_dict_params(flax_params)
         param_dict["n_inputs"] = n_inputs
 
-        # Output projection — trainable (Session 29 Fix 1). Must be in init_params so
-        # optimizer can update it. Frozen projection (server) fails with local training
-        # dynamics (DAGMA, JIT) — produces BAcc < 0.5 (anti-correlated predictions).
-        # The E[Y] shortcut is blocked by mean centering in forward() (Fix 2 reverted).
+        # Output projection — trainable. Must be in init_params so the
+        # optimizer can update it. A frozen projection fails under JIT/DAGMA
+        # training dynamics (BAcc < 0.5, anti-correlated predictions). The
+        # E[Y] shortcut is blocked by mean centering in forward().
         key_proj = random.PRNGKey(0)
         param_dict["output_proj_W"] = random.normal(key_proj, (self.hidden_dim, 1)) * 0.5
         param_dict["output_proj_b"] = jnp.zeros(1)
@@ -151,9 +151,9 @@ class MLPAdapter:
         Args:
             X: (n_samples, n_inputs) input data
             params: Dict-format parameters
-            training: Whether in training mode (enables dropout) v6.0
-            rng_key: Optional RNG key for dropout (v6.0)
-            skip_centering: If True, skip mean centering (Session 35, Y classification path)
+            training: Whether in training mode (enables dropout)
+            rng_key: Optional RNG key for dropout
+            skip_centering: If True, skip mean centering (Y classification path)
 
         Returns:
             output: (n_samples,) predictions
@@ -223,11 +223,11 @@ class MLPAdapter:
         lambda_reg: float = 1e-4,
         for_classification: bool = True,
     ) -> Dict:
-        """
-        Solve for optimal output weights.
-        v6.1.1: Uses logistic regression for classification (not ridge!).
-        v6.1.3: Sets _weights_solved flag to skip centering in forward().
-        v6.1.4: Normalizes hidden features for stable logistic regression.
+        """Solve for optimal output weights.
+
+        For classification, uses logistic regression (not ridge), normalizes
+        hidden features for stable training, and sets ``_weights_solved`` so
+        :meth:`forward` skips centering.
         """
         H = self.get_hidden_features(X, params)
         n_hidden = H.shape[1]
@@ -355,9 +355,9 @@ class TransformerAdapter:
         Args:
             X: (n_samples, n_inputs) input data
             params: Dict-format parameters
-            training: Whether in training mode (enables dropout) v6.0
-            rng_key: RNG key for dropout (required when training=True) v6.0
-            skip_centering: If True, skip mean centering (Session 35, Y classification path)
+            training: Whether in training mode (enables dropout)
+            rng_key: RNG key for dropout (required when training=True)
+            skip_centering: If True, skip mean centering (Y classification path)
 
         Returns:
             output: (n_samples,) predictions
@@ -424,7 +424,8 @@ class TransformerAdapter:
     ) -> Dict:
         """
         Solve for optimal output weights.
-        v6.1.3: Uses logistic regression for classification (like ELM/MLP).
+
+        Uses logistic regression for classification (like ELM/MLP).
 
         Args:
             X: Input data
@@ -498,14 +499,12 @@ class TransformerAdapter:
 
 def get_mamba_config(n_features: int) -> dict:
     """
-    v5.1: Dynamic Mamba configuration based on feature count.
+    Dynamic Mamba configuration based on feature count.
 
     Memory scales as: n_samples × n_features × d_inner × d_state × 4 bytes
-    where d_inner = expand × d_model
-
-    Threshold analysis from overnight experiments:
-    - n_features ≤ 13: Full config works (heart_disease, lucas)
-    - n_features > 20: OOM with default config (breast_cancer, steel_plates)
+    where d_inner = expand × d_model. Empirically:
+    - n_features ≤ 13: Full config works (e.g., heart_disease, lucas)
+    - n_features > 20: OOM with default config (e.g., breast_cancer, steel_plates)
 
     Returns:
         dict with d_model, d_state, d_conv, expand
@@ -524,7 +523,7 @@ class MambaAdapter:
 
     Wraps jcce.models.mamba.MambaProcessor for causal structure learning.
 
-    v5.1: Supports automatic dimension scaling based on n_features to prevent OOM.
+    Supports automatic dimension scaling based on n_features to prevent OOM.
     """
 
     def __init__(
@@ -585,7 +584,7 @@ class MambaAdapter:
         Args:
             X: (n_samples, n_inputs) input data
             params: Dict-format parameters
-            skip_centering: If True, skip mean centering (Session 35, Y classification path)
+            skip_centering: If True, skip mean centering (Y classification path)
 
         Returns:
             output: (n_samples,) predictions
@@ -747,7 +746,7 @@ class ELMAdapter:
         Args:
             X: (n_samples, n_inputs) input data
             params: Dict-format parameters
-            skip_centering: If True, skip mean centering (Session 35, Y classification path)
+            skip_centering: If True, skip mean centering (Y classification path)
 
         Returns:
             output: (n_samples,) predictions
@@ -815,7 +814,7 @@ class ELMAdapter:
 
         For classification: Uses logistic regression via gradient descent (BCE loss).
         For regression: Uses ridge regression (MSE loss).
-        v6.1.3: Sets _weights_solved flag to skip centering in forward().
+        Sets ``_weights_solved`` so :meth:`forward` skips centering.
 
         Args:
             X: (n_samples, n_inputs) input data
@@ -947,7 +946,7 @@ class GNNAdapter:
             X: (n_samples, n_inputs) input data
             params: Dict-format parameters
             A: (n_inputs, n_inputs) adjacency matrix (OPTIONAL - key feature!)
-            skip_centering: If True, skip mean centering (Session 35, Y classification path)
+            skip_centering: If True, skip mean centering (Y classification path)
 
         Returns:
             output: (n_samples,) predictions
@@ -1090,20 +1089,19 @@ class LinearHeadAdapter:
     Per-variable forward is a single affine map f_j(X) = X @ beta_j + b_j —
     no attention, no LayerNorm, no MLP. Used to test whether the trained
     DAG-Attention's per-variable head needs nonlinearity at all on JCCE
-    benchmarks. Day-1/2 of the AAP architectural-fix mini-Sprint
-    (commits 0310b39, ddbaf09 on origin/aap) showed that post-hoc OLS and
-    logistic regression on the same input distribution recover signal that
-    the trained Transformer head missed; this adapter trains the linear
-    head jointly with the rest of the JCCE pipeline so the comparison
-    table includes a fully end-to-end linear baseline.
+    benchmarks: post-hoc OLS and logistic regression on the same input
+    distribution recover signal that the trained Transformer head missed,
+    so this adapter trains the linear head jointly with the rest of the
+    JCCE pipeline to include a fully end-to-end linear baseline in the
+    comparison table.
 
     Notes
     -----
     The pipeline only invokes ``init_params`` and ``forward`` on the
     processor (``solve_output_weights`` and ``get_hidden_features`` are
-    disabled in jcce_learner; see line 1598). This class implements only
-    those two methods plus an init that mirrors the kwargs convention of
-    the other adapters.
+    disabled in jcce_learner). This class implements only those two
+    methods plus an init that mirrors the kwargs convention of the other
+    adapters.
     """
 
     def __init__(self, key: random.PRNGKey = None):
@@ -1161,14 +1159,12 @@ class LinearHeadAdapter:
 class MLPHeadAdapter:
     """Per-variable shallow MLP: ``X -> Linear(d_in, h) -> ReLU -> Linear(h, 1)``.
 
-    Tests whether modest nonlinearity in the per-variable readout escapes the
-    procedural f_Y collapse documented by the AAP architectural-fix mini-Sprint
-    (commits 11d75a0, 0310b39, ddbaf09 on origin/aap; main 7b42789 ablation).
-    LinearHead and DAG-Attention both collapse to a constant f_Y under JCCE's
-    joint loss; if MLPHead also collapses, the failure mode is more general
-    than "the architecture lacks expressiveness". If MLPHead escapes, modest
-    nonlinearity is the cure and the post-hoc fix can move into joint
-    training.
+    Tests whether modest nonlinearity in the per-variable readout escapes
+    the procedural f_Y collapse seen with LinearHead and DAG-Attention under
+    JCCE's joint loss. If MLPHead also collapses, the failure mode is more
+    general than "the architecture lacks expressiveness"; if MLPHead
+    escapes, modest nonlinearity is the cure and the post-hoc fix can move
+    into joint training.
 
     Hidden dimension default is intentionally small (16): the experiment is
     about whether nonlinearity helps at all, not about model capacity.
@@ -1178,7 +1174,7 @@ class MLPHeadAdapter:
     -----
     Mirrors ``LinearHeadAdapter`` in scope: only ``init_params`` and
     ``forward`` are implemented, since ``solve_output_weights`` and
-    ``get_hidden_features`` are disabled in jcce_learner (line 1598).
+    ``get_hidden_features`` are disabled in jcce_learner.
     """
 
     def __init__(self, hidden_dim: int = 16, key: random.PRNGKey = None):
@@ -1241,7 +1237,7 @@ class MLPHeadAdapter:
 
 
 # ============================================================================
-# KL-Bottleneck Head Adapter (Phase 2 — Q3.1.D)
+# KL-Bottleneck Head Adapter
 # ============================================================================
 
 
@@ -1598,7 +1594,7 @@ class DAGAttentionAdapter:
 
 
 # ============================================================================
-# TopoMamba Adapter (renamed 2026-04-28 from CausalMamba; see topo_mamba.py)
+# TopoMamba Adapter (formerly CausalMamba; see topo_mamba.py)
 # ============================================================================
 
 from jcce.models.topo_mamba import TopoMambaProcessor as TopoMambaBase
@@ -1673,14 +1669,14 @@ class TopoMambaAdapter:
         self.sinkhorn_temperature = sinkhorn_temperature
         self.sinkhorn_n_iters = sinkhorn_n_iters
         self.enable_gating = enable_gating
-        # Q3.1.F (2026-04-30): T-conditioned input projection (Direction 1).
-        # When t_idx is set (>= 0), TopoMamba modulates the projected input by
-        # a learned function of z[:, t_idx]. Forces SSM selective params to
-        # depend on T per batch sample.
+        # T-conditioned input projection (Direction 1). When t_idx is set
+        # (>= 0), TopoMamba modulates the projected input by a learned
+        # function of z[:, t_idx], forcing SSM selective params to depend
+        # on T per batch sample.
         self.t_idx = t_idx
-        # Q3.1.G (2026-04-30): DAG-Structured State Transitions (Direction 2).
-        # K rounds of post-Mamba mixing along A's edges. Forces information
-        # flow through DAG paths; addresses high-capacity gaming structurally.
+        # DAG-Structured State Transitions (Direction 2). K rounds of
+        # post-Mamba mixing along A's edges, forcing information flow
+        # through DAG paths and addressing high-capacity gaming structurally.
         self.dag_mixing_layers = dag_mixing_layers
 
         self.model = TopoMambaBase(
@@ -1881,7 +1877,7 @@ class TopoMambaAdapter:
         return params
 
 
-# Backward-compatibility alias (renamed 2026-04-28; see jcce/models/topo_mamba.py)
+# Backward-compatibility alias; see jcce/models/topo_mamba.py
 CausalMambaAdapter = TopoMambaAdapter
 
 
@@ -1908,8 +1904,6 @@ class EffectAdapterWrapper:
         elm_with_effects = EffectAdapterWrapper(elm_adapter, latent_dim=4)
         params = elm_with_effects.init_params(n_inputs)
         outputs = elm_with_effects.forward_with_effects(X, params, U, T)
-
-    v6.0: Initial implementation following CAUSAL_EFFECT_ESTIMATION_IMPLEMENTATION_PLAN.md
     """
 
     def __init__(
@@ -2216,112 +2210,3 @@ def create_effect_adapter(
         enable_effects=enable_effects,
         key=key2,
     )
-
-
-# ============================================================================
-# Test Functions
-# ============================================================================
-
-if __name__ == "__main__":
-    print("Testing Processor Adapters")
-    print("=" * 60)
-
-    key = random.PRNGKey(42)
-    n_samples, n_inputs = 10, 5
-    X = random.normal(key, (n_samples, n_inputs))
-
-    # Test MLP
-    print("\n1. MLP Adapter")
-    mlp = MLPAdapter(hidden_dim=32, n_layers=2, key=key)
-    params_mlp = mlp.init_params(n_inputs)
-    output_mlp = mlp.forward(X, params_mlp)
-    print(f"   Input: {X.shape}, Output: {output_mlp.shape}")
-    print("   [OK] MLP working!")
-
-    # Test Transformer
-    print("\n2. Transformer Adapter")
-    transformer = TransformerAdapter(d_model=32, n_heads=2, n_layers=1, d_ff=64, key=key)
-    params_transformer = transformer.init_params(n_inputs)
-    output_transformer = transformer.forward(X, params_transformer)
-    print(f"   Input: {X.shape}, Output: {output_transformer.shape}")
-    print("   [OK] Transformer working!")
-
-    # Test Mamba
-    print("\n3. Mamba Adapter")
-    mamba = MambaAdapter(d_model=32, d_state=8, d_conv=4, expand=2, key=key)
-    params_mamba = mamba.init_params(n_inputs)
-    output_mamba = mamba.forward(X, params_mamba)
-    print(f"   Input: {X.shape}, Output: {output_mamba.shape}")
-    print("   [OK] Mamba working!")
-
-    # Test ELM
-    print("\n4. ELM Adapter")
-    elm = ELMAdapter(hidden_dim=32, n_hidden_nodes=64, key=key)
-    params_elm = elm.init_params(n_inputs)
-    output_elm = elm.forward(X, params_elm)
-    print(f"   Input: {X.shape}, Output: {output_elm.shape}")
-    print("   [OK] ELM working!")
-
-    # Test GNN
-    print("\n5. GNN Adapter")
-    gnn = GNNAdapter(hidden_dim=32, n_layers=2, gnn_type="gcn", key=key)
-    params_gnn = gnn.init_params(n_inputs)
-    A_test = random.bernoulli(key, p=0.3, shape=(n_inputs, n_inputs)).astype(jnp.float32)
-    output_gnn = gnn.forward(X, params_gnn, A=A_test)
-    print(f"   Input: {X.shape}, Adjacency: {A_test.shape}, Output: {output_gnn.shape}")
-    print("   [OK] GNN working!")
-
-    print("\n" + "=" * 60)
-    print("[OK] All adapters working!")
-
-    # Test EffectAdapterWrapper with all processors
-    print("\n" + "=" * 60)
-    print("Testing Effect Adapter Wrapper (ALL Processors)")
-    print("=" * 60)
-
-    latent_dim = 4
-    U = random.normal(key, (n_samples, latent_dim))  # Latent scores
-    T = (random.uniform(key, (n_samples,)) > 0.5).astype(jnp.float32)  # Treatment
-
-    for processor_type in ["elm", "mlp", "transformer", "mamba", "gnn"]:
-        print(
-            f"\n6.{['elm', 'mlp', 'transformer', 'mamba', 'gnn'].index(processor_type) + 1}. {processor_type.upper()} with Effect Heads"
-        )
-        try:
-            effect_adapter = create_effect_adapter(
-                processor_type=processor_type,
-                latent_dim=latent_dim,
-                head_hidden_dim=32,
-                enable_effects=True,
-                key=key,
-                hidden_dim=32,
-                d_model=32,
-                n_layers=1,
-                n_heads=2,
-                d_ff=64,
-            )
-
-            params = effect_adapter.init_params(n_inputs)
-            print(f"   Params initialized: effect_enabled={params.get('effect_enabled', False)}")
-
-            # Test standard forward
-            output = effect_adapter.forward(X, params)
-            print(f"   Standard forward: {output.shape}")
-
-            # Test forward with effects
-            if processor_type == "gnn":
-                outputs = effect_adapter.forward_with_effects(
-                    X, params, U, T, training=False, A=A_test
-                )
-            else:
-                outputs = effect_adapter.forward_with_effects(X, params, U, T, training=False)
-
-            print(f"   Effect outputs: y0={outputs['y0'].shape}, y1={outputs['y1'].shape}")
-            print(f"   CATE (tau): {outputs['tau'].shape}, ATE={float(outputs['ATE']):.4f}")
-            print(f"   [OK] {processor_type.upper()} with effects working!")
-
-        except Exception as e:
-            print(f"   [ERROR] Error: {e}")
-
-    print("\n" + "=" * 60)
-    print("[OK] All effect adapters working!")

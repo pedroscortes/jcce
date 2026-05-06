@@ -7,13 +7,11 @@ Replaces dense adjacency matrix with (H, p) parameterization:
 
 Key property: W = H ⊙ σ((p_j - p_i - ε) / τ) is ALWAYS a DAG
 
-This eliminates the need for DAG constraint during optimization!
-The DAG property is guaranteed by construction.
-
-v5.0 Architecture:
-- Eliminates expensive O(d³) DAG constraint computation
-- Enables scalability to d=100+ features
-- Compatible with NSGA-II genome encoding
+This eliminates the need for DAG constraint during optimization;
+the DAG property is guaranteed by construction. The (H, p)
+parameterization avoids the O(d^3) DAG-penalty computation used by
+NOTEARS/DAGMA/GOLEM, enabling scaling to larger feature counts and
+fitting cleanly into the NSGA-II genome encoding.
 
 Usage:
     from cosmo import COSMOGenome, decode_cosmo_to_dag, initialize_cosmo_genome
@@ -318,39 +316,3 @@ def cosmo_to_nsga2_decision(genome: COSMOGenome, hyperparams: np.ndarray) -> np.
     return np.concatenate([hyperparams, H_flat, p])
 
 
-# ============================================================================
-# Quick Test
-# ============================================================================
-
-if __name__ == "__main__":
-    print("Testing COSMO genome encoding...")
-    print("=" * 60)
-
-    key = random.PRNGKey(42)
-    d = 10
-
-    # Initialize genome
-    genome = initialize_cosmo_genome(key, d)
-    print(f"Initialized COSMO genome: H={genome.H.shape}, p={genome.p.shape}")
-
-    # Decode to DAG
-    W = decode_cosmo_to_dag(genome, tau=0.1, epsilon=0.1, d=d)
-    print(f"Decoded adjacency: W={W.shape}")
-    print(f"Max edge weight: {jnp.max(jnp.abs(W)):.4f}")
-    print(f"Mean edge weight: {jnp.mean(jnp.abs(W)):.4f}")
-
-    # Verify DAG property
-    is_dag = cosmo_dag_check(W)
-    print(f"Is DAG: {is_dag}")
-
-    # Test temperature annealing
-    schedule = COSMOTemperatureSchedule(tau_init=1.0, tau_final=0.01, n_generations=15)
-    print("\nTemperature schedule:")
-    for gen in [0, 5, 10, 14]:
-        tau = schedule.get_tau(gen)
-        W_gen = decode_cosmo_to_dag(genome, tau=tau, epsilon=0.1, d=d)
-        sparsity = jnp.mean(jnp.abs(W_gen) < 0.01)
-        print(f"  Gen {gen}: τ={tau:.4f}, sparsity={sparsity:.2%}")
-
-    print("\n" + "=" * 60)
-    print("COSMO genome encoding working!")

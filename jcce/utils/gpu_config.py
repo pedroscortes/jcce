@@ -252,38 +252,3 @@ def print_gpu_info():
     print()
 
     return info
-
-
-if __name__ == "__main__":
-    # Test GPU detection
-    print_gpu_info()
-
-    # Test configuration
-    configure_jax_multi_gpu(memory_fraction=0.9)
-
-    # Test population splitting
-    print("\nTesting population splitting:")
-    population = list(range(10))  # Mock population of 10 genomes
-    devices = jax.devices("gpu")
-
-    if len(devices) > 0:
-        chunks = split_population_across_gpus(population, devices)
-        print(f"  Population size: {len(population)}")
-        print(f"  Number of GPUs: {len(devices)}")
-        print(f"  Chunks: {chunks}")
-
-        # Test batch size calculation
-        print("\nOptimal batch sizes for different datasets:")
-        configs = [
-            ("Heart Disease", 14, 270),
-            ("TEP (30 features)", 30, 4000),
-            ("TEP (52 features)", 52, 10000),
-        ]
-
-        for name, n_features, n_samples in configs:
-            batch_size = get_optimal_batch_size(
-                n_features, n_samples, len(devices), memory_per_gpu_gb=24.0
-            )
-            print(f"  {name:25} (n={n_features:2}): batch_size={batch_size:5}")
-    else:
-        print("  No GPUs available for testing")

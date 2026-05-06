@@ -1,4 +1,4 @@
-"""Tests for the classification plateau fix (Session 34).
+"""Tests for the classification plateau fix.
 
 Verifies that freezing log_var_recon (removing uncertainty weighting) allows
 classification loss to drop below ln(2) = 0.6931 during training.

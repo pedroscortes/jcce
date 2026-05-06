@@ -1,4 +1,4 @@
-"""Tests for Y-as-sink DAG constraint (Session 34).
+"""Tests for the Y-as-sink DAG constraint.
 
 Verifies that when enforce_outcome_sink=True, the DAG constraint is computed
 on the X-only submatrix, freeing X→Y edges from acyclicity pressure.

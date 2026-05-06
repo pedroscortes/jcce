@@ -1,5 +1,5 @@
 """
-NSGA-II for Unified Supervised Causal Discovery (v4.0/v7.0) - REDUCED HYPERPARAMETER SPACE.
+NSGA-II for Unified Supervised Causal Discovery (reduced hyperparameter space).
 
 Memory-optimized version with reduced processor hyperparameter combinations:
 - Total variants: ~32 (vs ~624 in full version)
@@ -43,7 +43,7 @@ from pymoo.termination import get_termination
 
 from jcce.structure_learning.genome import MACliteGenome
 
-# Phase 3: Warm-start cache for structure initialization
+# Warm-start cache for structure initialization
 from jcce.structure_learning.warm_start_cache import ImprovedWarmStartCache
 
 # DML cross-fitting (O5) and actionability proxy (O6) for causal validation
@@ -206,7 +206,7 @@ LAMBDA_CONFOUND_SPARSE = [
     0.05,
     0.1,
     0.5,
-]  # A_confound sparsity (v11: increased 10x for sparser bi-directed edges)
+]  # A_confound sparsity (tuned for sparser bi-directed edges)
 LAMBDA_BOW_V7 = [0.1, 0.3, 0.5, 1.0]
 EFFECT_REFINEMENT_ITERS = [0, 30, 50, 100]  # Post-hoc effect refinement iterations
 
@@ -309,7 +309,7 @@ def genome_to_unified_config(
 
     # Add effect estimation parameters if available
     if use_v7:
-        # Extract v7 gene indices with defaults for backward compatibility
+        # Extract effect-estimation gene indices with defaults for backward compatibility
         effect_hidden_dim_idx = getattr(genome, "effect_hidden_dim_idx", 1)  # default: 64
         effect_embed_dim_idx = getattr(genome, "effect_embed_dim_idx", 1)  # default: 16
         lambda_effect_idx = getattr(genome, "lambda_effect_idx", 1)  # default: 10.0
@@ -383,7 +383,7 @@ class UnifiedSCDProblem(Problem):
         task: str = "classification",  # 'classification' or 'regression'
         # GOLEM overrides for ablation studies
         golem_overrides: Optional[Dict[str, Any]] = None,
-        # Phase 3: Warm-start cache
+        # Warm-start cache
         enable_warm_start: bool = False,
         warm_start_prob: float = 0.3,
     ):
@@ -393,15 +393,15 @@ class UnifiedSCDProblem(Problem):
             Y_train: Training labels/values (n_samples,)
             n_vars: Number of variables (for A_topology size)
             true_graph: Optional ground truth graph for evaluation
-            true_mb: Optional ground truth Markov Blanket indices for F1 optimization (v8.0)
+            true_mb: Optional ground truth Markov Blanket indices for F1 optimization
             stage1_max_iter: Max iterations for GOLEM optimization
             jax_key_seed: Seed for JAX random key
             verbose: Print evaluation details
-            use_v7: Enable v7.0 features (effect estimation, bi-directed edges, 4 objectives)
-            use_pc_warmstart: Run PC algorithm once to get initial structure (v9.1)
-            negative_control_idx: Index of known non-causal variable for calibration (v9.1)
-            use_dml_objective: Enable O5 (DML effect variance) objective (v13.0)
-            use_actionability_objective: Enable O6 (actionability proxy) objective (v13.0)
+            use_v7: Enable effect-estimation features (bi-directed edges, 4 objectives)
+            use_pc_warmstart: Run PC algorithm once to get initial structure
+            negative_control_idx: Index of known non-causal variable for calibration
+            use_dml_objective: Enable O5 (DML effect variance) objective
+            use_actionability_objective: Enable O6 (actionability proxy) objective
             classifier_for_actionability: Pre-trained classifier for O6 margin computation
         """
         self.X_train = X_train
@@ -430,7 +430,7 @@ class UnifiedSCDProblem(Problem):
         self.task = task
         self.golem_overrides = golem_overrides or {}
 
-        # Phase 3: Warm-start cache
+        # Warm-start cache
         self.enable_warm_start = enable_warm_start
         self.warm_start_prob = warm_start_prob
         self.warm_start_cache = ImprovedWarmStartCache(max_size=50) if enable_warm_start else None
@@ -454,8 +454,8 @@ class UnifiedSCDProblem(Problem):
         #  transformer_d_model, transformer_n_heads, transformer_n_layers, transformer_d_ff,
         #  gnn_hidden_dim, gnn_n_layers, gnn_type, gnn_aggregation,
         #  elm_hidden_dim, elm_n_hidden_nodes, elm_activation,
-        #  (v7) effect_hidden_dim, effect_embed_dim, lambda_effect, effect_warmup_iter,
-        #  (v7) lambda_confound_sparse, lambda_bow_v7]
+        #  (effect-estimation) effect_hidden_dim, effect_embed_dim, lambda_effect, effect_warmup_iter,
+        #  (effect-estimation) lambda_confound_sparse, lambda_bow_v7]
 
         n_vars_genome = 27 if use_v7 else 20
 
@@ -493,7 +493,7 @@ class UnifiedSCDProblem(Problem):
                     len(EFFECT_WARMUP_ITERS) - 1,  # 23: effect_warmup_iter_idx
                     len(LAMBDA_CONFOUND_SPARSE) - 1,  # 24: lambda_confound_sparse_idx
                     len(LAMBDA_BOW_V7) - 1,  # 25: lambda_bow_v7_idx
-                    len(EFFECT_REFINEMENT_ITERS) - 1,  # 26: effect_refinement_iters_idx (v7.2)
+                    len(EFFECT_REFINEMENT_ITERS) - 1,  # 26: effect_refinement_iters_idx
                 ]
             )
 
@@ -521,7 +521,7 @@ class UnifiedSCDProblem(Problem):
 
     def _get_migrated_structure(self, processor_type: str) -> Optional[jnp.ndarray]:
         """
-        v11: Get best structure from another processor type for cross-pollination.
+        Get best structure from another processor type for cross-pollination.
 
         Migration strategy:
         - Fast processors (ELM, MLP) scout first
@@ -566,9 +566,7 @@ class UnifiedSCDProblem(Problem):
     def _update_structure_pool(
         self, processor_type: str, A_est: jnp.ndarray, fitness: float, generation: int
     ):
-        """
-        v11: Update structure pool with best structure per processor type.
-        """
+        """Update structure pool with best structure per processor type."""
         if not self.migration_enabled:
             return
 
@@ -593,7 +591,7 @@ class UnifiedSCDProblem(Problem):
             X: (pop_size, n_vars_genome) decision variables
             out: Dictionary to store objectives
 
-        v8.0: Added MB F1 as optional 5th objective when true_mb is provided.
+        Adds MB F1 as an optional 5th objective when ``true_mb`` is provided.
         """
         pop_size = X.shape[0]
 
@@ -609,7 +607,7 @@ class UnifiedSCDProblem(Problem):
             pc_result = get_pc_warmstart(
                 self.X_train, alpha=0.05, max_cond_size=2, verbose=self.verbose
             )
-            # PC returns n_vars x n_vars, but v7 needs (n_vars+1) x (n_vars+1)
+            # PC returns n_vars x n_vars, but the learner expects (n_vars+1) x (n_vars+1)
             # Expand by adding zero row/column for Y (outcome sink constraint)
             n_vars = pc_result.shape[0]
             n_total = n_vars + 1
@@ -633,7 +631,7 @@ class UnifiedSCDProblem(Problem):
                 config = genome_to_unified_config(genome, use_v7=self.use_v7, n_vars=self.n_vars)
                 processor_type = config["processor_type"]
 
-                # Phase 3: Warm-start priority: (1) cache.get → (2) cache.sample → (3) migration → (4) PC → (5) random
+                # Warm-start priority: (1) cache.get → (2) cache.sample → (3) migration → (4) PC → (5) random
                 A_init_to_use = None
                 if self.warm_start_cache is not None and np.random.rand() < self.warm_start_prob:
                     A_init_to_use = self.warm_start_cache.get(config)
@@ -715,7 +713,7 @@ class UnifiedSCDProblem(Problem):
                         self.current_generation,
                     )
 
-                    # Phase 3: Populate warm-start cache
+                    # Populate warm-start cache
                     if self.warm_start_cache is not None:
                         self.warm_start_cache.add(
                             config,
@@ -759,7 +757,7 @@ class UnifiedSCDProblem(Problem):
 
         self.current_generation += 1
 
-        # Phase 3: Advance warm-start cache generation
+        # Advance warm-start cache generation
         if self.warm_start_cache is not None:
             self.warm_start_cache.next_generation()
 
@@ -778,7 +776,7 @@ class UnifiedSCDProblem(Problem):
 
         # Constraints
         # C1: h(A) < 0.1 (acyclicity — reject cyclic solutions)
-        # C2: kappa(MB) < threshold (condition number, v15)
+        # C2: kappa(MB) < threshold (condition number)
         n_constr = 1 + (1 if self.use_condition_constraint else 0)
         G = np.zeros((pop_size, n_constr))
 
@@ -878,9 +876,10 @@ def evaluate_genome_unified(
     golem_overrides: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, float]:
     """
-    Evaluate genome using GOLEM unified v4/v7 approach.
+    Evaluate genome using the GOLEM unified approach.
 
-    Always uses golem_v4_joint (or v7 if enabled) with specified processor.
+    Always uses golem_v4_joint (or its effect-estimation variant when use_v7
+    is True) with the specified processor.
     """
     if golem_overrides is None:
         golem_overrides = {}
@@ -1145,7 +1144,7 @@ def run_nsga2(
     condition_threshold: float = 100.0,
     task: str = "classification",  # 'classification' or 'regression'
     golem_overrides: Optional[Dict[str, Any]] = None,
-    # Phase 3: Warm-start cache
+    # Warm-start cache
     enable_warm_start: bool = False,
     warm_start_prob: float = 0.3,
 ) -> Dict[str, Any]:
@@ -1202,7 +1201,7 @@ def run_nsga2(
         condition_threshold=condition_threshold,
         task=task,
         golem_overrides=golem_overrides,
-        # Phase 3: Warm-start cache
+        # Warm-start cache
         enable_warm_start=enable_warm_start,
         warm_start_prob=warm_start_prob,
     )

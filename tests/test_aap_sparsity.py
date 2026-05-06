@@ -1,10 +1,10 @@
 """Tests for jcce.counterfactual.sparsity primitives.
 
-Sprint 1 prerequisite: STE hard-parents mask must produce a strict 0/1
-forward and an identity-through-|weights| backward, otherwise the
-gradient signal that grows or shrinks edges during AAP training is
-broken. ``edge_set_agreement`` is the Sprint 1 gate metric on synthetic
-SCMs and must report expected values on toy ground truth.
+The STE hard-parents mask must produce a strict 0/1 forward and an
+identity-through-|weights| backward, otherwise the gradient signal
+that grows or shrinks edges during AAP training is broken.
+``edge_set_agreement`` is the gate metric on synthetic SCMs and must
+report expected values on toy ground truth.
 """
 
 from __future__ import annotations

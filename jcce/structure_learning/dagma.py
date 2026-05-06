@@ -265,8 +265,8 @@ def learn_with_dagma(
         learning_rate: Learning rate for optimizer
         verbose: Print progress
         A_prior: (n_vars, n_vars) prior adjacency matrix (from GA's A_topology).
-                 If provided, adds soft constraint encouraging edges where A_prior has them.
-                 This makes the algorithm "truly memetic" (Phase 2.3).
+                 If provided, adds a soft constraint encouraging edges where
+                 A_prior has them, making the algorithm "truly memetic".
         lambda_prior: Weight for prior constraint (default: 0.1)
 
     Returns:
@@ -320,7 +320,7 @@ def learn_with_dagma(
             # Sparsity penalty
             sparse_loss = alpha_sparse * jnp.sum(jnp.abs(A_param))
 
-            # Prior penalty (memetic component - Phase 2.3)
+            # Prior penalty (memetic component)
             if A_prior is not None:
                 # Penalize edges where A_prior has no edge (prior_mask = 1 where no prior edge)
                 prior_mask = 1.0 - A_prior

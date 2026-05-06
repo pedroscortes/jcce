@@ -1,17 +1,18 @@
 """
-Unified K-Fold Cross-Validation using fθ (v15)
+Unified K-fold cross-validation using fθ.
 
-Replaces the v14 approach of using a separate LogisticRegression for evaluation.
-Instead, retrains GOLEM+processor on each fold and evaluates fθ on held-out data.
+Retrains GOLEM + processor on each fold and evaluates fθ on held-out
+data, instead of fitting a separate LogisticRegression for evaluation.
 
 Key design decisions:
-- Warm-starting from full-data solution reduces fold training from ~150 to ~50 iterations
-- fθ is the SAME model that discovers causal structure (unified evaluation)
-- Structure stability (MB Jaccard, edge frequency) measures DAG robustness across folds
+- Warm-starting from the full-data solution reduces fold training from
+  ~150 to ~50 iterations.
+- fθ is the same model that discovers causal structure (unified evaluation).
+- Structure stability (MB Jaccard, edge frequency) measures DAG robustness
+  across folds.
 
-References:
-- Chernozhukov et al. (2018) "Double/Debiased Machine Learning"
-- Plan: v15 Implementation Plan (P2)
+Reference:
+- Chernozhukov et al. (2018), "Double/debiased machine learning."
 """
 
 import gc
@@ -360,8 +361,6 @@ def _evaluate_single_fold(
         }
 
         try:
-            # Always use v7 (v4_joint has a pos_embed shape bug with
-            # Transformer when augmented data includes Y).
             A_est, processor_trained, proc_params, fold_metrics = learn_structure(
                 data=X_train_jax,
                 Y=Y_train_jax,
@@ -597,7 +596,7 @@ def evaluate_pareto_solution_cv(
         hyperparams: From NSGA-II Pareto solution. Keys:
             - lambda_1, lambda_2, lambda_class, lr (required)
             - processor_config (optional, architecture-specific)
-            - effect_hidden_dim, effect_embed_dim, lambda_effect, etc. (v7 optional)
+            - effect_hidden_dim, effect_embed_dim, lambda_effect, etc. (optional)
         processor_type: 'mlp', 'transformer', 'mamba', 'gnn', or 'elm'
         A_init: Full-data adjacency matrix for warm-starting (n_vars+1, n_vars+1)
         processor_params_init: Full-data processor params for warm-starting (optional)
@@ -613,8 +612,9 @@ def evaluate_pareto_solution_cv(
         parallel_folds: If True and >=2 GPUs detected, distribute folds across
                        GPUs via ThreadPoolExecutor. Falls back to sequential on CPU
                        or single GPU.
-        use_v7: If True, retrain with learn_structure (effects, confounds).
-                If False, use v4. If None, infer from hyperparams keys (legacy).
+        use_v7: Always True in current code; the parameter is kept for backward
+                compatibility with older call sites. Retraining uses
+                learn_structure (effects + confounds).
         freeze_structure: If True, freeze A during per-fold training (only retrain
                          processor fθ). Isolates predictive evaluation from structural
                          instability. Recommended for publishable results.
@@ -634,7 +634,8 @@ def evaluate_pareto_solution_cv(
     # A_init should be (n_features+1 × n_features+1) — augmented space including Y.
     # learn_structure() works in augmented space internally.
 
-    # Always use v7 (v4_joint has a pos_embed shape bug with Transformer)
+    # The legacy v4_joint path is no longer reachable; always use the
+    # learn_structure-based retraining flow.
     use_v7 = True
 
     # StratifiedKFold for classification, regular KFold for regression

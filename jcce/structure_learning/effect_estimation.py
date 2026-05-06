@@ -16,9 +16,6 @@ we can estimate causal effects more accurately than standard methods.
 References:
 - Shalit et al. (2017): "Estimating individual treatment effect..."
 - Shi et al. (2019): DragonNet
-- 6-LLM Consensus (2024): JCCE Effect Estimation Design
-
-v6.0: Initial implementation following CAUSAL_EFFECT_ESTIMATION_IMPLEMENTATION_PLAN.md
 """
 
 from dataclasses import dataclass
@@ -695,7 +692,7 @@ def get_phase_weights_fixed(progress: float, phase_splits: tuple = (0.4, 0.8)) -
 
 
 # ============================================================================
-# Valid Adjustment Set Computation (6-LLM Consensus Fix)
+# Valid Adjustment Set Computation
 # ============================================================================
 
 
@@ -719,16 +716,16 @@ def compute_valid_adjustment_sets(
     Args:
         A_weighted: Weighted adjacency matrix (d, d) where A[i,j] = edge i→j
         Y_idx: Index of outcome variable
-        threshold: Edge weight threshold for binarization (default 0.05)
-                   v11.4: Lowered from 0.15 because X→X edges are weaker than X→Y
-                   (X→Y edges ~0.1-0.2, X→X edges ~0.01-0.05 due to sparsity)
+        threshold: Edge weight threshold for binarization (default 0.05).
+                   Set lower than for X→Y edges because X→X edges are weaker
+                   under JCCE's sparsity (X→Y edges ~0.1-0.2, X→X edges
+                   ~0.01-0.05).
 
     Returns:
         Dictionary mapping treatment_idx → set of valid covariate indices
 
     References:
         - Pearl (2009): Causality - Backdoor criterion
-        - 6-LLM Consensus (2024): JCCE Effect Estimation Fix
     """
     import numpy as np  # Use numpy for graph algorithms
 

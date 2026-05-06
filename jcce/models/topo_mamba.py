@@ -1,19 +1,18 @@
 """
 TopoMamba: Mamba SSM with topological-sort + DAG-gating mechanisms.
 
-Renamed from "CausalMamba" 2026-04-28 due to naming collisions with two
-unrelated 2025 papers: Zhan & Cheng (Berkeley, arXiv:2510.17318, NLP rumor
-detection) and Bae & Cha (arXiv:2511.16191, fMRI BOLD causality). "TopoMamba"
-more precisely captures what the mechanisms do — Mechanism 1 (Sinkhorn) is
-literally a differentiable topological sort, Mechanism 2 (DAG-gating) selects
-A's columns by topological position. Backward-compat alias
-``CausalMambaProcessor = TopoMambaProcessor`` is preserved at the bottom of
-this module.
+Formerly named "CausalMamba"; renamed to avoid collision with unrelated 2025
+papers (Zhan & Cheng, arXiv:2510.17318, NLP rumor detection; Bae & Cha,
+arXiv:2511.16191, fMRI BOLD causality). The new name more precisely captures
+the mechanisms: Mechanism 1 (Sinkhorn) is a differentiable topological sort,
+and Mechanism 2 (DAG-gating) selects A's columns by topological position. A
+backward-compat alias ``CausalMambaProcessor = TopoMambaProcessor`` is
+preserved at the bottom of this module.
 
 Three orderings are supported:
 
   1. Hard topological sort (Kahn's algorithm via jax.pure_callback). Discrete,
-     non-differentiable; gradient stops at A. The original prototype variant.
+     non-differentiable; gradient stops at A.
   2. Sinkhorn soft topological sort. Differentiable: gradient flows
      from the loss through the Mamba forward, the soft permutation matrix P,
      the ancestral-depth scoring s = (I - A^T)^{-1} @ 1, and back to A.
@@ -404,24 +403,21 @@ class TopoMambaProcessor(nn.Module):
     expand: int = 2
     n_layers: int = 1
     enable_gating: bool = False
-    # Q3.1.F (2026-04-30): Direction 1 — Treatment-Conditioned SSM.
-    # When t_idx is set (>= 0), the input projection is modulated by a learned
-    # function of z[:, t_idx]. Mechanism: each batch sample's projected input
-    # is scaled by its T value, so the SSM's selective parameters (Δ, B, C)
-    # depend on T per sample. The model cannot route around T because T is
-    # in the input-projection equation, not just one of the input features.
-    # No-op when t_idx is None or t_idx < 0.
+    # Direction 1 — Treatment-Conditioned SSM. When t_idx is set (>= 0), the
+    # input projection is modulated by a learned function of z[:, t_idx], so
+    # each batch sample's projected input is scaled by its T value and the
+    # SSM's selective parameters (Δ, B, C) depend on T per sample. The model
+    # cannot route around T because T enters the input-projection equation,
+    # not just as one of the input features. No-op when t_idx is None or < 0.
     t_idx: Optional[int] = None
-    # Q3.1.G (2026-04-30): Direction 2 — DAG-Structured State Transitions.
-    # When dag_mixing_layers > 0, applies a post-Mamba DAG mixing pass that
-    # propagates the hidden state along A's edges (NOT just sequence positions).
-    # K rounds of: h_new[j] = h[j] + sum_i A[i,j] * h[i] (with row-norm).
-    # After K layers, h[Y] receives information only from variables on
-    # paths-of-length-≤K to Y in the learned DAG. Mechanism: T's signal can
-    # only reach Y through DAG paths; non-ancestors-of-Y cannot contribute.
-    # Direct counter to the high-capacity gaming pattern (DAG-Att satisfies
-    # constraints via non-T features) at the structural level.
-    # No-op when dag_mixing_layers == 0.
+    # Direction 2 — DAG-Structured State Transitions. When dag_mixing_layers
+    # > 0, applies a post-Mamba DAG mixing pass that propagates the hidden
+    # state along A's edges (not just sequence positions). K rounds of
+    # h_new[j] = h[j] + sum_i A[i,j] * h[i] (with row-norm). After K layers,
+    # h[Y] receives information only from variables on paths-of-length-≤K
+    # to Y in the learned DAG, so non-ancestors-of-Y cannot contribute and
+    # the model must route T's signal through DAG paths to reach Y. No-op
+    # when dag_mixing_layers == 0.
     dag_mixing_layers: int = 0
 
     @nn.compact
@@ -477,11 +473,11 @@ class TopoMambaProcessor(nn.Module):
         z_expanded = z_sorted[..., None]  # (B, N, 1)
         z_projected = nn.Dense(self.d_model, name="input_projection")(z_expanded)
 
-        # Q3.1.F (2026-04-30): Direction 1 — Treatment-Conditioned input
-        # projection. When t_idx is configured, modulate the projected input
-        # by a learned function of z[:, t_idx]. Each batch sample gets a
-        # T-dependent scaling factor, forcing the SSM's selective parameters
-        # to depend on T per sample.
+        # Direction 1 — Treatment-Conditioned input projection. When t_idx
+        # is configured, modulate the projected input by a learned function
+        # of z[:, t_idx], giving each batch sample a T-dependent scaling
+        # factor and forcing the SSM's selective parameters to depend on T
+        # per sample.
         if self.t_idx is not None and self.t_idx >= 0:
             t_values = z[:, self.t_idx:self.t_idx + 1]  # (B, 1) — pre-sort z
             t_modulation = nn.Dense(self.d_model, name="t_modulation")(t_values)
@@ -530,11 +526,11 @@ class TopoMambaProcessor(nn.Module):
         else:
             h = h_sorted
 
-        # Q3.1.G (2026-04-30): Direction 2 — DAG-Structured State Transitions.
-        # K rounds of structural mixing along A's edges. After K rounds,
-        # h[j] receives information from variables on paths-of-length-≤K
-        # to j in the learned DAG. Forces flow through DAG paths;
-        # non-ancestors of j cannot contribute to h[j].
+        # Direction 2 — DAG-Structured State Transitions. K rounds of
+        # structural mixing along A's edges. After K rounds, h[j] receives
+        # information from variables on paths-of-length-≤K to j in the
+        # learned DAG, forcing flow through DAG paths so non-ancestors of j
+        # cannot contribute to h[j].
         if self.dag_mixing_layers > 0 and A is not None:
             # Row-normalized A so each variable's incoming-mix sums to 1
             # (avoids exponential blowup of h magnitudes across K rounds).
@@ -550,7 +546,7 @@ class TopoMambaProcessor(nn.Module):
 
 
 # ============================================================================
-# Backward-compatibility alias (renamed 2026-04-28; see module docstring)
+# Backward-compatibility alias (see module docstring)
 # ============================================================================
 
 CausalMambaProcessor = TopoMambaProcessor

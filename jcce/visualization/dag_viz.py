@@ -1,5 +1,5 @@
 """
-DAG Visualization for JCCE v7.0
+DAG Visualization.
 
 Publication-quality causal DAG visualization using Graphviz.
 Supports:
@@ -11,7 +11,6 @@ Supports:
 Usage:
     from jcce.visualization.dag_viz import visualize_jcce_dag
 
-    # From JCCE v7 output
     visualize_jcce_dag(
         A_direct=metrics['A_direct'],
         A_confound=metrics.get('A_confound'),
@@ -191,7 +190,7 @@ def visualize_jcce_dag(
         format=output_format,
     )
 
-    # Graph attributes - v13.1: Increased spacing for better label visibility
+    # Graph attributes — wider spacing for label visibility.
     graph_attrs = {
         "rankdir": rankdir,
         "splines": "true",  # Curved edges
@@ -383,7 +382,7 @@ def visualize_from_metrics(
     **kwargs,
 ) -> "graphviz.Digraph":
     """
-    Create DAG visualization directly from JCCE v7 metrics dict.
+    Create DAG visualization directly from a JCCE metrics dict.
 
     Args:
         metrics: Metrics dict from learn_structure()
@@ -676,7 +675,7 @@ def run_visualization_tests(output_dir: str = "dag_test_outputs"):
     )
     print(f"  Saved: {output_path}/test_dag.png")
 
-    # PDF version
+    # PDF render
     dot = visualize_jcce_dag(
         A_direct=A_direct,
         A_confound=A_confound,

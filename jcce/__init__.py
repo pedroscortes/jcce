@@ -18,7 +18,6 @@ Lower-level functionality lives in submodules:
     jcce.structure_learning   DAG learning core (jcce_learner, optuna_search)
     jcce.models               Processor architectures (Linear, MLP, Transformer, Mamba, GNN, ELM)
     jcce.training             Training loops and curriculum
-    jcce.optimization         Multi-objective outer loop (Optuna TPE, NSGA-II)
     jcce.validation           DML, sensitivity, bootstrap, LOVO, refutations
     jcce.counterfactual       Counterfactual generation on the learned SCM
     jcce.evaluation           Metrics (SHD, F1, BAcc, ATE bias, PEHE)

@@ -1,7 +1,7 @@
 """
 Optuna study runner with multi-GPU support and post-hoc pipeline integration.
 
-Phase A.2+A.3: High-level orchestrator that wraps optuna_search.py with:
+High-level orchestrator that wraps optuna_search.py with:
 - PC algorithm warm-start (seeded via enqueue_trial)
 - Multi-GPU launcher (separate processes per GPU, shared SQLite)
 - Post-hoc validation pipeline integration (K-fold CV, DML)
@@ -654,15 +654,17 @@ def launch_multi_gpu_workers(
     Returns:
         List of Popen processes
     """
-    worker_script = os.path.join(
-        os.path.dirname(__file__), "..", "..", "scripts", "jcce_hpo_worker.py"
-    )
+    worker_script = os.environ.get("JCCE_HPO_WORKER")
+    if worker_script is None:
+        raise FileNotFoundError(
+            "No HPO worker script configured. Set the JCCE_HPO_WORKER "
+            "environment variable to the path of a worker script that "
+            "accepts --study-name, --storage, --n-trials, --gpu-id."
+        )
     worker_script = os.path.abspath(worker_script)
 
     if not os.path.exists(worker_script):
-        raise FileNotFoundError(
-            f"Worker script not found: {worker_script}. Create scripts/jcce_hpo_worker.py first."
-        )
+        raise FileNotFoundError(f"Worker script not found: {worker_script}")
 
     processes = []
     for gpu_id in range(n_gpus):

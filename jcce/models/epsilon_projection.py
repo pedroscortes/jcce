@@ -1,8 +1,8 @@
 """
-Epsilon Projection layer for Architecture v2.
+Epsilon Projection layer.
 
-Projects processor output (or encoder output if no processor) to epsilon parameters.
-This is where the KL gradients enter the processing pipeline in v2.
+Projects processor output (or encoder output if no processor) to epsilon
+parameters. This is where the KL gradients enter the processing pipeline.
 """
 
 import jax.numpy as jnp
@@ -13,8 +13,8 @@ class EpsilonProjection(nn.Module):
     """
     Projects features to epsilon distribution parameters.
 
-    In Architecture v2, this sits AFTER the processor, so it receives gradients
-    from BOTH reconstruction loss (via z) and KL loss (directly on mu_epsilon, log_var_epsilon).
+    Sits AFTER the processor, so it receives gradients from BOTH reconstruction
+    loss (via z) and KL loss (directly on mu_epsilon, log_var_epsilon).
 
     h_proc → (μ_ε, log_var_ε)
 

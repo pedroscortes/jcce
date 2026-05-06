@@ -1,13 +1,18 @@
 """
-Tests for v16.2 and v16.3 bug fixes:
-1. NSGA-II result stores v7 effect config (CV v7 detection)
-2. DAGMA fallback offset uses constant instead of d*1.0
-3. v16.3: DAGMA fallback uses sum(A²) instead of trace(A²) to avoid gradient dead zone
+Tests for two DAGMA-fallback bug fixes:
 
-These tests verify the fixes for:
-- LUCAS: Transformer pos_embed shape mismatch in CV evaluation
-- Breast cancer: DAGMA h(A) jumping to ~31 on 30-variable datasets
-- v16.3: >50% of evals stuck at h(A)=0.5 due to zero-gradient fallback
+1. NSGA-II result stores the effect-aware (v7) config so cross-validation
+   detects the correct retraining path.
+2. DAGMA fallback offset uses a constant instead of d*1.0 to keep h(A)
+   bounded as the variable count grows.
+3. The DAGMA fallback uses sum(A²) instead of trace(A²) so the gradient
+   does not dead-zone when off-diagonal entries are small.
+
+Background on the failures these fixes address:
+- LUCAS: Transformer pos_embed shape mismatch during CV evaluation.
+- Breast cancer: DAGMA h(A) jumping to ~31 on 30-variable datasets.
+- A majority of evaluations stalled at h(A)=0.5 with the old fallback
+  due to its zero-gradient region.
 """
 
 import os
@@ -78,10 +83,10 @@ def test_dagma_fallback_not_proportional_to_d():
         results[d] = h
         print(f"  d={d}: h(A) = {h:.4f}")
 
-    # v16.1 bug: h ≈ d (offset scaled as d*1.0), ratio ≈ 5.0
-    # v16.2 fix: offset = 0.5 (constant), but trace(A²) ≈ 0 → h = 0.5 (constant, v16.3 bug)
-    # v16.3 fix: sum(A²)/(d*s), for uniform A: (d-1)*a²/s + 0.5 → ratio ~ (d-1) linear
-    # Key: v16.3 gradient per edge = 2*A[i,j]/(d*s) does NOT scale with d
+    # h ≈ d (offset scaled as d*1.0), ratio ≈ 5.0
+    # offset = 0.5 (constant), but trace(A²) ≈ 0 → h = 0.5 (constant, fallback issue)
+    # sum(A²)/(d*s), for uniform A: (d-1)*a²/s + 0.5 → ratio ~ (d-1) linear
+    # gradient per edge = 2*A[i,j]/(d*s) does NOT scale with d
     # The h value scaling is acceptable; what matters is gradient signal
     ratio = results[50] / results[10]
     print(f"  h(d=50)/h(d=10) ratio = {ratio:.2f}")
@@ -266,16 +271,16 @@ def test_cv_v7_detection_logic():
 
 
 # =============================================================================
-# Bug 4 (v16.3): DAGMA fallback gradient dead zone
+# # DAGMA fallback gradient dead zone
 # trace(A²) only sees diagonal (≈0 for no self-loops) → h=0.5, grad=0
 # Fix: sum(A²)/(d*s) sees all edges → non-zero gradient signal
 # =============================================================================
 
 
 def test_v163_fallback_not_constant():
-    """v16.3: Fallback h(A) should vary with edge weights, not be constant 0.5."""
+    """ Fallback h(A) should vary with edge weights, not be constant 0.5."""
     print("\n" + "=" * 60)
-    print("Test 10: v16.3 — Fallback h(A) varies with edge weights")
+    print("Test 10: Fallback h(A) varies with edge weights")
     print("=" * 60)
 
     d = 30
@@ -299,9 +304,9 @@ def test_v163_fallback_not_constant():
 
 
 def test_v163_fallback_gradient_nonzero():
-    """v16.3 CRITICAL: Fallback must produce non-zero gradients for off-diagonal elements."""
+    """ Fallback must produce non-zero gradients for off-diagonal elements."""
     print("\n" + "=" * 60)
-    print("Test 11: v16.3 — Fallback gradients are non-zero (core bug fix)")
+    print("Test 11: Fallback gradients are non-zero (core bug fix)")
     print("=" * 60)
 
     for d in [11, 30]:
@@ -335,9 +340,9 @@ def test_v163_fallback_gradient_nonzero():
 
 
 def test_v163_fallback_gradient_pushes_weights_down():
-    """v16.3: Fallback gradient should push edge weights toward zero (positive gradient for positive weights)."""
+    """ Fallback gradient should push edge weights toward zero (positive gradient for positive weights)."""
     print("\n" + "=" * 60)
-    print("Test 12: v16.3 — Gradient pushes weights down in fallback")
+    print("Test 12: Gradient pushes weights down in fallback")
     print("=" * 60)
 
     d = 11
@@ -363,9 +368,9 @@ def test_v163_fallback_gradient_pushes_weights_down():
 
 
 def test_v163_optimization_escapes_fallback():
-    """v16.3: Optimizer should be able to escape the fallback region and reach h(A) ≈ 0."""
+    """ Optimizer should be able to escape the fallback region and reach h(A) ≈ 0."""
     print("\n" + "=" * 60)
-    print("Test 13: v16.3 — Optimization escapes fallback to reach h≈0")
+    print("Test 13: Optimization escapes fallback to reach h≈0")
     print("=" * 60)
 
     import optax
@@ -409,10 +414,10 @@ def test_v163_optimization_escapes_fallback():
 # =============================================================================
 
 if __name__ == "__main__":
-    print("v16.2 + v16.3 Bug Fix Tests")
+    print("DAGMA fallback bug-fix tests")
     print("=" * 60)
 
-    # v16.2 tests
+    # offset constant tests
     test_dagma_fallback_small_d()
     test_dagma_fallback_large_d()
     test_dagma_fallback_not_proportional_to_d()
@@ -423,7 +428,7 @@ if __name__ == "__main__":
     test_nsga2_result_contains_v7_keys()
     test_cv_v7_detection_logic()
 
-    # v16.3 tests
+    # tests
     test_v163_fallback_not_constant()
     test_v163_fallback_gradient_nonzero()
     test_v163_fallback_gradient_pushes_weights_down()

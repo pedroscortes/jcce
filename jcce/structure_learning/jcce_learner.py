@@ -226,8 +226,8 @@ def create_processor(processor_type: str, key: random.PRNGKey, **kwargs):
 
     elif processor_type in ("topo_mamba", "causal_mamba"):
         # "causal_mamba" kept as alias for backward compat; canonical name is
-        # "topo_mamba" (renamed 2026-04-28; see jcce/models/topo_mamba.py
-        # docstring for the naming-collision rationale).
+        # "topo_mamba" (see jcce/models/topo_mamba.py docstring for the
+        # naming-collision rationale).
         from jcce.structure_learning.processor_adapters import TopoMambaAdapter
 
         return TopoMambaAdapter(
@@ -324,8 +324,8 @@ def golem_unified_forward(
     proc_name = processor.__class__.__name__
     is_gnn = proc_name == "GNNAdapter"
     is_dag_attn = proc_name == "DAGAttentionAdapter"
-    # TopoMambaAdapter is the canonical name post-2026-04-28 rename;
-    # CausalMambaAdapter is kept as a backward-compat alias.
+    # TopoMambaAdapter is the canonical name; CausalMambaAdapter is kept as
+    # a backward-compat alias.
     is_topo_mamba = proc_name in ("TopoMambaAdapter", "CausalMambaAdapter")
 
     for j in range(n_vars):
@@ -742,7 +742,7 @@ def compute_dag_constraint_auto(
     use_exact_final: bool = True,
 ) -> float:
     """
-    Automatically select DAG constraint based on configuration (v4.1).
+    Automatically select DAG constraint based on configuration.
 
     Args:
         A: Adjacency matrix (n_vars, n_vars)
@@ -863,11 +863,11 @@ def golem_unified_multitask_loss(
     max_iter: int = 100,
 ) -> Tuple[float, float, float, float]:
     """
-    v4.0 Multi-Task Loss: Joint Structure Learning + Classification.
-    v4.1 Enhancement: Optional spectral DAG constraint for O(d²) performance.
+    Multi-Task Loss: Joint Structure Learning + Classification.
 
-    This is the KEY INNOVATION for v4.0: We optimize structure learning AND
-    classification in a SINGLE unified loss function. The processor learns to:
+    Optionally uses a spectral DAG constraint for O(d²) performance. This
+    optimizes structure learning AND classification in a SINGLE unified loss
+    function. The processor learns to:
     1. Reconstruct variables from their parents (structure learning)
     2. Predict Y from its Markov Blanket (classification)
 
@@ -885,7 +885,7 @@ def golem_unified_multitask_loss(
         lambda_class: Classification loss weight
         threshold: Edge threshold
         focus_on_mb: If True, only reconstruct Y's neighborhood (speedup)
-        use_spectral_constraint: Use O(d²) spectral constraint (v4.1)
+        use_spectral_constraint: Use O(d²) spectral constraint
         iteration: Current iteration (for hybrid mode)
         max_iter: Maximum iterations (for hybrid mode)
 
@@ -923,7 +923,7 @@ def golem_unified_multitask_loss(
         X_target = X[:, recon_vars]
         reconstruction_loss = jnp.sum((X_target - X_recon_mb) ** 2) / n_samples
     else:
-        # Full graph reconstruction (v3.0 style)
+        # Full graph reconstruction
         X_recon = golem_unified_forward(X, A, processor, processor_params, threshold)
         reconstruction_loss = jnp.sum((X - X_recon) ** 2) / n_samples
 
@@ -1009,18 +1009,15 @@ def _learn_structure_legacy(
     task: str = "classification",  # 'classification' or 'regression'
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
-    v4.0 PROPER: Joint optimization of A + processor parameters + uncertainty weights.
-    v4.1 Enhancement: Optional spectral DAG constraint and dynamic pruning.
+    Joint optimization of A + processor parameters + uncertainty weights.
 
-    THIS IS THE TRUE END-TO-END LEARNING APPROACH.
-
-    Key Innovation (based on research synthesis):
+    End-to-end learning approach:
     - Optimizes BOTH adjacency matrix A AND processor parameters θ jointly
     - Uses uncertainty weighting (Kendall et al. 2018) for automatic loss balancing
     - Multi-task loss: MSE for features, BCE/MSE for target Y
-    - Enables "Supervised Causal Discovery" hypothesis
-    - v4.1: Spectral DAG constraint for O(d²) performance on large datasets
-    - v4.1: Dynamic pruning to remove weak edges during optimization
+    - Enables "Supervised Causal Discovery"
+    - Optional spectral DAG constraint for O(d²) performance on large datasets
+    - Optional dynamic pruning to remove weak edges during optimization
 
     Args:
         data: (n_samples, n_vars) observed data (includes Y at Y_idx)
@@ -1038,12 +1035,12 @@ def _learn_structure_legacy(
         patience: Early stopping patience
         verbose: Print progress
         A_init: Optional initial adjacency matrix for warm-start (None = random init)
-        use_spectral_constraint: Use O(d²) spectral constraint (v4.1)
-        enable_pruning: Enable dynamic pruning during optimization (v4.1)
-        use_validation_split: Use validation set for early stopping (v5.1, 6-LLM consensus)
+        use_spectral_constraint: Use O(d²) spectral constraint
+        enable_pruning: Enable dynamic pruning during optimization
+        use_validation_split: Use validation set for early stopping
         validation_ratio: Fraction of data to use for validation (default 0.2)
         weight_decay: L2 regularization on A matrix (default 1e-4)
-        use_latent_confounders: Enable low-rank L for latent confounders (v6.0)
+        use_latent_confounders: Enable low-rank L for latent confounders
         latent_rank_k: Rank of L matrix (number of latent factors, default 5)
         lambda_L: Nuclear norm penalty weight on L (default 0.05)
         lambda_bow: Bow-free penalty weight (default 0.1)
@@ -1100,7 +1097,7 @@ def _learn_structure_legacy(
     if verbose:
         processor_name = processor.__class__.__name__.replace("Adapter", "")
         print(f"\n{'=' * 60}")
-        print("v5.1: Joint Optimization (A + θ + Uncertainty + Validation)")
+        print("Joint Optimization (A + θ + Uncertainty + Validation)")
         print(f"{'=' * 60}")
         if use_validation_split:
             print(f"Data: {n_samples_total} total → {n_samples} train / {n_val} val")
@@ -1120,16 +1117,16 @@ def _learn_structure_legacy(
         print(f"Lambda_class (classification): {lambda_class}")
         print(f"Early stopping patience: {patience}")
         if use_spectral_constraint:
-            print("v4.1: Spectral DAG constraint ENABLED (O(d²))")
+            print("Spectral DAG constraint ENABLED (O(d²))")
         else:
             print("DAG Constraint: Matrix Exponential (standard)")
         if enable_pruning:
-            print("v4.1: Dynamic pruning ENABLED")
+            print("Dynamic pruning ENABLED")
         if use_latent_confounders:
-            print(f"v6.0: Latent confounders ENABLED (k={latent_rank_k})")
+            print(f"Latent confounders ENABLED (k={latent_rank_k})")
             print(f"  λ_L (nuclear): {lambda_L}, λ_bow (bow-free): {lambda_bow}")
             print(f"  Warm-start: {warm_start_L_iters} iters before L")
-        print("INNOVATION: Optimizing A AND processor params jointly!")
+        print("Optimizing A AND processor params jointly.")
 
     # Initialize adjacency matrix A
     if A_init is not None:
@@ -1372,7 +1369,7 @@ def _learn_structure_legacy(
         # Average reconstruction loss across non-Y variables
         total_recon_loss = total_recon_loss / (n_v - 1)
 
-        # Sparsity penalty — adaptive Y-column penalty (v4 is always classification)
+        # Sparsity penalty — adaptive Y-column penalty (this path is always classification)
         class_ratio = jnp.clip(classification_loss / 0.6931, 0.0, 1.0)
         y_sparsity_scale = jnp.clip(1.0 - class_ratio, 0.3, 1.0)  # Floor at 0.3
         sparsity_mask = jnp.ones((n_v, n_v)).at[:, Y_idx].set(y_sparsity_scale)
@@ -1720,22 +1717,6 @@ def _learn_structure_legacy(
         mae = 0.0
 
         if verbose:
-            print("\n[DEBUG] Accuracy computation:")
-            print(f"  weight_sum={float(weight_sum):.4f}, using_uniform={float(weight_sum) < 0.01}")
-            print(
-                f"  Y_pred_logits: min={float(jnp.min(Y_pred_logits)):.4f}, max={float(jnp.max(Y_pred_logits)):.4f}, mean={float(jnp.mean(Y_pred_logits)):.4f}"
-            )
-            print(
-                f"  Y_pred_prob: min={float(jnp.min(Y_pred_prob)):.4f}, max={float(jnp.max(Y_pred_prob)):.4f}, mean={float(jnp.mean(Y_pred_prob)):.4f}"
-            )
-            print(
-                f"  Y_pred_binary: sum={float(jnp.sum(Y_pred_binary)):.0f}/{len(Y_pred_binary)} ({100 * float(jnp.mean(Y_pred_binary)):.1f}%)"
-            )
-            print(
-                f"  Y_true: sum={float(jnp.sum(Y_flat)):.0f}/{len(Y_flat)} ({100 * float(jnp.mean(Y_flat)):.1f}%)"
-            )
-
-        if verbose:
             n_edges = int(jnp.sum(A_binary))
             print(f"Threshold: {threshold:.4f} (absolute)")
             print(f"Final: {n_edges} edges, h(A)={epoch_h_A:.3f}")
@@ -1800,7 +1781,7 @@ def _learn_structure_legacy(
         "final_loss": float(epoch_loss),
         "final_recon_loss": float(epoch_recon_loss),
         "final_class_loss": float(epoch_class_loss),
-        # Classification metrics (v6.1.2) — also populated for regression (R² maps to balanced_accuracy)
+        # Classification metrics — also populated for regression (R² maps to balanced_accuracy)
         "classification_accuracy": classification_accuracy,
         "balanced_accuracy": balanced_accuracy,
         "precision": precision,
@@ -1899,7 +1880,7 @@ def learn_with_effects(
     warm_start_L_iters: int = 20,
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
-    v6.0: GOLEM with integrated causal effect estimation.
+    GOLEM with integrated causal effect estimation.
 
     Extends _learn_structure_legacy with:
     - Effect heads (Y0, Y1, propensity) via EffectAdapterWrapper
@@ -2487,7 +2468,7 @@ def learn_with_effects(
 
 
 # ============================================================================
-# Stage 1: Multi-Edge Effect Estimation (v7.0)
+# Stage 1: Multi-Edge Effect Estimation
 # ============================================================================
 
 
@@ -3173,7 +3154,7 @@ def learn_with_multi_effects(
     """
     if verbose:
         print("=" * 60)
-        print("JCCE v7.0: Multi-Edge Causal Effect Estimation")
+        print("JCCE: Multi-Edge Causal Effect Estimation")
         print("=" * 60)
         print(
             f"Settings: include_L={include_L_in_effects}, latent_k={latent_rank_k}, "
@@ -4495,134 +4476,122 @@ def learn_structure(
     # Validation and constraints
     use_validation_split: bool = True,
     validation_ratio: float = 0.2,
-    # Q2b investigation (2026-04-29): the BCE classification path applies
-    # weights_Y = max(|A[:, Y_idx]|, weights_Y_floor) for stability. The floor
-    # ensures gradient flow when A is degenerate, but partially decouples
-    # reported BAcc from A's structural learning quality (a constant-collapsed
-    # f_Y can still produce non-trivial BAcc because the BCE classifier sees
-    # X * 0.01 even when |A| -> 0). Default 0.01 = legacy behavior. Set to
-    # 0.0 to disable the floor and report "BAcc when classifier strictly uses
-    # A's discovered structure" — the gap = how much the floor contributes.
+    # The BCE classification path applies weights_Y = max(|A[:, Y_idx]|,
+    # weights_Y_floor) for stability. The floor ensures gradient flow when
+    # A is degenerate, but partially decouples reported BAcc from A's
+    # structural learning quality (a constant-collapsed f_Y can still
+    # produce non-trivial BAcc because the BCE classifier sees X * 0.01
+    # even when |A| -> 0). Default 0.01 = legacy behavior. Set to 0.0 to
+    # report "BAcc when classifier strictly uses A's discovered structure";
+    # the gap measures how much the floor contributes.
     weights_Y_floor: float = 0.01,
-    # Q3.1 investigation (2026-04-29): variance regularizer on f_Y predictions.
-    # Adds -lambda_y_variance * var(f_Y(X)) to total_loss to penalize the
-    # constant-prediction collapse documented in the constant-output collapse. Maximizing prediction
-    # variance forces f_Y out of the degenerate "predict the marginal" basin.
-    # Default 0.0 = legacy behavior. Try lambda_y_variance ∈ {0.01, 0.1, 1.0}
-    # to test whether the constant collapse is escapable in joint training.
-    # Closest in spirit to TCE-VAE's auxiliary supervision but architecturally
-    # simpler (no nested grad needed; just batch-variance of predictions).
+    # Variance regularizer on f_Y predictions. Adds
+    # -lambda_y_variance * var(f_Y(X)) to total_loss to penalize the
+    # constant-prediction collapse. Maximizing prediction variance forces
+    # f_Y out of the degenerate "predict the marginal" basin. Closest in
+    # spirit to TCE-VAE's auxiliary supervision but architecturally simpler
+    # (no nested grad; just batch-variance of predictions). No-op when
+    # lambda_y_variance == 0.
     lambda_y_variance: float = 0.0,
-    # Q3.1.x investigation (2026-04-29): targeted T-sensitivity regularizer.
-    # Adds -lambda_t_sens * mean(|∂f_Y/∂T|) to total_loss to directly penalize
-    # zero T-derivative. Motivated by the Q3.1 cross-dataset finding that
-    # variance reg is gameable by high-capacity processors (DAG-Attention
-    # 6/6 datasets satisfy variance constraint via non-T features). The
-    # T-sens loss says exactly *where* the f_Y must be input-sensitive.
-    # Requires T_idx_for_loss; no-op when lambda_t_sens == 0.0 OR
-    # T_idx_for_loss is None. Uses nested jax.grad (slower than variance reg
-    # but ~2x not 10x; fine for 150-iter training budgets).
-    # KNOWN ISSUE (2026-04-29 server sweep): the abs-of-gradient loss has zero
-    # subgradient at the collapse point, so it can't escape the constant-output collapse from
-    # collapsed init. Use lambda_t_anchor below for a directional variant
-    # that doesn't have the subgradient-at-zero problem.
+    # Targeted T-sensitivity regularizer. Adds
+    # -lambda_t_sens * mean(|∂f_Y/∂T|) to total_loss to directly penalize
+    # zero T-derivative — addresses high-capacity processors gaming the
+    # variance constraint via non-T features by saying exactly where f_Y
+    # must be input-sensitive. Requires T_idx_for_loss; no-op when
+    # lambda_t_sens == 0.0 OR T_idx_for_loss is None. Uses nested jax.grad
+    # (~2x not 10x slowdown vs variance reg). KNOWN ISSUE: the abs-of-
+    # gradient loss has zero subgradient at the collapse point, so it
+    # can't escape the constant-output collapse from collapsed init; use
+    # lambda_t_anchor below for a directional variant.
     lambda_t_sens: float = 0.0,
     T_idx_for_loss: Optional[int] = None,
-    # Q3.1.A (2026-04-29): sign-anchor T-sensitivity loss. Same machinery as
-    # lambda_t_sens but signed:  -lambda_t_anchor * target_sign * mean(∂f_Y/∂T).
-    # Motivated by the Q3.1 signed-sensitivity diagnostic finding that the
-    # the constant-output collapse "fix" via variance reg has seed-level bimodality — some seeds
-    # find directionally-correct f_Y, others find sign-flipped. The anchor
-    # biases all seeds toward target_sign (e.g., +1 for "T → Y is positive"
-    # priors like Smoking → LungCancer or Glucose → Diabetes). No abs in the
-    # loss → no subgradient-at-zero issue → loss can pull a collapsed model
-    # into the directionally-correct basin.
-    # Requires both lambda_t_anchor > 0 AND T_idx_for_loss set. target_sign
-    # is a known-direction prior (oracular) — paper-defensible only with the
-    # caveat "if you have a direction prior."
+    # Sign-anchor T-sensitivity loss. Same machinery as lambda_t_sens but
+    # signed: -lambda_t_anchor * target_sign * mean(∂f_Y/∂T). The variance-
+    # reg fix has seed-level bimodality (some seeds find directionally-
+    # correct f_Y, others find sign-flipped); the anchor biases all seeds
+    # toward target_sign (e.g., +1 for "T → Y is positive" priors like
+    # Smoking → LungCancer or Glucose → Diabetes). No abs in the loss →
+    # no subgradient-at-zero issue → can pull a collapsed model into the
+    # directionally-correct basin. Requires both lambda_t_anchor > 0 AND
+    # T_idx_for_loss set. target_sign is a known-direction (oracular) prior.
     lambda_t_anchor: float = 0.0,
     target_sign: float = 1.0,
-    # Q3.1.B (2026-04-29): supervised warm-start of f_Y. Pre-trains the per-Y
-    # processor on (X, Y) BCE for warm_start_fY_iters before the main joint
-    # loop. Direct sidestep of the seed-bimodality problem: instead of relying
-    # on the joint loss to pull the model into the discriminative basin
-    # (which it does inconsistently), supervised pre-training puts the model
-    # there from the start. A is FROZEN at its initial value during the
-    # warm-start phase; only proc_params[Y_idx] is updated. After warm-start,
-    # the main joint loop runs as usual (A unfreezes, full loss is on).
-    # No-op when warm_start_fY_iters == 0.
+    # Supervised warm-start of f_Y. Pre-trains the per-Y processor on
+    # (X, Y) BCE for warm_start_fY_iters before the main joint loop.
+    # Sidesteps seed-bimodality: instead of relying on the joint loss to
+    # pull the model into the discriminative basin, supervised pre-training
+    # puts it there from the start. A is FROZEN at its initial value during
+    # warm-start; only proc_params[Y_idx] is updated. After warm-start, the
+    # main joint loop runs as usual (A unfreezes, full loss is on). No-op
+    # when warm_start_fY_iters == 0.
     warm_start_fY_iters: int = 0,
-    # Q3.1.D (2026-04-30): KL-bottleneck regularizer for KLBottleneckHead processor.
-    # Adds lambda_kl * compute_kl_loss(X, params[Y_idx]) to total_loss when the
-    # processor exposes compute_kl_loss (i.e., it's a KLBottleneckHeadAdapter).
-    # Inspired by TCEVAE / CEVAE; mechanically prevents the constant-output collapse Constant
-    # Collapse via the KL prior on the latent z (constant predictions require
-    # constant z, but KL forces z to spread). No-op when lambda_kl == 0 or
-    # when the processor doesn't expose compute_kl_loss.
+    # KL-bottleneck regularizer for KLBottleneckHead processor. Adds
+    # lambda_kl * compute_kl_loss(X, params[Y_idx]) to total_loss when the
+    # processor exposes compute_kl_loss (i.e., a KLBottleneckHeadAdapter).
+    # Inspired by TCEVAE / CEVAE; mechanically prevents the constant-output
+    # collapse via the KL prior on the latent z (constant predictions
+    # require constant z, but KL forces z to spread). No-op when
+    # lambda_kl == 0 or the processor doesn't expose compute_kl_loss.
     lambda_kl: float = 0.0,
-    # Q3.1.E (2026-04-30): counterfactual T-flip loss. Pairs each forward pass
-    # with a counterfactual forward at T flipped (binary). Loss term is
+    # Counterfactual T-flip loss. Pairs each forward pass with a
+    # counterfactual forward at T flipped (binary). Loss term is
     # -lambda_cf * target_sign * mean(f_Y(T=1) - f_Y(T=0)). Direct CATE
-    # supervision via paired forward passes; processor-agnostic (combines with
-    # any processor including KLBottleneck, LinearHead, MLPHead, DAG-Attention,
-    # TopoMamba). Different from sign-anchor (T-sens loss with finite diff),
-    # which uses a small ε perturbation; counterfactual uses the full T=0 vs
-    # T=1 contrast which is natural for binary treatment variables. Requires
-    # T_idx_for_loss; no-op when lambda_cf == 0 or T_idx_for_loss is None.
+    # supervision via paired forward passes; processor-agnostic (combines
+    # with any processor including KLBottleneck, LinearHead, MLPHead,
+    # DAG-Attention, TopoMamba). Different from sign-anchor (T-sens loss
+    # with finite diff): counterfactual uses the full T=0 vs T=1 contrast
+    # natural for binary treatment variables. Requires T_idx_for_loss;
+    # no-op when lambda_cf == 0 or T_idx_for_loss is None.
     lambda_cf: float = 0.0,
-    # Q4.1 (2026-04-30): Wasserstein-1 representation balancing for
-    # confounder bias mitigation in CATE estimation. Inspired by Mao et al.
-    # MCINet (ICASSP 2026) — minimize sliced Wasserstein-1 distance between
-    # h(X)|T=0 and h(X)|T=1 representations to make treatment groups look
-    # statistically similar in the model's internal feature space.
-    # Mechanism: imbalanced confounders (older people more likely to have
-    # exang) produce skewed feature distributions across T=0 vs T=1; W1
-    # balancing forces h(X) representations to be exchangeable, improving
-    # counterfactual prediction. Sliced W1 = average over random projections
-    # of 1D W1 (sorted L1 distance between empirical CDFs).
-    # Requires T_idx_for_loss; binarized at median(T) per batch when T is
-    # not natively binary. No-op when lambda_wasserstein == 0.
+    # Wasserstein-1 representation balancing for confounder-bias mitigation
+    # in CATE estimation. Inspired by Mao et al. MCINet — minimize sliced
+    # Wasserstein-1 distance between h(X)|T=0 and h(X)|T=1 representations
+    # to make treatment groups look statistically similar in the model's
+    # internal feature space. Imbalanced confounders produce skewed feature
+    # distributions across T=0 vs T=1; W1 balancing forces h(X) to be
+    # exchangeable, improving counterfactual prediction. Sliced W1 =
+    # average over random projections of 1D W1 (sorted L1 distance between
+    # empirical CDFs). Requires T_idx_for_loss; binarized at median(T) per
+    # batch when T is not natively binary. No-op when
+    # lambda_wasserstein == 0.
     lambda_wasserstein: float = 0.0,
     n_wasserstein_projections: int = 32,
     weight_decay: float = 1e-4,
     use_spectral_constraint: bool = False,
     enable_pruning: bool = False,
     # Identifiability regularizer
-    lambda_ident: float = 0.01,  # D-optimality regularizer weight (active Phase 2-3 only)
+    lambda_ident: float = 0.01,  # D-optimality regularizer weight
     ident_threshold: float = 0.3,  # Threshold for MB membership from A matrix
     # Task type
     task: str = "classification",  # 'classification' or 'regression'
     # Ablation overrides
-    enforce_outcome_sink: bool = True,  # Set A[Y_idx,:]=0 after each update (disable for A6 ablation)
-    freeze_A: bool = False,  # If True, don't update A_direct (only train processor, A7 ablation)
-    # Phase 2: Hardware utilization
+    enforce_outcome_sink: bool = True,  # Set A[Y_idx,:]=0 after each update
+    freeze_A: bool = False,  # If True, don't update A_direct (only train processor)
+    # Hardware utilization
     use_bf16: bool = False,  # Cast forward pass operands to bfloat16 (master params stay fp32)
-    # Phase 3: Optuna integration
+    # Optuna integration
     iteration_callback: Optional[Callable[[int, Dict[str, float]], None]] = None,
     # PC structure constraint: only enable when A_init comes from PC algorithm
     use_pc_constraint: bool = False,
-    # Phase 2: DAG-Attention bidirectional signal
-    # When > 0 and processor is DAGAttentionAdapter, adds
-    # KL(empirical_attention || sigmoid(A * temperature)) to the total loss.
-    # This is the bidirectional learning signal: attention pulls A toward
-    # observed attention patterns; A pulls attention toward causal edges.
-    # Default 0.0 keeps prior behavior (forward-only soft mask).
+    # DAG-Attention bidirectional signal. When > 0 and processor is
+    # DAGAttentionAdapter, adds KL(empirical_attention || sigmoid(A * temperature))
+    # to the total loss. Bidirectional: attention pulls A toward observed
+    # attention patterns; A pulls attention toward causal edges. Default
+    # 0.0 keeps prior behavior (forward-only soft mask).
     lambda_consistency: float = 0.0,
-    # Phase 2: DAG-Attention temperature annealing for the consistency loss.
-    # Tuple (init, final) cosine-anneals the temperature used in the consistency
+    # DAG-Attention temperature annealing for the consistency loss. Tuple
+    # (init, final) cosine-anneals the temperature used in the consistency
     # target sigmoid(A * temp) from init at iter=0 to final at iter=max_iter.
     # Low initial temp → soft target (graded gradient), high final temp →
-    # sharp target (concentrates on real edges). Per skills/dag_attention.md
-    # the recommended schedule is (1.0, 20.0). When None, uses the adapter's
-    # fixed self.temperature for both soft mask and consistency target.
+    # sharp target (concentrates on real edges). When None, uses the
+    # adapter's fixed self.temperature for both soft mask and consistency target.
     temperature_consistency_schedule: Optional[Tuple[float, float]] = None,
-    # Phase 2: adaptive engagement of consistency_loss. When True,
-    # lambda_consistency is interpreted as the MAX value (engaged once
-    # collapse is detected); the current multiplier is 0 until A starts
-    # collapsing. Engagement triggers when max|A| drops below
-    # consistency_collapse_threshold AND iter < consistency_max_engage_iter_frac
-    # * max_iter. One-shot (no oscillation): once engaged, stays engaged.
-    # Closes the regime-dependence gap: only fires when needed.
+    # Adaptive engagement of consistency_loss. When True, lambda_consistency
+    # is interpreted as the MAX value (engaged once collapse is detected);
+    # the current multiplier is 0 until A starts collapsing. Engagement
+    # triggers when max|A| drops below consistency_collapse_threshold AND
+    # iter < consistency_max_engage_iter_frac * max_iter. One-shot (no
+    # oscillation): once engaged, stays engaged. Only fires when needed.
     adaptive_consistency: bool = False,
     consistency_collapse_threshold: float = 0.1,
     consistency_max_engage_iter_frac: float = 0.3,
@@ -4633,45 +4602,42 @@ def learn_structure(
     # edges; the backward pass keeps identity gradients w.r.t. |A| so
     # structure learning continues to grow/shrink edges. Default False
     # preserves exact prior behavior; set True together with lambda_aap > 0
-    # to engage the Sprint-1 sparsity-aware AAP path.
+    # to engage the sparsity-aware AAP path.
     aap_enforce_hard_parents: bool = False,
     aap_edge_threshold: float = 0.05,
-    # Phase 2: AAP (Abduction-Action-Prediction) cascade loss for
-    # DAG-Attention. When > 0 and processor is DAGAttentionAdapter, adds
-    # MSE(observed X, model_predict_using_predicted_parents) to the total loss.
-    # K=1 cascade: model's per-variable predictions feed back as parents in a
-    # second forward pass. This creates a self-consistency gradient distinct
-    # from per-variable reconstruction (which uses observed parents directly).
-    # Default 0.0 keeps prior behavior. Full Pearl AAP with intervention is
-    # in jcce.counterfactual.aap.AAPCounterfactual for inference; this loss
-    # is a training-time approximation that flows gradient through the
-    # SCM cascade.
+    # AAP (Abduction-Action-Prediction) cascade loss for DAG-Attention.
+    # When > 0 and processor is DAGAttentionAdapter, adds
+    # MSE(observed X, model_predict_using_predicted_parents) to the total
+    # loss. K=1 cascade: model's per-variable predictions feed back as
+    # parents in a second forward pass, creating a self-consistency
+    # gradient distinct from per-variable reconstruction (which uses
+    # observed parents directly). Default 0.0 keeps prior behavior. Full
+    # Pearl AAP with intervention lives in jcce.counterfactual.aap for
+    # inference; this loss is a training-time approximation that flows
+    # gradient through the SCM cascade.
     lambda_aap: float = 0.0,
-    # Phase 2: CausalMamba Sinkhorn temperature annealing schedule.
-    # Tuple (init, final) cosine-anneals the temperature passed to the
+    # CausalMamba Sinkhorn temperature annealing schedule. Tuple
+    # (init, final) cosine-anneals the temperature passed to the
     # CausalMambaAdapter's Sinkhorn soft sort from init at iter=0 to final
-    # at iter=max_iter. Per skills/topological_mamba.md the recommended
-    # schedule is (1.0, 0.1) — high temp early (soft permutation, smoother
-    # gradient back to A) → low temp late (sharp permutation, stable order).
-    # When None, the adapter uses its fixed self.sinkhorn_temperature
+    # at iter=max_iter — high temp early (soft permutation, smoother
+    # gradient back to A) → low temp late (sharp permutation, stable
+    # order). When None, the adapter uses its fixed self.sinkhorn_temperature
     # (default 0.1). Requires CausalMambaAdapter.forward to accept a
-    # `temperature` kwarg — coordinated with causal-mamba branch.
+    # `temperature` kwarg.
     causal_mamba_temperature_schedule: Optional[Tuple[float, float]] = None,
-    # Phase 2: edge-only consistency loss variant (edge-only variant — negative result).
-    # When True (and lambda_consistency > 0), the consistency target is
-    # restricted to A's existing edges (|A| > consistency_edge_threshold) plus
-    # the diagonal. Soft-masked via sigmoid((|A| - threshold) * 50) so
-    # gradient still flows back to A through the mask. Empirically validated
-    # NEGATIVE: reduces over-saturation (37 -> 13 edges on Heart Disease) but
-    # BAcc damage persists (-0.378 vs vanilla -0.379). Preserved as opt-in
-    # flag for future researchers; default off.
+    # Edge-only consistency loss variant. When True (and lambda_consistency
+    # > 0), the consistency target is restricted to A's existing edges
+    # (|A| > consistency_edge_threshold) plus the diagonal. Soft-masked via
+    # sigmoid((|A| - threshold) * 50) so gradient still flows back to A
+    # through the mask. Empirically negative result: reduces over-saturation
+    # but doesn't recover BAcc loss. Preserved as opt-in flag; default off.
     consistency_edge_only: bool = False,
     consistency_edge_threshold: float = 0.05,
 ) -> Tuple[jnp.ndarray, Any, list, Dict[str, Any]]:
     """
-    v7.0: Unified Causal Discovery with Bi-directed Edges & Amortized Effects.
+    Unified Causal Discovery with Bi-directed Edges & Amortized Effects.
 
-    Key innovations:
+    Key features:
     1. A_confound: Explicit bi-directed edge matrix for latent confounders
     2. Amortized effect network: Single network handles ALL treatments
     3. Unified loss: Structure + Classification/Regression + Effect in one training loop
@@ -4764,7 +4730,7 @@ def learn_structure(
         import sys
 
         print(f"\n{'=' * 60}")
-        print("v7.0: Unified Discovery + Bi-directed Edges + Amortized Effects")
+        print("Unified Discovery + Bi-directed Edges + Amortized Effects")
         print(f"{'=' * 60}")
         sys.stdout.flush()
         print(f"Data: {n_samples} train samples, {n_vars} variables")
@@ -4916,9 +4882,9 @@ def learn_structure(
         """Unified loss: Structure + Classification + Effects.
 
         batch_Y: Binary Y for classification loss
-        batch_Y_effect: Continuous Y for effect estimation (v7.1)
+        batch_Y_effect: Continuous Y for effect estimation
 
-        v10 Curriculum Learning (now external):
+        Curriculum Learning (now external):
         - Weights (w_recon, w_class, w_effect) computed outside loss_fn
         - Allows adaptive curriculum based on convergence signals
 
@@ -5018,7 +4984,7 @@ def learn_structure(
         all_mse = jnp.mean((batch_data.T - all_outputs) ** 2, axis=1)  # (n_v,)
         total_recon_loss = jnp.mean(all_mse)
 
-        # ========== AAP cascade loss (Phase 2 self-consistency signal) ==========
+        # ========== AAP cascade loss (self-consistency signal) ==========
         # K=1 recursive forward: feed the model's per-variable predictions back
         # as parents and re-predict. If A and f together encode a self-consistent
         # SCM, the cascaded predictions match the observed data. The MSE provides
@@ -5119,20 +5085,18 @@ def learn_structure(
         Y_recon_loss = jnp.mean((Y_recon_output - Y_target) ** 2)
         Y_recon_weight = 3.0
 
-        # Q3.1 (2026-04-29): variance regularizer on f_Y predictions to fight
-        # the constant-output collapse constant collapse. If f_Y is collapsed (predicting the
-        # marginal), var(Y_recon_output) ≈ 0; if f_Y is input-sensitive, var > 0.
-        # Negative loss = maximize variance = force f_Y out of the degenerate
-        # "predict the marginal" basin. No-op when lambda_y_variance == 0.
-        # Computed on Y_recon_output (the per-sample f_Y predictions) which is
-        # the actual Y-prediction path during training. Try lambda values in
-        # {0.01, 0.1, 1.0, 10.0} to find the regime that escapes collapse.
+        # Variance regularizer on f_Y predictions to fight the constant-
+        # output collapse. If f_Y is collapsed (predicting the marginal),
+        # var(Y_recon_output) ≈ 0; if input-sensitive, var > 0. Negative
+        # loss = maximize variance = force f_Y out of the degenerate
+        # "predict the marginal" basin. Computed on Y_recon_output (the
+        # per-sample f_Y predictions). No-op when lambda_y_variance == 0.
         y_pred_variance = jnp.var(Y_recon_output)
         y_variance_reg = -lambda_y_variance * y_pred_variance
 
-        # Q3.1.D (2026-04-30): KL-bottleneck regularizer for KLBottleneckHead.
-        # Computed via processor.compute_kl_loss() when the adapter exposes it
-        # AND lambda_kl > 0. The KL prior on z mechanically prevents the
+        # KL-bottleneck regularizer for KLBottleneckHead. Computed via
+        # processor.compute_kl_loss() when the adapter exposes it AND
+        # lambda_kl > 0. The KL prior on z mechanically prevents the
         # constant-collapse basin (constant Y_pred would require constant z,
         # but KL forces z to spread).
         if lambda_kl > 0.0 and hasattr(processor, "compute_kl_loss"):
@@ -5142,9 +5106,9 @@ def learn_structure(
         else:
             kl_reg = 0.0
 
-        # Q3.1.E (2026-04-30): counterfactual T-flip loss. Pairs forward(T=0)
-        # and forward(T=1); applies signed bias toward target_sign.
-        # Processor-agnostic, combines with any architecture.
+        # Counterfactual T-flip loss. Pairs forward(T=0) and forward(T=1)
+        # and applies signed bias toward target_sign. Processor-agnostic,
+        # combines with any architecture.
         if lambda_cf > 0.0 and T_idx_for_loss is not None:
             _batch_T1 = batch_data.at[:, T_idx_for_loss].set(1.0)
             _batch_T0 = batch_data.at[:, T_idx_for_loss].set(0.0)
@@ -5183,13 +5147,13 @@ def learn_structure(
         else:
             cf_reg = 0.0
 
-        # Q4.1 (2026-04-30): Wasserstein-1 representation balancing.
-        # Forces the input-weighted features h(X) = X * (|A[:,Y]|+0.01) to
-        # have similar distributions across T=0 and T=1 groups, mitigating
-        # confounder-induced selection bias.
-        # Sliced Wasserstein-1 (1D random projections, average) — differentiable
-        # and JIT-friendly. Handles unequal group sizes via masking up to
-        # min(n_T1, n_T0) (the rest are +∞-padded sentinels with zero diff).
+        # Wasserstein-1 representation balancing. Forces the input-weighted
+        # features h(X) = X * (|A[:,Y]|+0.01) to have similar distributions
+        # across T=0 and T=1 groups, mitigating confounder-induced selection
+        # bias. Sliced Wasserstein-1 (1D random projections, averaged) —
+        # differentiable and JIT-friendly. Handles unequal group sizes via
+        # masking up to min(n_T1, n_T0); the rest are +∞-padded sentinels
+        # with zero diff.
         if lambda_wasserstein > 0.0 and T_idx_for_loss is not None:
             _t_vals = batch_data[:, T_idx_for_loss]
             # Binarize at median(t_vals) — handles continuous T natively
@@ -5227,16 +5191,14 @@ def learn_structure(
         else:
             wasserstein_reg = 0.0
 
-        # Q3.1.x and Q3.1.A (2026-04-29, revised 2026-04-29 evening):
-        # T-sensitivity losses now use central finite differences instead of
-        # nested jax.grad. The earlier nested-grad implementation had a
-        # gradient-propagation issue (outer value_and_grad wasn't traversing
-        # the inner jax.grad to params via second-order autograd, possibly
+        # T-sensitivity losses use central finite differences instead of
+        # nested jax.grad. An earlier nested-grad implementation had a
+        # gradient-propagation issue (outer value_and_grad not traversing
+        # the inner jax.grad to params via second-order autograd, likely
         # interacting with merge_trained_params' mixed traced/static dict
         # structure). Finite differences avoid the nested-grad path entirely:
-        # two forward passes at (T+ε) and (T-ε), single-order autograd through
-        # processor params. Validated as standard practice when nested grads
-        # misbehave inside JIT.
+        # two forward passes at (T+ε) and (T-ε), single-order autograd
+        # through processor params.
         if (
             (lambda_t_sens > 0.0 or lambda_t_anchor > 0.0)
             and T_idx_for_loss is not None
@@ -5279,12 +5241,12 @@ def learn_structure(
             # Per-sample finite-difference derivative w.r.t. batch_data[:, T_idx]
             _finite_diff = (_Y_pT.flatten() - _Y_mT.flatten()) / (2.0 * _eps_t)
 
-            # Q3.1.x: |df_Y/dT| penalty (zero-subgradient corner remains, but
-            # at least the gradient propagates correctly to params now).
+            # |df_Y/dT| penalty (zero-subgradient corner remains, but the
+            # gradient propagates correctly to params).
             t_sens_reg = -lambda_t_sens * jnp.mean(jnp.abs(_finite_diff))
 
-            # Q3.1.A: signed anchor toward target_sign. Loss is well-defined
-            # even at finite_diff = 0; gradient w.r.t. β[T] (LinearHead) is
+            # Signed anchor toward target_sign. Loss is well-defined even at
+            # finite_diff = 0; gradient w.r.t. β[T] (LinearHead) is
             # -lambda_t_anchor * target_sign * weights[T], which is nonzero
             # even at the collapse point.
             t_anchor_reg = -lambda_t_anchor * target_sign * jnp.mean(_finite_diff)
@@ -5363,7 +5325,7 @@ def learn_structure(
                 batch_Y * jnp.log(Y_pred + eps) + (1 - batch_Y) * jnp.log(1 - Y_pred + eps)
             )
 
-        # ========== DAG-Attention Consistency Loss (Phase 2 bidirectional signal) ==========
+        # ========== DAG-Attention Consistency Loss (bidirectional signal) ==========
         # KL(attention || sigmoid(A * temp)) computed on the Y-classification
         # forward pass — pulls attention patterns toward causal edges and A
         # toward observed attention patterns. Active only when processor is
@@ -5431,7 +5393,7 @@ def learn_structure(
         if weight_decay > 0 and lambda_L2 == 0:
             penalty_loss += weight_decay * jnp.sum(A_curr**2)
 
-        # ========== PC Structure Constraint (v11.2) ==========
+        # ========== PC Structure Constraint ==========
         # Penalize deviation from PC warm-start structure to preserve causal edges
         # A_init_const is captured from outer scope (set before loss_fn definition)
         # NOTE: With stop_gradient decoupling (Option D), this is now a soft guide
@@ -5446,7 +5408,7 @@ def learn_structure(
             pc_loss = lambda_pc * pc_deviation
             penalty_loss += pc_loss
 
-        # ========== Bi-directed Edge Penalties (v7.0) ==========
+        # ========== Bi-directed Edge Penalties ==========
 
         bow_loss = 0.0
         if use_confound_matrix and B_conf is not None:
@@ -5481,9 +5443,9 @@ def learn_structure(
             confound_to_Y = jnp.abs(A_conf[:n_v, Y_idx])
             penalty_loss += lambda_confound_to_Y * jnp.sum(confound_to_Y)
 
-        # ========== D-Optimality Regularizer (v15: Identifiability) ==========
+        # ========== D-Optimality Regularizer (Identifiability) ==========
         # Differentiable proxy for condition number of MB design matrix.
-        # Active only in Phase 2-3 (gated by effect_enabled) when MB is meaningful.
+        # Active only when effect estimation is enabled and MB is meaningful.
         if lambda_ident > 0:
             # Dynamic MB from current A: features with strong edges to/from Y
             mb_mask_to_Y = jnp.abs(A_curr[:, Y_idx]) > ident_threshold
@@ -5501,8 +5463,8 @@ def learn_structure(
                 X_mb = batch_data[:, mb_indices]
                 return d_optimality_penalty(X_mb)
 
-            # Gate: only active when effect estimation is active (Phase 2-3)
-            # AND when MB has at least 2 features
+            # Gate: only active when effect estimation is active AND when MB
+            # has at least 2 features
             d_opt_active = jnp.where((n_mb >= 2) & effect_warmup_completed, 1.0, 0.0)
             d_opt_loss = jnp.where(
                 d_opt_active > 0.5,
@@ -5511,7 +5473,7 @@ def learn_structure(
             )
             penalty_loss = penalty_loss + d_opt_loss
 
-        # ========== Effect Loss (v7.0, after warmup) ==========
+        # ========== Effect Loss (after warmup) ==========
 
         effect_loss = 0.0
         if use_amortized_effects and effect_warmup_completed:
@@ -5585,9 +5547,9 @@ def learn_structure(
         # adaptive engagement holds it at 0 until collapse is detected.
         weighted_consistency = current_lambda_consistency * consistency_loss
         weighted_aap = lambda_aap * aap_loss
-        # Q3.1 (2026-04-29): variance regularizer on f_Y predictions to fight
-        # the constant-output collapse constant collapse. y_variance_reg is computed above
-        # (negative if lambda_y_variance > 0, zero otherwise).
+        # y_variance_reg (variance regularizer to fight constant-output
+        # collapse) was computed above; it is negative when
+        # lambda_y_variance > 0 and zero otherwise.
 
         total_loss = (
             weighted_structural
@@ -5621,13 +5583,12 @@ def learn_structure(
     optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(learning_rate=lr))
     opt_state = optimizer.init(all_params)
 
-    # Q3.1.B (2026-04-29): supervised warm-start of f_Y predictor. Pre-trains
-    # only the Y-processor params on (X, Y) BCE for warm_start_fY_iters before
-    # the main joint loop. A is used at its initialized value (frozen during
-    # warm-start). Direct sidestep of the seed-bimodality finding from the
-    # Q3.1 signed-sens diag (2026-04-29): rather than relying on the joint
-    # loss to push f_Y into the discriminative basin (which it does
-    # inconsistently across seeds), warm-start places it there from the start.
+    # Supervised warm-start of f_Y predictor. Pre-trains only the
+    # Y-processor params on (X, Y) BCE for warm_start_fY_iters before the
+    # main joint loop. A is used at its initialized value (frozen during
+    # warm-start). Sidesteps seed-bimodality of the joint loss (which pushes
+    # f_Y into the discriminative basin inconsistently across seeds) by
+    # warm-starting f_Y into that basin directly.
     if warm_start_fY_iters > 0:
         _pname_w = processor.__class__.__name__
         _A_init_warm = all_params["A_direct"]
@@ -6246,7 +6207,7 @@ def learn_structure(
     # Merge processor params
     final_proc_params = merge_trained_params(processor_params, all_params["processor_params"])
 
-    # Extract Markov Blanket (v8.0: Full MB with spouses + confound neighbors)
+    # Extract Markov Blanket: full MB with spouses + confound neighbors
     # MB(Y) = parents(Y) ∪ children(Y) ∪ spouses(Y) ∪ confound_neighbors(Y)
     # where spouses = other parents of Y's children
 
@@ -6684,7 +6645,7 @@ def learn_structure(
 
 
 # ============================================================================
-# Phase 2.2: ANM Direction Tests for Edge Validation
+# ANM Direction Tests for Edge Validation
 # ============================================================================
 
 
@@ -6856,7 +6817,7 @@ def validate_edge_directions(
 
 
 # ============================================================================
-# Phase 2.4: Negative Control Calibration
+# Negative Control Calibration
 # ============================================================================
 
 
@@ -6962,7 +6923,7 @@ def calibrate_effects_with_negative_control(
 
 
 # ============================================================================
-# Phase 2.3: Optional PC Algorithm Warm-Start
+# Optional PC Algorithm Warm-Start
 # ============================================================================
 
 

@@ -1,5 +1,5 @@
 """
-Identifiability Diagnostics for JCCE v15.0
+Identifiability diagnostics.
 
 Provides tools to assess whether causal effects are identifiable given
 the data and DAG structure:

@@ -35,7 +35,6 @@ jcce/                       # Core library (the implementation)
 ├── evaluation/             # Metrics (SHD, F1, BAcc, ATE bias, etc.)
 ├── gbs/                    # Dequantized Gaussian Boson Sampling kernels (Pareto comparison)
 ├── models/                 # Processor architectures (Linear/MLP/Transformer/GNN/Mamba/ELM)
-├── optimization/           # Multi-objective outer loop (Optuna TPE, NSGA-II)
 ├── structure_learning/     # DAG learning core (jcce_learner, optuna_search, runner)
 ├── training/               # Training loops and curriculum
 ├── utils/                  # Utilities

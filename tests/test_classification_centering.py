@@ -1,4 +1,4 @@
-"""Tests for Session 35 skip_centering fix.
+"""Tests for the skip_centering fix.
 
 Verifies that disabling mean centering for the Y classification path
 allows classification loss to improve significantly during training,
@@ -138,8 +138,8 @@ class TestSkipCentering:
             X, Y, n_vars=11, processor=processor, skip_centering=True, n_steps=150
         )
 
-        # Session 36: h_pooled normalization constrains output more → slightly slower
-        # convergence. Relaxed from 0.55 to 0.60.
+        # h_pooled normalization constrains output more, so convergence is
+        # slightly slower; threshold relaxed from 0.55 to 0.60 accordingly.
         assert history[-1] < 0.60, f"Class should reach below 0.60, got {history[-1]:.4f}"
 
     def test_skip_centering_monotonic_decrease(self):

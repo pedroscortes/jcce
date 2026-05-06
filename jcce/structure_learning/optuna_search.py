@@ -525,7 +525,7 @@ def create_optuna_objective(
         # Continuous edge sparsity: penalizes total edge weight to Y, not
         # thresholded MB size. Prevents gaming where optimizer pushes weights
         # just below MB threshold while relying on the additive floor (0.01)
-        # for classification. See Session 40 analysis.
+        # for classification.
         A_to_Y = np.abs(np.array(A_est[:n_features, Y_idx]))
         edge_weight_to_Y = float(np.sum(A_to_Y))
         mb_sparsity = 1.0 - min(edge_weight_to_Y / n_features, 1.0)
@@ -556,7 +556,7 @@ def create_optuna_objective(
             trial.set_user_attr("bow_loss", float(metrics.get("bow_loss", 0.0)))
             trial.set_user_attr("n_confound_edges", int(metrics.get("n_confound_edges", 0)))
 
-        # Gradient diagnostics and bow-free checks (Session 39)
+        # Gradient diagnostics and bow-free checks
         try:
             gd = metrics.get("gradient_diagnostics", [])
             if gd:

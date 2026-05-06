@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tier-37 — Fill the 19 missing cells in Figure 3 (fix-compatibility grid).
+# Cross-framework fix-compatibility fill — fills the 19 missing cells in
+# Figure 3 (fix-compatibility grid).
 #
 # Figure 3 currently has 71 of 90 cells filled (79%). Missing:
 #   - post-hoc:   3 cells (alarm, child, neuropathic_pain × dag_transformer)
@@ -12,7 +13,7 @@
 #   - test_y_variance_sweep.py         → q37_varreg_4new.log
 #
 # Sized to run on a SINGLE GPU (default: GPU 1 — leaves GPU 0 free for the
-# concurrent Phase 2 polish launcher's LLC step). Override with:
+# concurrent polish launcher's LLC step). Override with:
 #   CUDA_VISIBLE_DEVICES=0 bash scripts/launch_tier37_fig3_fill.sh
 #
 # Total expected wall-clock: ~3-5 hours on a single RTX 4090.
@@ -39,7 +40,7 @@ POSTHOC_DATASETS_DAGTR_ONLY="alarm,child,neuropathic_pain"  # the only 3 post-ho
 XLA_OPTS="--xla_gpu_enable_triton_gemm=false --xla_gpu_autotune_level=0"
 
 echo "==============================================================="
-echo "Tier-37 — Fig 3 fill (19 missing cells)"
+echo "Cross-framework Fig 3 fill (19 missing cells)"
 echo "Started: $(date -Iseconds)"
 echo "Host: $(hostname)"
 echo "GPU: ${CUDA_VISIBLE_DEVICES:-unset}"
@@ -90,7 +91,7 @@ run_step "Var-reg 4new (dag_tr + mlp)" \
 
 echo
 echo "==============================================================="
-echo "Tier-37 — DONE"
+echo "Fig 3 fill — DONE"
 echo "Finished: $(date -Iseconds)"
 echo "==============================================================="
 echo

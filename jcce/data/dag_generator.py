@@ -119,9 +119,10 @@ def generate_scale_free_dag(
     Returns:
         A: Scale-free adjacency matrix
     """
-    # For Phase 1, we'll use a simplified version
-    # Start with ER and modify degree distribution
-    # TODO: Implement proper Barabási-Albert model if needed
+    # Approximation: an Erdős–Rényi DAG with expected degree 3 stands in for
+    # a true scale-free generator. Replace with a proper Barabási–Albert
+    # construction if the experimental setup requires the heavy-tailed
+    # degree distribution.
     return generate_erdos_renyi_dag(
         num_nodes, expected_degree=3.0, weight_range=weight_range, key=key
     )

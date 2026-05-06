@@ -13,8 +13,8 @@ this module.
 Three orderings are supported:
 
   1. Hard topological sort (Kahn's algorithm via jax.pure_callback). Discrete,
-     non-differentiable; gradient stops at A. The Sprint 1 prototype.
-  2. Sinkhorn soft topological sort (Sprint 2). Differentiable: gradient flows
+     non-differentiable; gradient stops at A. The original prototype variant.
+  2. Sinkhorn soft topological sort. Differentiable: gradient flows
      from the loss through the Mamba forward, the soft permutation matrix P,
      the ancestral-depth scoring s = (I - A^T)^{-1} @ 1, and back to A.
   3. Identity (standard Mamba scan order, no permutation).
@@ -67,7 +67,7 @@ def topological_sort_from_adjacency(A: jnp.ndarray, threshold: float = 0.01) -> 
 
     The hard sort is non-differentiable; jax.lax.stop_gradient on the input
     keeps the (otherwise undefined) JVP at zero so this composes inside any
-    grad-traced loss. Sprint 2's Sinkhorn soft sort is what carries gradient.
+    grad-traced loss. The Sinkhorn soft-sort branch is what carries gradient.
 
     Returns:
         order: (d,) int32 array; parents before children, cycle leftovers
@@ -84,7 +84,7 @@ def topological_sort_from_adjacency(A: jnp.ndarray, threshold: float = 0.01) -> 
 
 
 # ---------------------------------------------------------------------------
-# Sprint 2 Mechanism 1: differentiable soft topological sort via Sinkhorn.
+# Mechanism 1: differentiable soft topological sort via Sinkhorn.
 # ---------------------------------------------------------------------------
 
 def ancestral_depth_scores(A: jnp.ndarray, eps: float = 1e-3) -> jnp.ndarray:
@@ -185,7 +185,7 @@ def sinkhorn_topological_sort(
 
 
 # ---------------------------------------------------------------------------
-# Sprint 3 Mechanism 2: DAG-gated state transitions.
+# Mechanism 2: DAG-gated state transitions.
 #
 # Path (A) per the multi-chat coordination policy: duplicate the relevant
 # selective-scan + MambaBlock + MambaProcessor structure here so the base
@@ -440,8 +440,8 @@ class TopoMambaProcessor(nn.Module):
         in which case the standard scan order is used). If both are set,
         perm_matrix wins.
 
-        When ``enable_gating=True`` and A is provided, the Sprint 3
-        Mechanism 2 DAG-gated SSM is used: a per-position gate in
+        When ``enable_gating=True`` and A is provided, the Mechanism 2
+        DAG-gated SSM is used: a per-position gate in
         R^{d_state} multiplies h_{t-1} inside the recurrence, computed from
         A's columns selected (hard) or soft-mixed (Sinkhorn) by the
         variable at position t.

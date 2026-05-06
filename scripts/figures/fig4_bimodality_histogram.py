@@ -6,9 +6,9 @@ seeds land in either one bimodally. Compares no-fix vs warm-start to show how
 the fix collapses the bimodal distribution to unimodal.
 
 Data sources:
-- No-fix baseline: Tier-7 var-reg logs at lam=0 (per-seed test BAcc) +
-  Tier-7 warm-start logs at warm=0
-- Warm-start fix:  Tier-7 warm-start logs at warm > 0 (best per cell)
+- No-fix baseline: var-reg logs at lam=0 (per-seed test BAcc) +
+  warm-start logs at warm=0
+- Warm-start fix:  warm-start logs at warm > 0 (best per cell)
 
 Output: docs/article/figures/fig4_bimodality.{pdf,png}
 """
@@ -29,10 +29,10 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def parse_per_seed_test_bacc(path: Path, want_param: float | None = None,
                               want_param_max: float | None = None):
-    """Parse per-seed test BAcc from a Tier-7 sweep log.
+    """Parse per-seed test BAcc from a sweep log.
 
     Returns dict[(dataset, processor)] -> list of (param, seed, test_bacc) tuples.
-    Tier-7 logs have a per-seed table per (dataset, processor); we keep only
+    Sweep logs have a per-seed table per (dataset, processor); we keep only
     entries matching want_param (e.g., 0.0) or in [want_param, want_param_max].
     """
     if not path.exists():
@@ -165,7 +165,7 @@ def main():
                   f"warm-start n={f_n:>3d} {f_m:.3f}±{f_s:.3f} | std reduction {b_s - f_s:+.3f}")
         else:
             print(f"  {PROC_SHORT[proc]:>17s}: no-fix n={b_n:>3d} {b_m:.3f}±{b_s:.3f} | "
-                  f"warm-start: no data (Tier-7 only ran Linear+MLP)")
+                  f"warm-start: no data (sweep only ran Linear+MLP)")
 
 
 if __name__ == "__main__":

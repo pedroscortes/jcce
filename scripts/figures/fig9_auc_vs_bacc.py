@@ -1,8 +1,8 @@
 """Figure 9 — AUC vs BAcc divergence: per-cell sign-flipped JPC visualisation.
 
 Implements §7.5 finding 6: cells with both AUC < 0.5 and BAcc < 0.5 are
-sign-flipped JPC (Type IIIb); cells with AUC ≈ 0.5 and BAcc ≈ prior are
-constant-output JPC (Type IIIa). Post-hoc fix moves cells diagonally up-right.
+sign-flipped JPC; cells with AUC ≈ 0.5 and BAcc ≈ prior are
+constant-output JPC. Post-hoc fix moves cells diagonally up-right.
 
 Data: per-seed table from results/server/q17_extended_metrics.log.
 
@@ -128,8 +128,8 @@ def main() -> None:
     fig.savefig(out_png, bbox_inches="tight", dpi=200)
     print(f"Saved: {out_pdf}")
     print(f"Saved: {out_png}")
-    print(f"Type IIIb (JCCE): {n_iiib}/{n}; Type IIIa: {n_iiia}; escape: {n_esc}")
-    print(f"Type IIIb (post-hoc): {n_iiib_p}/{n}")
+    print(f"Sign-flipped (JCCE): {n_iiib}/{n}; constant-output: {n_iiia}; escape: {n_esc}")
+    print(f"Sign-flipped (post-hoc): {n_iiib_p}/{n}")
 
 
 if __name__ == "__main__":

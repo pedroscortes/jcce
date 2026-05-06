@@ -1255,7 +1255,7 @@ class KLBottleneckHeadAdapter:
                  z = mu                                  (inference)
         decoder: z -> hidden -> Y_pred
 
-    Mechanism for Type IIIa Constant Collapse fix: a constant Y_pred output
+    Mechanism for the constant-output collapse fix: a constant Y_pred output
     requires constant z, but the KL prior ``KL(q(z|X) || N(0, I))`` forces
     z to spread out. Therefore the architecture mechanically prevents the
     constant collapse documented in §6 of the failure-mode taxonomy paper.
@@ -1617,20 +1617,20 @@ class TopoMambaAdapter:
       - "topological" (default): hard order from
         topological_sort_from_adjacency(A). Non-differentiable (gradient
         stops at A); runs host-side via jax.pure_callback.
-      - "sinkhorn": differentiable soft sort. The Sprint 2 mechanism. P is
+      - "sinkhorn": differentiable soft sort. The differentiable-sort mechanism. P is
         a doubly-stochastic matrix from Sinkhorn over ancestral-depth
         scores; gradient flows from the loss back to A through P.
       - "random": fixed permutation seeded by ``sort_seed``. Gate 1 control.
       - "identity": no permutation. Equivalent to standard Mamba.
 
-    Sprint 3 ``enable_gating`` (Mechanism 2): when True and A is provided,
+    The ``enable_gating`` flag (Mechanism 2): when True and A is provided,
     the SSM hidden-state recurrence gets a per-position gate in R^{d_state}
     derived from A's columns selected by the variable at position t (hard
     or soft mixture). The four ablation modes from skill spec:
 
       sort_mode    enable_gating   meaning
-      topological  False           Sprint 1 hard sort
-      sinkhorn     False           Sprint 2 sort-only
+      topological  False           hard sort variant
+      sinkhorn     False           soft-sort only
       topological  True            hard_sort + DAG gate
       sinkhorn     True            soft_sort + DAG gate (full TopoMamba)
 

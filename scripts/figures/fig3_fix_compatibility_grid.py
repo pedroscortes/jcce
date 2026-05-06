@@ -11,7 +11,7 @@ Data sources:
 - KL-bottleneck: results/server/q31d_klbot_split[01].log
 - Wasserstein:   results/server/q4_wasserstein_split[01].log
 
-When Tier-10 Wave D + Wave E results land, this script will pick up the
+When the additional sweep results land, this script will pick up the
 4 additional datasets (alarm, child, neuropathic_pain, insurance) automatically
 once their logs exist on disk.
 
@@ -119,7 +119,7 @@ def parse_kl_summary(path: Path):
 
 
 def parse_optuna_final_verdict(path: Path):
-    """Parse the FINAL VERDICT block at the end of a Tier-10 Optuna sweep log.
+    """Parse the FINAL VERDICT block at the end of an Optuna sweep log.
 
     Returns (final_mean, baseline_mean, lift) tuple, or (None, None, None) if missing.
     """
@@ -191,20 +191,20 @@ def compute_lift_grid():
     posthoc = {}
     for split in (0, 1):
         posthoc.update(parse_post_hoc_summary(LOG_DIR / f"q05b_posthoc_70_30_split{split}.log"))
-    # Tier-37 fill: post-hoc on dag_transformer for the 3 new datasets that
-    # were missing from q05b (alarm, child, neuropathic_pain).
+    # Cross-framework fill: post-hoc on dag_transformer for the 3 new datasets
+    # that were missing from q05b (alarm, child, neuropathic_pain).
     posthoc.update(parse_post_hoc_summary(LOG_DIR / "q37_posthoc_4new_dagtr.log"))
 
     warmstart_grids = {}
     for split in (0, 1):
         warmstart_grids.update(parse_test_bacc_summary(LOG_DIR / f"q31b_warmstart_70_30_split{split}.log"))
-    # Tier-37 fill: warm-start on (dag_tr + mlp) for the 4 new datasets.
+    # Cross-framework fill: warm-start on (dag_tr + mlp) for the 4 new datasets.
     warmstart_grids.update(parse_test_bacc_summary(LOG_DIR / "q37_warmstart_4new.log"))
 
     varreg_grids = {}
     for split in (0, 1):
         varreg_grids.update(parse_test_bacc_summary(LOG_DIR / f"q31_varreg_70_30_split{split}.log"))
-    # Tier-37 fill: var-reg on (dag_tr + mlp) for the 4 new datasets.
+    # Cross-framework fill: var-reg on (dag_tr + mlp) for the 4 new datasets.
     varreg_grids.update(parse_test_bacc_summary(LOG_DIR / "q37_varreg_4new.log"))
 
     kl_grids = {}  # dict[dataset] -> dict[(lam_kl, warm)] -> bacc (linear_head only)
@@ -215,7 +215,7 @@ def compute_lift_grid():
     for split in (0, 1):
         wasserstein_grids.update(parse_test_bacc_summary(LOG_DIR / f"q4_wasserstein_split{split}.log"))
 
-    # Tier-10 Optuna lifts for the 4 new datasets (Wave D) — directly gives lift for LinearHead
+    # Optuna lifts for the 4 new datasets — directly gives lift for LinearHead
     new_datasets = ["alarm", "child", "neuropathic_pain", "insurance"]
     optuna_lifts = {}  # (fix, dataset) -> lift on linear_head
     for ds in new_datasets:
@@ -227,16 +227,16 @@ def compute_lift_grid():
             if lift is not None:
                 optuna_lifts[(fix_label, ds)] = lift
 
-    # Wave E post-hoc on 4 new datasets — provides train/test BAcc per dataset × processor
+    # Post-hoc on 4 new datasets — provides train/test BAcc per dataset × processor
     wave_e_posthoc = parse_post_hoc_summary(LOG_DIR / "q10e_posthoc_4new.log")
-    # Wave E B2 baseline for the 4 new datasets — gives the no-fix reference
+    # B2 baseline for the 4 new datasets — gives the no-fix reference
     # (B2 is sklearn baseline, but for post-hoc lift we need the JCCE no-fix BAcc — approximate
-    # using Tier-7-style logic: post-hoc test BAcc minus the canonical 0.5 random floor when |A|=0,
+    # by post-hoc test BAcc minus the canonical 0.5 random floor when |A|=0,
     # or post-hoc minus a default-train baseline. We use 0.5 as the conservative "no information" floor.)
 
     # For each (fix, dataset, processor), compute lift = best_param_bacc - baseline_bacc.
     # Baseline for joint-loss fixes is the "off" parameter (lambda=0 or warm=0).
-    # For post-hoc, baseline is the Tier-7 var-reg's lambda=0 cell of the same (dataset, processor).
+    # For post-hoc, baseline is the var-reg lambda=0 cell of the same (dataset, processor).
     grid = {}  # (fix, dataset, processor) -> lift
     for ds in DATASETS:
         for proc in PROCESSORS:
@@ -277,13 +277,13 @@ def compute_lift_grid():
                     best = max(v for k, v in rows.items())
                     grid[("Wasserstein", ds, proc)] = best - rows[0.0]
 
-    # Fill in Wave D Optuna lifts for the 4 new datasets (LinearHead only)
+    # Fill in Optuna lifts for the 4 new datasets (LinearHead only)
     for (fix_label, ds), lift in optuna_lifts.items():
         grid[(fix_label, ds, "linear_head")] = lift
 
-    # Fill in Wave E post-hoc results for the 4 new datasets (all 3 processors).
+    # Fill in post-hoc results for the 4 new datasets (all 3 processors).
     # We have post-hoc test BAcc per (ds, proc) but no JCCE no-fix baseline at fixed
-    # hyperparameters from Wave E itself. As a conservative reference we use 0.500
+    # hyperparameters from this run itself. As a conservative reference we use 0.500
     # (the marginal-class floor) — the grid then shows post-hoc *absolute lift over chance*.
     for (ds, proc), test_bacc in wave_e_posthoc.items():
         if ("post-hoc", ds, proc) not in grid:  # don't overwrite originals
@@ -295,7 +295,7 @@ def compute_lift_grid():
 def main():
     grid = compute_lift_grid()
     if not grid:
-        print("No data found. Run the Tier-7 sweeps first.")
+        print("No data found. Run the variance-reg sweeps first.")
         return
 
     # Restrict to datasets that have at least some data

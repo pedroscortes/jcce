@@ -4506,7 +4506,7 @@ def learn_structure(
     weights_Y_floor: float = 0.01,
     # Q3.1 investigation (2026-04-29): variance regularizer on f_Y predictions.
     # Adds -lambda_y_variance * var(f_Y(X)) to total_loss to penalize the
-    # constant-prediction collapse documented in Type IIIa. Maximizing prediction
+    # constant-prediction collapse documented in the constant-output collapse. Maximizing prediction
     # variance forces f_Y out of the degenerate "predict the marginal" basin.
     # Default 0.0 = legacy behavior. Try lambda_y_variance ∈ {0.01, 0.1, 1.0}
     # to test whether the constant collapse is escapable in joint training.
@@ -4523,7 +4523,7 @@ def learn_structure(
     # T_idx_for_loss is None. Uses nested jax.grad (slower than variance reg
     # but ~2x not 10x; fine for 150-iter training budgets).
     # KNOWN ISSUE (2026-04-29 server sweep): the abs-of-gradient loss has zero
-    # subgradient at the collapse point, so it can't escape Type IIIa from
+    # subgradient at the collapse point, so it can't escape the constant-output collapse from
     # collapsed init. Use lambda_t_anchor below for a directional variant
     # that doesn't have the subgradient-at-zero problem.
     lambda_t_sens: float = 0.0,
@@ -4531,7 +4531,7 @@ def learn_structure(
     # Q3.1.A (2026-04-29): sign-anchor T-sensitivity loss. Same machinery as
     # lambda_t_sens but signed:  -lambda_t_anchor * target_sign * mean(∂f_Y/∂T).
     # Motivated by the Q3.1 signed-sensitivity diagnostic finding that the
-    # Type IIIa "fix" via variance reg has seed-level bimodality — some seeds
+    # the constant-output collapse "fix" via variance reg has seed-level bimodality — some seeds
     # find directionally-correct f_Y, others find sign-flipped. The anchor
     # biases all seeds toward target_sign (e.g., +1 for "T → Y is positive"
     # priors like Smoking → LungCancer or Glucose → Diabetes). No abs in the
@@ -4555,7 +4555,7 @@ def learn_structure(
     # Q3.1.D (2026-04-30): KL-bottleneck regularizer for KLBottleneckHead processor.
     # Adds lambda_kl * compute_kl_loss(X, params[Y_idx]) to total_loss when the
     # processor exposes compute_kl_loss (i.e., it's a KLBottleneckHeadAdapter).
-    # Inspired by TCEVAE / CEVAE; mechanically prevents Type IIIa Constant
+    # Inspired by TCEVAE / CEVAE; mechanically prevents the constant-output collapse Constant
     # Collapse via the KL prior on the latent z (constant predictions require
     # constant z, but KL forces z to spread). No-op when lambda_kl == 0 or
     # when the processor doesn't expose compute_kl_loss.
@@ -4657,7 +4657,7 @@ def learn_structure(
     # (default 0.1). Requires CausalMambaAdapter.forward to accept a
     # `temperature` kwarg — coordinated with causal-mamba branch.
     causal_mamba_temperature_schedule: Optional[Tuple[float, float]] = None,
-    # Phase 2: edge-only consistency loss variant (Sprint 6a — NEGATIVE result).
+    # Phase 2: edge-only consistency loss variant (edge-only variant — negative result).
     # When True (and lambda_consistency > 0), the consistency target is
     # restricted to A's existing edges (|A| > consistency_edge_threshold) plus
     # the diagonal. Soft-masked via sigmoid((|A| - threshold) * 50) so
@@ -5120,7 +5120,7 @@ def learn_structure(
         Y_recon_weight = 3.0
 
         # Q3.1 (2026-04-29): variance regularizer on f_Y predictions to fight
-        # Type IIIa constant collapse. If f_Y is collapsed (predicting the
+        # the constant-output collapse constant collapse. If f_Y is collapsed (predicting the
         # marginal), var(Y_recon_output) ≈ 0; if f_Y is input-sensitive, var > 0.
         # Negative loss = maximize variance = force f_Y out of the degenerate
         # "predict the marginal" basin. No-op when lambda_y_variance == 0.
@@ -5586,7 +5586,7 @@ def learn_structure(
         weighted_consistency = current_lambda_consistency * consistency_loss
         weighted_aap = lambda_aap * aap_loss
         # Q3.1 (2026-04-29): variance regularizer on f_Y predictions to fight
-        # Type IIIa constant collapse. y_variance_reg is computed above
+        # the constant-output collapse constant collapse. y_variance_reg is computed above
         # (negative if lambda_y_variance > 0, zero otherwise).
 
         total_loss = (
@@ -6101,8 +6101,8 @@ def learn_structure(
                 else:
                     cos_re, cos_ce = 0.0, 0.0
 
-                # Run 11 (Tier-27, sealed prereg 2026-05-04 commit a6e5311):
-                # D2 magnitude ratio + D3 Y-column overlap on A.
+                # Pre-registered gradient-diagnostic measurement on the actual
+                # learner: D2 magnitude ratio + D3 Y-column overlap on A.
                 g_r_norm = float(jnp.linalg.norm(g_r))
                 g_c_norm = float(jnp.linalg.norm(g_c))
                 _A_shape = A_cur.shape

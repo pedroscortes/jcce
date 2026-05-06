@@ -1,11 +1,10 @@
-"""Figure 6 (v2) — DAG comparison heatmap on the Tier-21 redesigned synthetic.
+"""Figure 6 — DAG comparison heatmap on the redesigned linear-ER synthetic.
 
-Same visual structure as v1 but uses the Tier-21 generator
-(`generate_clean_synthetic` with deterministic Y from full weighted-parent
-contribution and edge weights in [0.5, 2.0]) instead of the deprecated Tier-9
-stochastic-binarisation generator.
+Uses the redesigned `generate_clean_synthetic` generator (deterministic Y from
+full weighted-parent contribution, edge weights in [0.5, 2.0]) on a linear
+ER-SCM.
 
-Output: docs/article/figures/fig6_dag_comparison.{pdf,png}  (overwrites v1)
+Output: docs/article/figures/fig6_dag_comparison.{pdf,png}
 """
 
 from __future__ import annotations
@@ -71,7 +70,7 @@ def train_and_get_A(X_tr, Y_tr, T_idx, processor_type, seed, warm_iters=0,
 
 
 def main():
-    print(f"Generating Tier-21 ER-SCM data: d={D}, n={N_SAMPLES}, seed={SEED}")
+    print(f"Generating ER-SCM data: d={D}, n={N_SAMPLES}, seed={SEED}")
     X, Y, T_idx, A_Y_true_vec, true_w = generate_clean_synthetic(
         d=D, n=N_SAMPLES, seed=SEED, scm_type="linear", noise_scale=0.5,
     )
@@ -128,7 +127,7 @@ def main():
         # Explicit y-label on every column (not just first) so panel reads cleanly.
         ax.set_ylabel("|A_true[:, Y]|", fontsize=8)
         ax.tick_params(axis="y", labelsize=7)
-        ax.set_title(f"Tier-21 ground-truth Y-parents (seed={SEED})", fontsize=8)
+        ax.set_title(f"Ground-truth Y-parents (seed={SEED})", fontsize=8)
         for spine in ["top", "right"]:
             ax.spines[spine].set_visible(False)
 

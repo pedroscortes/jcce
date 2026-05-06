@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Fisher-rank bootstrap CIs server launcher.
 #
-# Runs Tier-34 across the 3 processors sequentially. Addresses the v3
-# panel's "Fisher rank lacks bootstrap CIs and seed variance" concern
-# (raised by Roles 1, 3, 4, 5, 7 across multiple LLMs).
+# Runs the Fisher-rank bootstrap across the 3 processors sequentially. Adds
+# bootstrap CIs and seed-variance reporting on top of the point-estimate
+# Fisher rank analysis.
 #
 # Each step:
 #   - Trains JCCE 5 seeds × 2 configs (default + Sachs Optuna best) ×
-#     2 datasets (Sachs, Tier-21 d=20)
+#     2 datasets (Sachs, linear-ER d=20 synthetic)
 #   - Computes empirical Fisher Jacobian (200 held-in samples)
 #   - Bootstrap-resamples 1000× → 95% rank CI per seed
 #
@@ -29,7 +29,7 @@ RESULTS_DIR="${REPO_ROOT}/results/server"
 mkdir -p "${RESULTS_DIR}"
 
 echo "==============================================================="
-echo "Fisher-rank bootstrap CIs (Tier-34) — v3 panel response"
+echo "Fisher-rank bootstrap CIs"
 echo "Started: $(date -Iseconds)"
 echo "Host: $(hostname)"
 echo "==============================================================="

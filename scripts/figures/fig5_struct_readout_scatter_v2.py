@@ -1,16 +1,16 @@
-"""Figure 5 (v2) — Structure-vs-readout decoupling on the Tier-21 redesigned synthetic.
+"""Figure 5 — Structure-vs-readout decoupling on the redesigned linear-ER synthetic.
 
 Reads `results/server/fig5_tier21_data.json` (produced by
 `regenerate_fig5_data_tier21.py`) which has per-cell (test_bacc, struct_corr)
 on linear ER-SCM d=20, 5 seeds × 3 processors × 3 fixes = 45 cells.
 
-Updated qualitative story vs Tier-11 v1:
-  - On Tier-21, post-hoc fix recovers BAcc to 0.92+ across all 3 processors,
-    not just DAG-Tr — because the redesigned generator gives ALL processors
+Qualitative story:
+  - On the redesigned synthetic, post-hoc fix recovers BAcc to 0.92+ across all
+    3 processors, not just DAG-Tr — because the generator gives ALL processors
     a recoverable |A|. The decoupling pattern (high BAcc despite low
     struct_corr) is more pronounced on warm-start cells.
 
-Output: docs/article/figures/fig5_struct_readout_scatter.{pdf,png}  (overwrites v1)
+Output: docs/article/figures/fig5_struct_readout_scatter.{pdf,png}
 """
 
 from __future__ import annotations

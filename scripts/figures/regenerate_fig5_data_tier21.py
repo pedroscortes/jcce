@@ -1,11 +1,11 @@
-"""Regenerate the data needed for Fig 5 on the Tier-21 redesigned synthetic.
+"""Regenerate the data needed for Fig 5 on the redesigned linear-ER synthetic.
 
-Tier-21 (test_synthetic_jpc_v2.py) reports BAcc + |abs_dT| per cell but does NOT
-save struct_corr. Fig 5 needs per-cell (test_bacc, struct_corr). This script
-re-runs the Tier-21 linear_d20 config with struct_corr computation added and
-saves to results/server/fig5_tier21_data.json for the plotter.
+`test_synthetic_jpc_v2.py` reports BAcc + |abs_dT| per cell but does NOT save
+struct_corr. Fig 5 needs per-cell (test_bacc, struct_corr). This script re-runs
+the linear_d20 config with struct_corr computation added and saves to
+results/server/fig5_tier21_data.json for the plotter.
 
-Configurations: linear ER-SCM, d=20, n=2000 (the Tier-21 headline config) ×
+Configurations: linear ER-SCM, d=20, n=2000 (the headline config) ×
 3 processors (linear_head, mlp_head, dag_transformer) × 3 fixes (no_fix,
 post_hoc, warm_start) × 5 seeds = 45 cells × ~15s CPU each = ~11 min total.
 
@@ -85,7 +85,7 @@ def run_one(seed: int, processor: str, fix: str, max_iter: int = 150,
 
 
 def main():
-    print("Regenerating Fig 5 data on Tier-21 (linear, d=20, n=2000)")
+    print("Regenerating Fig 5 data (linear, d=20, n=2000)")
     procs = ["linear_head", "mlp_head", "dag_transformer"]
     fixes = ["no_fix", "post_hoc", "warm_start"]
     seeds = list(range(5))

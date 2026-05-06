@@ -3,18 +3,16 @@ cross-framework triangulation (JCCE / CASTLE / DECI).
 
 Two panels:
 - Left: collapse rate on 6 real benchmarks × 3 JCCE processors at fixed-default
-  hyperparameters (Tier-7, |df_Y/dT| < 1e-3 threshold).
+  hyperparameters (|df_Y/dT| < 1e-3 threshold).
 - Right: cross-framework collapse-rate summary on the 7-dataset cross-framework
   suite (Heart, LUCAS, Sachs, Alarm, Child, Insurance, Neuropathic Pain) —
-  JCCE, CASTLE [Kyono et al. 2020], DECI [Geffner et al. 2024]. This replaces
-  the deprecated Tier-9 synthetic panel which was at noise floor (Tier-20 LogReg
-  ceiling 0.52); cross-framework collapse rates are the new headline §6.III
-  finding.
+  JCCE, CASTLE [Kyono et al. 2020], DECI [Geffner et al. 2024]. Cross-framework
+  collapse rates are the headline §6.III finding.
 
 Data sources:
-- Real: Tier-7 variance-reg log at lam=0 cells (q31_varreg_70_30_split[01].log)
+- Real: variance-reg log at lam=0 cells (q31_varreg_70_30_split[01].log)
         — per-seed |df_Y/dT| at lam_var=0 (no fix) for 6 datasets × 3 procs.
-- Cross-framework: hardcoded from §6.III tables (Tier-15 CASTLE, Tier-19 DECI).
+- Cross-framework: hardcoded from §6.III tables (CASTLE and DECI sweeps).
 
 Output: docs/article/figures/fig1_jpc_collapse_rate.{pdf,png}
 """
@@ -86,7 +84,7 @@ def parse_varreg_per_seed(path: Path):
 
 
 def parse_scm_per_seed(path: Path):
-    """Parse per-seed collapsed flag from a Tier-9 SCM log.
+    """Parse per-seed collapsed flag from a synthetic SCM log.
 
     Returns dict[(d, processor)] -> list of collapsed booleans.
     Header rows are skipped; per-seed rows look like:
@@ -134,7 +132,7 @@ def collapse_rate(abs_dT_list):
 
 
 def main():
-    # --- Real benchmarks: from Tier-7 varreg logs ---
+    # --- Real benchmarks: from variance-reg logs ---
     real_data = {}  # (dataset, proc) -> collapse_rate
     for split_idx in (0, 1):
         path = LOG_DIR / f"q31_varreg_70_30_split{split_idx}.log"

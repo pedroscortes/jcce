@@ -34,6 +34,11 @@ env/
 *.h5
 *.hdf5
 
+# Reference benchmark data — downloaded from canonical sources at runtime
+# (jcce.data.benchmark_loader points at UCI / bnlearn / GANITE etc.); not
+# bundled in the repo.
+data/
+
 # Results, backups, profiling
 results/
 results_run1_backup/

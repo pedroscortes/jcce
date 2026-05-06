@@ -43,11 +43,15 @@ jcce/                       # Core library (the implementation)
 ├── validation/             # DML, Cinelli sensitivity, bootstrap, LOVO, refutations
 └── visualization/          # DAG plotting, Pareto front plots
 
-data/                       # Reference datasets used by the benchmarks
 tests/                      # Library unit tests
 bib/                        # Bibliography (BibTeX)
-scripts/baselines/          # SHAP-baseline comparison pipeline
 ```
+
+Reference benchmark datasets are not bundled in the repo. The loaders
+in `jcce.data.benchmark_loader` point at canonical sources (UCI ML
+Repository, bnlearn, the GANITE Twins distribution, etc.) and emit
+download instructions when called on a missing file. Place downloaded
+data under `data/` at the repo root; the directory is gitignored.
 
 ## References
 

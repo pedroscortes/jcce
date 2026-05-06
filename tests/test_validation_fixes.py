@@ -165,7 +165,6 @@ class TestFixedStructureCV:
             call_kwargs = mock_cv.call_args[1]
             assert call_kwargs["freeze_structure"] is True
             assert call_kwargs["cold_start"] is False
-            assert call_kwargs["use_v7"] is True
 
 
 # =============================================================================

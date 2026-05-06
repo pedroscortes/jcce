@@ -279,7 +279,6 @@ def _evaluate_single_fold(
     golem_max_iter: int,
     cold_start: bool,
     task: str,
-    use_v7: bool,
     true_dag: Optional[np.ndarray],
     true_mb: Optional[List[int]],
     verbose: bool,
@@ -576,7 +575,6 @@ def evaluate_pareto_solution_cv(
     task: str = "classification",
     verbose: bool = False,
     parallel_folds: bool = False,
-    use_v7: Optional[bool] = None,
     freeze_structure: bool = False,
     A_weights_continuous: Optional[np.ndarray] = None,
     A_confound_weights: Optional[np.ndarray] = None,
@@ -612,9 +610,6 @@ def evaluate_pareto_solution_cv(
         parallel_folds: If True and >=2 GPUs detected, distribute folds across
                        GPUs via ThreadPoolExecutor. Falls back to sequential on CPU
                        or single GPU.
-        use_v7: Always True in current code; the parameter is kept for backward
-                compatibility with older call sites. Retraining uses
-                learn_structure (effects + confounds).
         freeze_structure: If True, freeze A during per-fold training (only retrain
                          processor fθ). Isolates predictive evaluation from structural
                          instability. Recommended for publishable results.
@@ -633,10 +628,6 @@ def evaluate_pareto_solution_cv(
 
     # A_init should be (n_features+1 × n_features+1) — augmented space including Y.
     # learn_structure() works in augmented space internally.
-
-    # The legacy v4_joint path is no longer reachable; always use the
-    # learn_structure-based retraining flow.
-    use_v7 = True
 
     # StratifiedKFold for classification, regular KFold for regression
     if task == "regression":
@@ -704,7 +695,6 @@ def evaluate_pareto_solution_cv(
         golem_max_iter=golem_max_iter,
         cold_start=cold_start,
         task=task,
-        use_v7=use_v7,
         true_dag=true_dag,
         true_mb=true_mb,
         verbose=verbose,
@@ -879,7 +869,7 @@ def evaluate_fixed_structure_cv(
     """
     Fixed-structure K-fold CV: freeze A, retrain only the processor per fold.
 
-    This is the recommended CV approach (6/6 LLM consensus). It isolates
+    This is the recommended CV approach. It isolates
     predictive utility from structural instability by keeping the adjacency
     matrix fixed across all folds. Only the processor (fθ) is retrained on
     each fold's training data, warm-started from full-data trained params.
@@ -921,6 +911,5 @@ def evaluate_fixed_structure_cv(
         task=task,
         verbose=verbose,
         parallel_folds=parallel_folds,
-        use_v7=True,
         freeze_structure=True,
     )

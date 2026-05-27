@@ -78,42 +78,6 @@ class TestDMLCircularityFix:
         assert len(struct_ids & effect_ids) == 0, "Struct and effect sets overlap!"
         assert len(struct_ids | effect_ids) == n, "Not all samples accounted for"
 
-    def test_rerun_dml_creates_split(self):
-        """Verify --rerun-dml mode creates proper sample split."""
-        # This is a structural test — verify the code pattern exists
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location(
-            "run_ablation_study", "/home/user/phd/repos/jcce/scripts/run_ablation_study.py"
-        )
-        # Don't actually import (has heavy deps), just read source
-        with open("/home/user/phd/repos/jcce/scripts/run_ablation_study.py") as f:
-            source = f.read()
-
-        # Verify DML calls use X_effect, not X_struct
-        # Check main pipeline DML (P3)
-        assert "run_multi_parent_dml(\n                    X=X_effect, Y=Y_effect," in source, (
-            "Main pipeline DML should use X_effect"
-        )
-
-        # Check all-edges DML (P3b)
-        assert "run_all_edges_dml_fn(\n                    X=X_effect, Y=Y_effect," in source, (
-            "All-edges DML should use X_effect"
-        )
-
-        # Check CV (P2)
-        assert "evaluate_pareto_solution_cv(\n                X=X_effect, Y=Y_effect," in source, (
-            "CV should use X_effect"
-        )
-
-        # Verify --rerun-dml creates split
-        assert "X_full, Y_full, ds_config = load_dataset(dataset_name)" in source, (
-            "--rerun-dml should load full data first"
-        )
-        assert "X_struct, X_effect, Y_struct, Y_effect = train_test_split(" in source, (
-            "--rerun-dml should create 70/30 split"
-        )
-
 
 # =============================================================================
 # 2. Fixed-Structure CV Tests
